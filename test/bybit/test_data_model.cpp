@@ -52,6 +52,18 @@ struct DataModelTestFixture {
 // Global fixture instance that persists between tests
 static DataModelTestFixture fixture;
 
+TEST_CASE("Create model with suffix", "[bybit][instruments]")
+{
+    auto model = data_model<bybit::InstrumentInfo, &bybit::InstrumentInfo::symbol>::create(fixture.db, "bybit");
+
+    CHECK(model->name().ends_with("bybit"));
+
+    auto results = model->query();
+    CHECK(results.empty());
+
+    model->drop_table();
+}
+
 TEST_CASE("Write first", "[bybit][instruments]")
 {
     auto model = data_model<bybit::InstrumentInfo, &bybit::InstrumentInfo::symbol>::create(fixture.db);
@@ -97,9 +109,56 @@ TEST_CASE("Write first", "[bybit][instruments]")
     // Wait for async processing
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
-    // Verify results
+    // Verify cache results
     REQUIRE(cache.size() == 1);
-    std::cout << "Received " << cache.size() << " instruments" << std::endl;
+
+    const auto& cached = cache.front();
+    CHECK(cached.symbol == "BTCUSDC");
+    CHECK(cached.baseCoin == "BTC");
+    CHECK(cached.quoteCoin == "USDC");
+    CHECK(cached.symbolType == "normal");
+    CHECK(cached.innovation == "0");
+    CHECK(cached.status == bybit::InstrumentStatus::Trading);
+    CHECK(cached.marginTrading == "none");
+    CHECK(cached.stTag == "0");
+    CHECK(cached.tickSize == "0.5");
+    CHECK(cached.basePrecision == "0.000001");
+    CHECK(cached.quotePrecision == "0.01");
+    CHECK(cached.minOrderQty == "0.00001");
+    CHECK(cached.maxOrderQty == "10000");
+    CHECK(cached.minOrderAmt == "10");
+    CHECK(cached.maxOrderAmt == "500000");
+    CHECK(cached.maxLimitOrderQty == "10000");
+    CHECK(cached.maxMarketOrderQty == "5000");
+    CHECK(cached.postOnlyMaxLimitOrderSize == "10000");
+    CHECK(cached.priceLimitRatioX == "0.05");
+    CHECK(cached.priceLimitRatioY == "0.05");
+
+    // Query back from the model and verify field values
+    auto queried = model->query();
+    REQUIRE(queried.size() == 1);
+
+    const auto& inst = queried.front();
+    CHECK(inst.symbol == "BTCUSDC");
+    CHECK(inst.baseCoin == "BTC");
+    CHECK(inst.quoteCoin == "USDC");
+    CHECK(inst.symbolType == "normal");
+    CHECK(inst.innovation == "0");
+    CHECK(inst.status == bybit::InstrumentStatus::Trading);
+    CHECK(inst.marginTrading == "none");
+    CHECK(inst.stTag == "0");
+    CHECK(inst.tickSize == "0.5");
+    CHECK(inst.basePrecision == "0.000001");
+    CHECK(inst.quotePrecision == "0.01");
+    CHECK(inst.minOrderQty == "0.00001");
+    CHECK(inst.maxOrderQty == "10000");
+    CHECK(inst.minOrderAmt == "10");
+    CHECK(inst.maxOrderAmt == "500000");
+    CHECK(inst.maxLimitOrderQty == "10000");
+    CHECK(inst.maxMarketOrderQty == "5000");
+    CHECK(inst.postOnlyMaxLimitOrderSize == "10000");
+    CHECK(inst.priceLimitRatioX == "0.05");
+    CHECK(inst.priceLimitRatioY == "0.05");
 }
 
 namespace SQLite {

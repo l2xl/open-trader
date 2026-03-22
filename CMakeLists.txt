@@ -145,12 +145,8 @@ set(core_SOURCES
         src/datahub/data_model.hpp
         src/datahub/operations.hpp
         src/datahub/query_builder.hpp
-        src/datahub/query_builder.cpp
         src/datahub/metadata.hpp
         src/datahub/data_sink.hpp
-        src/datahub/data_provider.hpp
-        src/common/hex.hpp
-        src/common/hex.cpp
 )
 
 add_library(core STATIC ${core_SOURCES})

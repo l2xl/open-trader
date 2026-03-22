@@ -51,22 +51,21 @@ private:
 public:
     // RAII constructor - automatically creates metadata from Entity type using Glaze reflection
     // Table is created synchronously during construction (RAII guarantee)
-    explicit data_model(std::shared_ptr<SQLite::Database> db, EnsurePrivate)
+    explicit data_model(std::shared_ptr<SQLite::Database> db, std::string table_suffix, EnsurePrivate)
         : m_db(std::move(db))
-        , m_metadata(metadata_type::Create())
+        , m_metadata(metadata_type::Create(std::move(table_suffix)))
     {
         if (!m_db) {
             throw std::invalid_argument("Database connection cannot be null");
         }
-        // Create table immediately during construction (RAII guarantee)
         if (!m_db->tableExists(name())) {
-            std::string sql = QueryBuilder::create_table(m_metadata.table_name, m_metadata.column_definitions);
+            std::string sql = sql::create_table(m_metadata.table_name, m_metadata.column_definitions);
             m_db->exec(sql);
         }
     }
 
-    static std::shared_ptr<data_model> create(std::shared_ptr<SQLite::Database> db)
-    { return std::make_shared<data_model>(db, EnsurePrivate{}); }
+    static std::shared_ptr<data_model> create(std::shared_ptr<SQLite::Database> db, std::string table_suffix = {})
+    { return std::make_shared<data_model>(std::move(db), std::move(table_suffix), EnsurePrivate{}); }
 
     const std::string& name() const
     { return m_metadata.table_name; }
@@ -138,7 +137,7 @@ public:
 
     void drop_table() {
         if (m_db->tableExists(name())) {
-            std::string sql = QueryBuilder::drop_table(m_metadata.table_name);
+            std::string sql = sql::drop_table(m_metadata.table_name);
             m_db->exec(sql);
         }
     }

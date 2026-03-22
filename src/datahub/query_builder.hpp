@@ -14,8 +14,10 @@
 #ifndef  SCRATCHER_QUERY_BUILDER_HPP
 #define  SCRATCHER_QUERY_BUILDER_HPP
 
+#include <sstream>
 #include <string>
-#include <vector>
+#include <string_view>
+#include <tuple>
 
 namespace datahub {
 
@@ -140,38 +142,110 @@ private:
     }
 };
 
-/**
- * SQL query builder for generating type-safe queries
- */
-class QueryBuilder {
-public:
-    // SELECT queries
-    static std::string select_all(const std::string& table_name);
-    static std::string select_where(const std::string& table_name, const std::string& where_clause);
-    static std::string select_count(const std::string& table_name);
-    static std::string select_count_where(const std::string& table_name, const std::string& where_clause);
-    
-    // INSERT queries
-    static std::string insert(const std::string& table_name, const std::vector<std::string>& columns);
-    static std::string insert_or_replace(const std::string& table_name, const std::vector<std::string>& columns, const std::string& primary_key_name, size_t primary_key_index);
-    static std::string insert_batch(const std::string& table_name, const std::vector<std::string>& columns, size_t batch_size);
-    
-    // UPDATE queries
-    static std::string update_where(const std::string& table_name, const std::vector<std::string>& columns, const std::string& where_clause);
-    
-    // DELETE queries
-    static std::string delete_where(const std::string& table_name, const std::string& where_clause);
-    
-    // DDL queries
-    static std::string create_table(const std::string& table_name, const std::vector<std::string>& column_definitions);
-    static std::string drop_table(const std::string& table_name);
-    static std::string table_exists(const std::string& table_name);
+namespace sql {
+namespace detail {
 
-private:
-    static std::string join_columns(const std::vector<std::string>& columns, const std::string& separator = ", ");
-    static std::string generate_placeholders(size_t count);
-};
+template<typename Cols, size_t... Is>
+std::string join_columns_impl(const Cols& cols, std::string_view sep, std::index_sequence<Is...>) {
+    std::ostringstream result;
+    ((result << (Is == 0 ? "" : sep) << std::get<Is>(cols)), ...);
+    return result.str();
+}
 
+template<typename Cols>
+inline std::string join_columns(const Cols& cols, std::string_view separator = ", ") {
+    constexpr auto N = std::tuple_size_v<Cols>;
+    if constexpr (N == 0) return "";
+    else return join_columns_impl(cols, separator, std::make_index_sequence<N>{});
+}
+
+template<size_t... Is>
+std::string generate_placeholders_impl(std::index_sequence<Is...>) {
+    std::ostringstream result;
+    ((result << (Is == 0 ? "" : ", ") << "?"), ...);
+    return result.str();
+}
+
+template<size_t N>
+inline std::string generate_placeholders() {
+    if constexpr (N == 0) return "";
+    else return generate_placeholders_impl(std::make_index_sequence<N>{});
+}
+
+} // namespace detail
+
+inline std::string select_where(const std::string& table_name, const std::string& where_clause) {
+    return where_clause.empty() ? ("SELECT * FROM " + table_name) : ("SELECT * FROM " + table_name + " WHERE " + where_clause);
+}
+
+inline std::string select_count_where(const std::string& table_name, const std::string& where_clause) {
+    return where_clause.empty() ? "SELECT COUNT(*) FROM " + table_name : "SELECT COUNT(*) FROM " + table_name + " WHERE " + where_clause;
+}
+
+inline std::string delete_where(const std::string& table_name, const std::string& where_clause) {
+    return "DELETE FROM " + table_name + " WHERE " + where_clause;
+}
+
+inline std::string drop_table(const std::string& table_name) {
+    return "DROP TABLE IF EXISTS " + table_name;
+}
+
+template<typename Cols>
+std::string insert(const std::string& table_name, const Cols& cols) {
+    return "INSERT INTO " + table_name + " (" + detail::join_columns(cols) + ") VALUES (" + detail::generate_placeholders<std::tuple_size_v<Cols>>() + ")";
+}
+
+template<typename Cols>
+std::string insert_or_replace(const std::string& table_name, const Cols& cols, std::string_view pk_name, size_t pk_index) {
+    constexpr auto N = std::tuple_size_v<Cols>;
+    std::ostringstream sql;
+    sql << "INSERT INTO " << table_name << " (" << detail::join_columns(cols) << ") VALUES (" << detail::generate_placeholders<N>() << ")";
+    sql << " ON CONFLICT(" << pk_name << ") DO UPDATE SET ";
+
+    bool first = true;
+    [&]<size_t... Is>(std::index_sequence<Is...>) {
+        (([&]<size_t I>() {
+            if (I != pk_index) {
+                if (!first) sql << ", ";
+                sql << std::get<I>(cols) << " = excluded." << std::get<I>(cols);
+                first = false;
+            }
+        }.template operator()<Is>()), ...);
+    }(std::make_index_sequence<N>{});
+
+    sql << " WHERE ";
+    first = true;
+    [&]<size_t... Is>(std::index_sequence<Is...>) {
+        (([&]<size_t I>() {
+            if (I != pk_index) {
+                if (!first) sql << " OR ";
+                sql << table_name << "." << std::get<I>(cols) << " IS NOT excluded." << std::get<I>(cols);
+                first = false;
+            }
+        }.template operator()<Is>()), ...);
+    }(std::make_index_sequence<N>{});
+
+    return sql.str();
+}
+
+template<typename Cols>
+std::string update_where(const std::string& table_name, const Cols& cols, const std::string& where_clause) {
+    constexpr auto N = std::tuple_size_v<Cols>;
+    std::ostringstream sql;
+    sql << "UPDATE " << table_name << " SET ";
+    [&]<size_t... Is>(std::index_sequence<Is...>) {
+        ((sql << (Is == 0 ? "" : ", ") << std::get<Is>(cols) << " = ?"), ...);
+    }(std::make_index_sequence<N>{});
+    sql << " WHERE " << where_clause;
+    return sql.str();
+}
+
+template<typename Cols>
+std::string create_table(const std::string& table_name, const Cols& col_defs) {
+    return "CREATE TABLE IF NOT EXISTS " + table_name + " (" + detail::join_columns(col_defs) + ")";
+}
+
+} // namespace sql
 } // namespace datahub
 
 #endif //  SCRATCHER_QUERY_BUILDER_HPP

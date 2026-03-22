@@ -4,10 +4,8 @@
 #include "data_model.hpp"
 #include "query_builder.hpp"
 #include <SQLiteCpp/SQLiteCpp.h>
+#include <array>
 #include <memory>
-#include <vector>
-#include <functional>
-#include <algorithm>
 #include <utility>
 #include <deque>
 
@@ -23,13 +21,16 @@ namespace datahub {
 template<typename DAO>
 class BaseOperation {
 protected:
-    SQLite::Statement m_statement;
     std::shared_ptr<DAO> m_dao;
+    SQLite::Statement m_statement;
 
 public:
-    explicit BaseOperation(const std::string& sql, std::shared_ptr<DAO> dao)
-        : m_statement(dao->database(), sql), m_dao(std::move(dao)) {}
-    
+    template<typename SqlGen>
+    explicit BaseOperation(std::shared_ptr<DAO> dao, SqlGen&& sql_gen)
+        : m_dao(std::move(dao))
+        , m_statement(m_dao->database(), std::invoke(std::forward<SqlGen>(sql_gen), *m_dao))
+    {}
+
     virtual ~BaseOperation() = default;
     
     // Non-copyable but movable
@@ -45,14 +46,15 @@ protected:
         m_statement.reset();
         bind_parameter_impl<1>(std::forward<Args>(args)...);
     }
-    
-    // Helper to bind parameters from tuple (when we need to convert tuple to variadic args)
-    template<typename... Args>
-    void bind_parameters_from_tuple(const std::tuple<Args...>& params) {
+
+    template<typename Entity>
+    void bind_entity(const Entity& entity) {
         m_statement.reset();
-        std::apply([this](const auto&... args) {
-            bind_parameter_impl<1>(args...);
-        }, params);
+        constexpr auto N = glz::reflect<Entity>::size;
+        auto tie = glz::to_tie(entity);
+        [&]<std::size_t... I>(std::index_sequence<I...>) {
+            bind_parameter_impl<1>(glz::get<I>(tie)...);
+        }(std::make_index_sequence<N>{});
     }
     
     // Bind a single parameter at the given index (1-based)
@@ -161,13 +163,12 @@ class Insert : public BaseOperation<DAO> {
 
 public:
     explicit Insert(std::shared_ptr<DAO> dao)
-        : BaseOperation<DAO>(QueryBuilder::insert(dao->name(), dao->metadata().column_names), std::move(dao))
+        : BaseOperation<DAO>(std::move(dao), [](const DAO& d) { return sql::insert(d.name(), DAO::metadata_type::column_names()); })
     {}
 
     // Execute single entity insert - reuses precompiled statement
     void operator()(const typename DAO::entity_type& entity) {
-        auto values_tuple = BaseOperation<DAO>::m_dao->metadata().extract_values_as_tuple(entity);
-        BaseOperation<DAO>::bind_parameters_from_tuple(values_tuple);
+        BaseOperation<DAO>::bind_entity(entity);
         BaseOperation<DAO>::m_statement.exec();
     }
 };
@@ -181,14 +182,13 @@ class InsertOrReplace : public BaseOperation<DAO> {
 
 public:
     explicit InsertOrReplace(std::shared_ptr<DAO> dao)
-        : BaseOperation<DAO>(QueryBuilder::insert_or_replace(dao->name(), dao->metadata().column_names, dao->metadata().primary_key_name, dao->metadata().primary_key_index), std::move(dao))
+        : BaseOperation<DAO>(std::move(dao), [](const DAO& d) { return sql::insert_or_replace(d.name(), DAO::metadata_type::column_names(), DAO::metadata_type::primary_key_name, DAO::metadata_type::primary_key_index); })
     {}
 
     // Execute single entity insert or replace - reuses precompiled statement
     // Returns true if data was modified (inserted or updated), false if unchanged
     bool operator()(const typename DAO::entity_type& entity) {
-        auto values_tuple = BaseOperation<DAO>::m_dao->metadata().extract_values_as_tuple(entity);
-        BaseOperation<DAO>::bind_parameters_from_tuple(values_tuple);
+        BaseOperation<DAO>::bind_entity(entity);
         BaseOperation<DAO>::m_statement.exec();
 
         // Get the number of rows modified (0 if WHERE clause prevented update)
@@ -211,7 +211,7 @@ class Query : public BaseOperation<DAO> {
 public:
     // Constructor for SELECT * FROM table WHERE condition
     Query(std::shared_ptr<DAO> dao, const QueryCondition& condition = {})
-        : BaseOperation<DAO>(QueryBuilder::select_where(dao->name(), condition.sql()), std::move(dao))
+        : BaseOperation<DAO>(std::move(dao), [&condition](const DAO& d) { return sql::select_where(d.name(), condition.sql()); })
         , m_required_param_count(condition.parameter_count()) {}
     
     // Execute query - accepts variable arguments pack
@@ -236,64 +236,45 @@ private:
         return results;
     }
 
-    //TODO: This uses wrong bahavior: It gets DB statement and extract types from it.
-    // Instead it should get metadata and extract its types
     typename DAO::entity_type create_entity_from_statement() {
-        // Use a generic approach to create a tuple from database columns
-        // We'll create a generic tuple and let the metadata handle the conversion
-        auto create_tuple_from_columns = [&]() {
-            int column_count = BaseOperation<DAO>::m_statement.getColumnCount();
+        constexpr auto fc = DAO::metadata_type::field_count;
+        typename DAO::entity_type entity{};
+        auto tie = glz::to_tie(entity);
 
-            // Create a vector to hold generic values, then convert to tuple in metadata
-            std::vector<std::variant<std::string, int64_t, double, bool, std::monostate>> generic_values;
-            generic_values.reserve(column_count);
-
-            for (int i = 0; i < column_count; ++i) {
-                SQLite::Column column = BaseOperation<DAO>::m_statement.getColumn(i);
-
-                switch (column.getType()) {
-                    case SQLITE_INTEGER:
-                        generic_values.emplace_back(column.getInt64());
-                        break;
-                    case SQLITE_FLOAT:
-                        generic_values.emplace_back(column.getDouble());
-                        break;
-                    case SQLITE_TEXT:
-                        generic_values.emplace_back(column.getString());
-                        break;
-                    case SQLITE_NULL:
-                        generic_values.emplace_back(std::monostate{});
-                        break;
-                    default:
-                        generic_values.emplace_back(std::string{});
-                        break;
+        [&]<std::size_t... I>(std::index_sequence<I...>) {
+            (([&]<std::size_t Idx>() {
+                using FieldType = std::decay_t<decltype(glz::get<Idx>(tie))>;
+                auto col = BaseOperation<DAO>::m_statement.getColumn(static_cast<int>(Idx));
+                if (col.isNull()) {
+                    glz::get<Idx>(tie) = FieldType{};
+                } else if constexpr (std::is_same_v<FieldType, std::string>) {
+                    glz::get<Idx>(tie) = col.getString();
+                } else if constexpr (std::is_same_v<FieldType, bool>) {
+                    glz::get<Idx>(tie) = col.getInt64() != 0;
+                } else if constexpr (std::is_enum_v<FieldType>) {
+                    glz::get<Idx>(tie) = static_cast<FieldType>(col.getInt64());
+                } else if constexpr (std::is_integral_v<FieldType>) {
+                    glz::get<Idx>(tie) = static_cast<FieldType>(col.getInt64());
+                } else if constexpr (std::is_floating_point_v<FieldType>) {
+                    glz::get<Idx>(tie) = static_cast<FieldType>(col.getDouble());
+                } else if constexpr (requires { typename FieldType::value_type; } && std::is_same_v<FieldType, std::optional<typename FieldType::value_type>>) {
+                    using InnerType = typename FieldType::value_type;
+                    if constexpr (std::is_same_v<InnerType, std::string>) {
+                        glz::get<Idx>(tie) = FieldType{col.getString()};
+                    } else if constexpr (std::is_integral_v<InnerType>) {
+                        glz::get<Idx>(tie) = FieldType{static_cast<InnerType>(col.getInt64())};
+                    } else if constexpr (std::is_floating_point_v<InnerType>) {
+                        glz::get<Idx>(tie) = FieldType{static_cast<InnerType>(col.getDouble())};
+                    } else if constexpr (std::is_enum_v<InnerType>) {
+                        glz::get<Idx>(tie) = FieldType{static_cast<InnerType>(col.getInt64())};
+                    }
                 }
-            }
+            }.template operator()<I>()), ...);
+        }(std::make_index_sequence<fc>{});
 
-            return generic_values;
-        };
-
-        auto values = create_tuple_from_columns();
-
-        // Convert the generic values to a proper tuple using the metadata
-        return BaseOperation<DAO>::m_dao->metadata().create_entity_from_generic_values(values);
+        return entity;
     }
 };
-
-// Helper to remove element from tuple by index
-template <std::size_t N, typename Tuple, std::size_t... Is>
-auto remove_element_impl(Tuple&& t, std::index_sequence<Is...>) {
-    // This creates a new tuple by taking elements from the original tuple
-    // based on the index sequence, effectively skipping index N.
-    return std::make_tuple(std::get<(Is < N ? Is : Is + 1)>(std::forward<Tuple>(t))...);
-}
-
-template <std::size_t N, typename... Args>
-auto remove_element(const std::tuple<Args...>& t) {
-    static_assert(N < sizeof...(Args), "Index out of bounds for tuple.");
-    // Create an index sequence for the new tuple (one element less).
-    return remove_element_impl<N>(t, std::make_index_sequence<sizeof...(Args) - 1>{});
-}
 
 
 /**
@@ -302,57 +283,50 @@ auto remove_element(const std::tuple<Args...>& t) {
  */
 template<typename DAO>
 class Update : public BaseOperation<DAO> {
-    std::vector<std::string> m_non_pk_columns;
+    static constexpr auto field_count = DAO::metadata_type::field_count;
 
     using BaseOperation<DAO>::m_dao;
 public:
-    // Constructor for UPDATE by primary key - compiles statement once
     explicit Update(std::shared_ptr<DAO> dao)
-        : BaseOperation<DAO>("", std::move(dao)) {
-        
-        // Build non-primary-key columns list
-        for (size_t i = 0; i < m_dao->metadata().column_names.size(); ++i) {
-            if (i != m_dao->metadata().primary_key_index) {
-                m_non_pk_columns.push_back(m_dao->metadata().column_names[i]);
-            }
-        }
-        
-        // Build WHERE clause for primary key and compile statement
-        std::string where_clause = m_dao->metadata().primary_key_name + " = ?";
-        std::string sql = QueryBuilder::update_where(m_dao->name(), m_non_pk_columns, where_clause);
-        BaseOperation<DAO>::m_statement = SQLite::Statement(m_dao->database(), sql);
-    }
-    
+        : BaseOperation<DAO>(std::move(dao), [](const DAO& d) {
+            constexpr auto names = DAO::metadata_type::column_names();
+            std::array<std::string_view, field_count - 1> non_pk_cols;
+            size_t j = 0;
+            [&]<std::size_t... I>(std::index_sequence<I...>) {
+                (([&]<std::size_t Idx>() {
+                    if (Idx != DAO::metadata_type::primary_key_index) {
+                        non_pk_cols[j++] = std::get<Idx>(names);
+                    }
+                }.template operator()<I>()), ...);
+            }(std::make_index_sequence<field_count>{});
+            std::string where_clause = std::string(DAO::metadata_type::primary_key_name) + " = ?";
+            return sql::update_where(d.name(), non_pk_cols, where_clause);
+        })
+    {}
+
     // Execute update using primary key from entity
     void operator()(const typename DAO::entity_type& entity) {
-        auto all_values = m_dao->metadata().extract_values_as_tuple(entity);
+        auto all_values = glz::to_tie(entity);
 
         // Reset statement before binding
         BaseOperation<DAO>::m_statement.reset();
 
-        // Use tuple_size to get the number of elements
-        constexpr auto tuple_size = std::tuple_size_v<decltype(all_values)>;
-
-        // Bind non-primary key values first
         int param_index = 1;
         [&]<std::size_t... I>(std::index_sequence<I...>) {
-            auto bind_if_not_pk = [&]<std::size_t Idx>() mutable {
-                if (Idx != m_dao->metadata().primary_key_index) {
-                    BaseOperation<DAO>::bind_parameter(param_index++, std::get<Idx>(all_values));
+            (([&]<std::size_t Idx>() {
+                if (Idx != DAO::metadata_type::primary_key_index) {
+                    BaseOperation<DAO>::bind_parameter(param_index++, glz::get<Idx>(all_values));
                 }
-            };
-            (bind_if_not_pk.template operator()<I>(), ...);
-        }(std::make_index_sequence<tuple_size>{});
+            }.template operator()<I>()), ...);
+        }(std::make_index_sequence<field_count>{});
 
-        // Bind primary key value for WHERE clause using tuple access
         [&]<std::size_t... I>(std::index_sequence<I...>) {
-            auto bind_pk = [&]<std::size_t Idx>() {
-                if (Idx == m_dao->metadata().primary_key_index) {
-                    BaseOperation<DAO>::bind_parameter(param_index, std::get<Idx>(all_values));
+            (([&]<std::size_t Idx>() {
+                if (Idx == DAO::metadata_type::primary_key_index) {
+                    BaseOperation<DAO>::bind_parameter(param_index, glz::get<Idx>(all_values));
                 }
-            };
-            (bind_pk.template operator()<I>(), ...);
-        }(std::make_index_sequence<tuple_size>{});
+            }.template operator()<I>()), ...);
+        }(std::make_index_sequence<field_count>{});
 
         BaseOperation<DAO>::m_statement.exec();
     }
@@ -368,7 +342,7 @@ class Delete : public BaseOperation<DAO> {
 public:
     // Constructor compiles DELETE statement once with condition
     Delete(std::shared_ptr<DAO> dao, const QueryCondition& condition = {})
-        : BaseOperation<DAO>(QueryBuilder::delete_where(dao->name(), condition.sql()), std::move(dao))
+        : BaseOperation<DAO>(std::move(dao), [&condition](const DAO& d) { return sql::delete_where(d.name(), condition.sql()); })
         , m_required_param_count(condition.parameter_count())
     {}
     
@@ -378,7 +352,6 @@ public:
         if (sizeof...(args) != m_required_param_count) {
             throw std::logic_error("Delete requires exactly " + std::to_string(m_required_param_count) + " parameters, got " + std::to_string(sizeof...(args)));
         }
-//        std::vector<QueryValue> params = {QueryValue(std::forward<Args>(args))...};
         BaseOperation<DAO>::bind_parameters(std::forward<Args>(args)...);
         BaseOperation<DAO>::m_statement.exec();
     }
@@ -392,15 +365,9 @@ class Count : public BaseOperation<DAO> {
     size_t m_required_param_count;
     
 public:
-    // Constructor for COUNT(*) - compiles statement once
-    // explicit Count(std::shared_ptr<DAO> dao)
-    //     : BaseOperation<DAO>(QueryBuilder::select_count(dao->name()), std::move(dao))
-    //     , m_required_param_count(0)
-    // {}
-    
     // Constructor for COUNT(*) WHERE condition - compiles statement once
     Count(std::shared_ptr<DAO> dao, const QueryCondition& condition = {})
-        : BaseOperation<DAO>(QueryBuilder::select_count_where(dao->name(), condition.sql()), std::move(dao))
+        : BaseOperation<DAO>(std::move(dao), [&condition](const DAO& d) { return sql::select_count_where(d.name(), condition.sql()); })
         , m_required_param_count(condition.parameter_count()) {}
     
     // Execute count query - accepts variable arguments pack

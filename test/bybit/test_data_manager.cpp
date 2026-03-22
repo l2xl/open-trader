@@ -104,7 +104,7 @@ TEST_CASE("ByBitDataManager receives orderbook", "[bybit][integration]")
     std::promise<size_t> promise;
     auto future = promise.get_future();
 
-    fixture.manager->SubscribeOrderBook("BTCUSDC", [&promise](const std::deque<OrderBookLevel>& levels) {
+    fixture.manager->SubscribeOrderBook("BTCUSDC", [&promise](const std::vector<OrderBookLevel>& levels) {
         static bool fired = false;
         if (!fired) {
             fired = true;
