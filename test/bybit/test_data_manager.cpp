@@ -66,56 +66,60 @@ TEST_CASE("ByBitDataManager receives instrument list", "[bybit][integration]")
     std::promise<size_t> promise;
     auto future = promise.get_future();
 
-    fixture.manager->SubscribeInstrumentList([&promise](const std::deque<InstrumentInfo>& instruments) {
-        static bool fired = false;
-        if (!fired) {
-            fired = true;
-            std::clog << "Received " << instruments.size() << " instruments" << std::endl;
-            promise.set_value(instruments.size());
-        }
-    });
+    auto sub = datahub::make_data_subscription<InstrumentInfo>(
+        [&promise](datahub::update_kind, const std::deque<InstrumentInfo>& data) {
+            static bool fired = false;
+            if (!fired) {
+                fired = true;
+                std::clog << "Received " << data.size() << " instruments" << std::endl;
+                promise.set_value(data.size());
+            }
+        });
+
+    fixture.manager->SubscribeInstrumentList(sub);
 
     auto status = future.wait_for(std::chrono::seconds(10));
     REQUIRE(status == std::future_status::ready);
     REQUIRE(future.get() > 0);
 }
 
-TEST_CASE("ByBitDataManager receives public trades", "[bybit][integration]")
+TEST_CASE("ByBitDataManager receives public trades and orderbook", "[bybit][integration]")
 {
-    std::promise<size_t> promise;
-    auto future = promise.get_future();
+    std::promise<size_t> pt_promise;
+    auto pt_future = pt_promise.get_future();
 
-    fixture.manager->SubscribePublicTrades("BTCUSDC", [&promise](const std::deque<PublicTrade>& trades) {
-        static bool fired = false;
-        if (!fired) {
-            fired = true;
-            std::clog << "Received " << trades.size() << " public trades" << std::endl;
-            promise.set_value(trades.size());
-        }
-    });
+    auto pt_sub = datahub::make_data_subscription<PublicTrade>(
+        [&pt_promise](datahub::update_kind, const std::deque<PublicTrade>& data) {
+            static bool fired = false;
+            if (!fired) {
+                fired = true;
+                std::clog << "Received " << data.size() << " public trades" << std::endl;
+                pt_promise.set_value(data.size());
+            }
+        });
 
-    auto status = future.wait_for(std::chrono::seconds(25));
-    REQUIRE(status == std::future_status::ready);
-    REQUIRE(future.get() > 0);
-}
+    std::promise<size_t> ob_promise;
+    auto ob_future = ob_promise.get_future();
 
-TEST_CASE("ByBitDataManager receives orderbook", "[bybit][integration]")
-{
-    std::promise<size_t> promise;
-    auto future = promise.get_future();
+    auto ob_sub = datahub::make_data_subscription<OrderBookLevel>(
+        [&ob_promise](datahub::update_kind, const std::deque<OrderBookLevel>& data) {
+            static bool fired = false;
+            if (!fired) {
+                fired = true;
+                std::clog << "Received " << data.size() << " orderbook levels" << std::endl;
+                ob_promise.set_value(data.size());
+            }
+        });
 
-    fixture.manager->SubscribeOrderBook("BTCUSDC", [&promise](const std::vector<OrderBookLevel>& levels) {
-        static bool fired = false;
-        if (!fired) {
-            fired = true;
-            std::clog << "Received " << levels.size() << " orderbook levels" << std::endl;
-            promise.set_value(levels.size());
-        }
-    });
+    fixture.manager->SubscribeInstrument("BTCUSDC", ob_sub, pt_sub);
 
-    auto status = future.wait_for(std::chrono::seconds(25));
-    REQUIRE(status == std::future_status::ready);
-    REQUIRE(future.get() > 0);
+    auto pt_status = pt_future.wait_for(std::chrono::seconds(25));
+    REQUIRE(pt_status == std::future_status::ready);
+    REQUIRE(pt_future.get() > 0);
+
+    auto ob_status = ob_future.wait_for(std::chrono::seconds(25));
+    REQUIRE(ob_status == std::future_status::ready);
+    REQUIRE(ob_future.get() > 0);
 }
 
 namespace SQLite {

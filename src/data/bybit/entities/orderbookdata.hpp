@@ -21,11 +21,11 @@ namespace scratcher::bybit {
 
 // ByBit WebSocket orderbook snapshot/delta payload
 struct OrderBookData {
-    std::string s;                                  // Symbol
-    std::deque<scratcher::OrderBookLevel> b;        // Bids (positive size)
-    std::deque<scratcher::OrderBookLevel> a;        // Asks (positive size from wire, negate for domain)
-    uint64_t u{0};                                  // Update ID
-    uint64_t seq{0};                                // Cross sequence
+    std::string s;                        // Symbol
+    std::vector<OrderBookLevel> b;        // Bids (positive size)
+    std::vector<OrderBookLevel> a;        // Asks (positive size from wire, negate for domain)
+    uint64_t u{0};                        // Update ID
+    uint64_t seq{0};                      // Cross sequence
 };
 
 } // namespace scratcher::bybit

@@ -23,6 +23,8 @@ const char* const HTTP_HOST = "--http-host";
 const char* const HTTP_PORT = "--http-port";
 const char* const STREAM_HOST = "--stream-host";
 const char* const STREAM_PORT = "--stream-port";
+const char* const API_KEY = "--api-key";
+const char* const API_SECRET = "--api-secret";
 }
 Config::Config(int argc, const char *const argv[])
 {
@@ -66,6 +68,8 @@ Config::Config(int argc, const char *const argv[])
     bybit->add_option(HTTP_PORT, m_http_port, "ByBit exchange HTTP API port")->configurable(true);
     bybit->add_option(STREAM_HOST, m_stream_host, "ByBit exchange web-socket stream API host")->configurable(true);
     bybit->add_option(STREAM_PORT, m_stream_port, "ByBit exchange web-socket stream API port")->configurable(true);
+    bybit->add_option(API_KEY, m_api_key, "ByBit API key")->configurable(true)->envname("BYBIT_API_KEY");
+    bybit->add_option(API_SECRET, m_api_secret, "ByBit API secret")->configurable(true)->envname("BYBIT_API_SECRET");
 
     try {
         mApp.parse(argc, argv);

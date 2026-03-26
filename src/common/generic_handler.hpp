@@ -58,7 +58,14 @@ public:
     ~generic_handler() override = default;
 
     void handle_data(data_type data) override
-    { m_data_handler(std::forward<data_type>(data)); }
+    {
+        try {
+            m_data_handler(std::forward<data_type>(data));
+        }
+        catch (std::exception& e) {
+            base::handle_error(std::current_exception());
+        }
+    }
 };
 
 }

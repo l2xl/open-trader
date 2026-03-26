@@ -161,42 +161,21 @@ TEST_CASE("Orderbook pipeline processes snapshot and deltas", "[bybit][orderbook
     auto sched = scheduler::create(1);
     auto book = OrderBook::Create();
 
-    auto sink = make_data_sink(book, [](const std::exception_ptr&) {});
+    auto ob_acceptor = book->data_acceptor();
 
-    auto snapshot_acceptor = sink->data_acceptor<std::vector<OrderBookLevel>>([](auto orderbook, auto&& levels) {
-        orderbook->Snapshot(std::move(levels));
-        return orderbook->Levels();
-    });
-
-    auto update_acceptor = sink->data_acceptor<std::vector<OrderBookLevel>>();
-
-    auto snapshot_adapter = make_data_adapter<WsApiPayload<OrderBookData>>(
-        [snapshot_acceptor](WsApiPayload<OrderBookData>&& payload) {
+    auto adapter = make_data_adapter<WsApiPayload<OrderBookData>>(
+        [ob_acceptor](WsApiPayload<OrderBookData>&& payload) {
             std::ranges::for_each(payload.data.a, [](auto& ask){ ask.size.negate(); });
 
-            std::vector<OrderBookLevel> levels;
-            levels.reserve(payload.data.b.size() + payload.data.a.size());
-            std::ranges::move(payload.data.b, std::back_inserter(levels));
-            std::ranges::move(payload.data.a, std::back_inserter(levels));
+            if (payload.type == "snapshot")
+                ob_acceptor(std::deque<OrderBookLevel>{});
 
-            snapshot_acceptor(move(levels));
-        },
-        [](WsApiPayload<OrderBookData> payload){ return payload.type == "snapshot"; }
-    );
-    auto update_adapter = make_data_adapter<WsApiPayload<OrderBookData>>(
-        [update_acceptor](WsApiPayload<OrderBookData>&& payload) {
-            std::ranges::for_each(payload.data.a, [](auto& ask){ ask.size.negate(); });
-            std::vector<OrderBookLevel> levels;
-            levels.reserve(payload.data.b.size() + payload.data.a.size());
-            std::ranges::move(payload.data.b, std::back_inserter(levels));
-            std::ranges::move(payload.data.a, std::back_inserter(levels));
+            if (!payload.data.b.empty()) ob_acceptor(std::move(payload.data.b));
+            if (!payload.data.a.empty()) ob_acceptor(std::move(payload.data.a));
+            return true;
+        });
 
-            update_acceptor(move(levels));
-        },
-        [](WsApiPayload<OrderBookData> payload){ return payload.type == "delta"; }
-    );
-
-    auto dispatcher = make_data_dispatcher(sched->io().get_executor(), std::move(snapshot_adapter), move(update_adapter));
+    auto dispatcher = make_data_dispatcher(sched->io().get_executor(), std::move(adapter));
 
     for (size_t step = 0; step < test_vector.size(); ++step) {
         const auto& tv = test_vector[step];

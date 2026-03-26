@@ -1,5 +1,5 @@
 // Scratcher project
-// Copyright (c) 2025 l2xl (l2xl/at/proton.me)
+// Copyright (c) 2025-2026 l2xl (l2xl/at/proton.me)
 // Distributed under the Intellectual Property Reserve License (IPRL)
 // -----BEGIN PGP PUBLIC KEY BLOCK-----
 //
@@ -17,8 +17,9 @@
 #include <functional>
 #include <deque>
 #include <string>
-#include <cstddef>
+#include <memory>
 
+#include "datahub/data_subscription.hpp"
 #include "orderbook.hpp"
 #include "bybit/entities/instrument.hpp"
 #include "bybit/entities/public_trade.hpp"
@@ -28,25 +29,17 @@
 
 namespace scratcher {
 
-using subscription_id = size_t;
-
+// Caller creates subscription with make_data_subscription(handler), then passes weak_ptr to the controller.
+// Dropping the shared_ptr = unsubscribe (RAII).
 struct IDataController
 {
     virtual ~IDataController() = default;
     virtual const std::string& Name() const = 0;
 
-    virtual subscription_id SubscribeInstrumentList(std::function<void(const std::deque<bybit::InstrumentInfo>&)> handler) = 0;
-    virtual void UnsubscribeInstrumentList(subscription_id id) = 0;
-
-    virtual subscription_id SubscribePublicTrades(std::string symbol, std::function<void(const std::deque<bybit::PublicTrade>&)> handler) = 0;
-    virtual void UnsubscribePublicTrades(subscription_id id) = 0;
-
-    virtual subscription_id SubscribeOrderBook(std::string symbol, std::function<void(const std::vector<OrderBookLevel>&)> handler) = 0;
-    virtual void UnsubscribeOrderBook(subscription_id id) = 0;
-
-    virtual void SubscribeOrders(std::function<void(const std::deque<bybit::Order>&)> handler) = 0;
-    virtual void SubscribeTrades(std::function<void(const std::deque<bybit::Trade>&)> handler) = 0;
-    virtual void SubscribeWallet(std::function<void(const bybit::WalletBalance&)> handler) = 0;
+    virtual void SubscribeInstrumentList(std::weak_ptr<datahub::data_subscription<bybit::InstrumentInfo>> sub) = 0;
+    virtual void SubscribeInstrument(std::string symbol, std::weak_ptr<datahub::data_subscription<OrderBookLevel>> ob_sub, std::weak_ptr<datahub::data_subscription<bybit::PublicTrade>> pt_sub) = 0;
+    virtual void SubscribeOrders(std::weak_ptr<datahub::data_subscription<bybit::Order>> sub) = 0;
+    virtual void SubscribeTrades(std::weak_ptr<datahub::data_subscription<bybit::Trade>> sub) = 0;
 
     virtual void PlaceOrder(bybit::OrderRequest request, std::function<void(std::string orderId)> callback) = 0;
     virtual void CancelOrder(const std::string& orderId, const std::string& symbol) = 0;

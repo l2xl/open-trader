@@ -1,5 +1,5 @@
 // Scratcher project
-// Copyright (c) 2025 l2xl (l2xl/at/proton.me)
+// Copyright (c) 2025-2026 l2xl (l2xl/at/proton.me)
 // Distributed under the Intellectual Property Reserve License (IPRL)
 // -----BEGIN PGP PUBLIC KEY BLOCK-----
 //
@@ -72,111 +72,49 @@ struct DataSinkTestFixture {
 
 static DataSinkTestFixture fixture;
 
-TEST_CASE("data_sink with make_data_acceptor - first write", "[datahub][http]")
+TEST_CASE("data_sink deduplication pipeline", "[datahub][http][websocket]")
 {
-    // Container to collect results (pre-populated from DB if any)
-    std::deque<bybit::PublicTrade> trades_cache = fixture.dao->query();
-    size_t initial_count = trades_cache.size();
+    size_t added = 0;
+    auto sink = make_data_sink(fixture.dao,
+        [&added](std::deque<bybit::PublicTrade>&& data) { added = data.size(); },
+        [](std::exception_ptr) {});
 
-    // Create data sink with make_data_acceptor for collecting results
-    auto sink = make_data_sink( fixture.dao, [](const std::exception_ptr&) {} );
-
-    sink->subscribe([&trades_cache](auto&& entities){ std::ranges::move(entities, std::back_inserter(trades_cache)); });
-
-    REQUIRE(sink != nullptr);
-
-    auto entity_acceptor = sink->data_acceptor<std::deque<bybit::PublicTrade>>();
-
-    auto resp_adapter = make_data_adapter<bybit::ApiResponse<bybit::ListResult<bybit::PublicTrade>>>(
-        [=](auto&& resp) { entity_acceptor(std::move(resp.result.list)); }
-    );
-
-    auto dispatcher = make_data_dispatcher(fixture.scheduler->io().get_executor(), resp_adapter);
-
-    dispatcher(http_samples[0]);
-
-    // Let async processing complete
-    std::this_thread::sleep_for(std::chrono::milliseconds(100));
-
-    // Verify results in container (http_samples[0] contains 60 trades)
-    REQUIRE(trades_cache.size() == initial_count + 60);
-    std::cout << "First write: " << trades_cache.size() << " trades in cache (initial: " << initial_count << ", added: 60)" << std::endl;
-}
-
-TEST_CASE("data_sink with make_data_acceptor - second write filters duplicates", "[datahub][http]")
-{
-    // Container pre-populated from DB (should have 60 from first test)
-    std::deque<bybit::PublicTrade> trades_cache = fixture.dao->query();
-    size_t initial_count = trades_cache.size();
-
-    REQUIRE(initial_count == 60);
-
-    auto sink = make_data_sink( fixture.dao, [](const std::exception_ptr&) {} );
-
-    sink->subscribe([&trades_cache](auto&& entities){ std::ranges::move(entities, std::back_inserter(trades_cache)); });
-
-    auto entity_acceptor = sink->data_acceptor<std::deque<bybit::PublicTrade>>();
-
-    auto resp_adapter = make_data_adapter<bybit::ApiResponse<bybit::ListResult<bybit::PublicTrade>>>(
-        [=](auto&& resp) { entity_acceptor(std::move(resp.result.list)); }
-    );
-
-    auto dispatcher = make_data_dispatcher(fixture.scheduler->io().get_executor(), resp_adapter);
-
-    // Send second batch (60 new trades)
-    dispatcher(http_samples[1]);
-
-    std::this_thread::sleep_for(std::chrono::milliseconds(100));
-
-    // Should have 120 total (60 initial + 60 new)
-    REQUIRE(trades_cache.size() == 120);
-    std::cout << "Second write: " << trades_cache.size() << " trades in cache (60 initial + 60 new)" << std::endl;
-}
-
-TEST_CASE("data_sink with websocket and http data", "[datahub][http][websocket]")
-{
-    // Container pre-populated from DB (should have 120 from previous tests)
-    std::deque<bybit::PublicTrade> trades_cache = fixture.dao->query();
-    size_t initial_count = trades_cache.size();
-
-    REQUIRE(initial_count == 120);
-
-    auto sink = make_data_sink( fixture.dao, [](const std::exception_ptr&) {} );
-
-    sink->subscribe([&trades_cache](auto&& entities){ std::ranges::move(entities, std::back_inserter(trades_cache)); });
-
-    auto trades_acceptor = sink->data_acceptor<std::deque<bybit::PublicTrade>>();
-    auto wstrades_acceptor = sink->data_acceptor<std::deque<bybit::WsPublicTrade>>();
-
-    // WebSocket adapter
-    auto ws_adapter = make_data_adapter<bybit::WsApiPayload<std::deque<bybit::WsPublicTrade>>>(
-        [=](auto&& ws_payload) { wstrades_acceptor(std::move(ws_payload.data)); }
-    );
-    auto ws_dispatcher = make_data_dispatcher(fixture.scheduler->io().get_executor(), ws_adapter);
-
-    // HTTP adapter
     auto http_adapter = make_data_adapter<bybit::ApiResponse<bybit::ListResult<bybit::PublicTrade>>>(
-        [=](auto&& resp) { trades_acceptor(std::move(resp.result.list)); }
-    );
+        [&sink](auto&& resp) { sink->accept(std::move(resp.result.list)); return true; });
     auto http_dispatcher = make_data_dispatcher(fixture.scheduler->io().get_executor(), http_adapter);
 
-    // Dispatch websocket messages (first one is subscription confirmation - no data)
-    for (int i = 1; i < 5; ++i) {
-        ws_dispatcher(websock_samples[i]);
+    SECTION("first write stores 60 trades") {
+        http_dispatcher(http_samples[0]);
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        REQUIRE(added == 60);
+        REQUIRE(fixture.dao->count() == 60);
+
+        SECTION("second write filters duplicates, adds 60 new") {
+            added = 0;
+            http_dispatcher(http_samples[1]);
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            REQUIRE(added == 60);
+            REQUIRE(fixture.dao->count() == 120);
+
+            SECTION("websocket trades deduplicate against stored data") {
+                size_t ws_added = 0;
+                auto ws_sink = make_data_sink(fixture.dao,
+                    [&ws_added](std::deque<bybit::PublicTrade>&& data) { ws_added += data.size(); },
+                    [](std::exception_ptr) {});
+
+                auto ws_adapter = make_data_adapter<bybit::WsApiPayload<std::deque<bybit::WsPublicTrade>>>(
+                    [&ws_sink](auto&& ws_payload) { ws_sink->accept(std::move(ws_payload.data)); return true; });
+                auto ws_dispatcher = make_data_dispatcher(fixture.scheduler->io().get_executor(), ws_adapter);
+
+                for (int i = 1; i < 5; ++i)
+                    ws_dispatcher(websock_samples[i]);
+                std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+                REQUIRE(ws_added == 6);
+                REQUIRE(fixture.dao->count() == 126);
+            }
+        }
     }
-
-    std::this_thread::sleep_for(std::chrono::milliseconds(100));
-
-    // 4 websocket messages contain: 2+1+2+1 = 6 trades
-    size_t after_ws = trades_cache.size();
-    REQUIRE(after_ws == initial_count + 6);
-
-    std::cout << "After websocket: " << after_ws << " trades (added 6 from 4 messages)" << std::endl;
-
-    // Verify DB persistence
-    auto db_count = fixture.dao->count();
-    REQUIRE(db_count == after_ws);
-    std::cout << "DB contains: " << db_count << " trades" << std::endl;
 }
 
 namespace SQLite {

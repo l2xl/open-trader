@@ -121,17 +121,25 @@ public:
 
     template <std::ranges::input_range Range, typename Container>
     requires std::convertible_to<std::ranges::range_value_t<Range>, Entity>
+    Container accept(Range&& entities)
+    {
+        Container new_entities;
+        for (auto&& entity : std::forward<Range>(entities)) {
+            if (insert_or_replace(entity))
+                new_entities.emplace_back(std::forward<decltype(entity)>(entity));
+        }
+        return new_entities;
+
+    }
+
+    template <std::ranges::input_range Range, typename Container>
+    requires std::convertible_to<std::ranges::range_value_t<Range>, Entity>
     auto data_acceptor() {
         std::weak_ptr<data_model> ref = this->shared_from_this();
         return [=](Range&& entities)->Container {
-            Container new_entities;
-            if (auto self = ref.lock()) {
-                for (auto&& entity : std::forward<Range>(entities)) {
-                    if (self->insert_or_replace(entity))
-                        new_entities.emplace_back(std::forward<decltype(entity)>(entity));
-                }
-            }
-            return new_entities;
+            if (auto self = ref.lock())
+                return self->accept(std::forward<Range>(entities));
+            return {};
         };
     }
 

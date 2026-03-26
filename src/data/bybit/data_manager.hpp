@@ -1,5 +1,5 @@
 // Scratcher project
-// Copyright (c) 2025 l2xl (l2xl/at/proton.me)
+// Copyright (c) 2025-2026 l2xl (l2xl/at/proton.me)
 // Distributed under the Intellectual Property Reserve License (IPRL)
 // -----BEGIN PGP PUBLIC KEY BLOCK-----
 //
@@ -31,53 +31,53 @@
 #include "connection_context.hpp"
 #include "http_query.hpp"
 #include "websocket.hpp"
-#include "datahub/data_provider.hpp"
+#include "datahub/data_sink.hpp"
+#include "datahub/data_feed.hpp"
 #include "exchange_config.hpp"
 
 namespace scratcher {
 namespace bybit {
 
-using scratcher::subscription_id;
-
 class ByBitDataManager : public IDataController, public std::enable_shared_from_this<ByBitDataManager>
 {
 public:
-    using instrument_provider_type = datahub::data_sink<datahub::data_model<InstrumentInfo, &InstrumentInfo::symbol>>;
-    using pubtrade_provider_type   = datahub::data_sink<datahub::data_model<PublicTrade, &PublicTrade::execId>>;
-    using orderbook_provider_type  = datahub::data_sink<OrderBook>;
-    using order_provider_type      = datahub::data_sink<datahub::data_model<Order, &Order::orderId>>;
-    using trade_provider_type      = datahub::data_sink<datahub::data_model<Trade, &Trade::execId>>;
+    using instrument_sink_type = datahub::data_sink<datahub::data_model<InstrumentInfo, &InstrumentInfo::symbol>>;
+    using orderbook_sink_type  = datahub::data_sink<OrderBook>;
+    using orderbook_sink_ptr   = std::shared_ptr<orderbook_sink_type>;
+    using pubtrade_sink_type   = datahub::data_sink<datahub::data_model<PublicTrade, &PublicTrade::execId>>;
+    using pubtrade_sink_ptr    = std::shared_ptr<pubtrade_sink_type>;
+    using private_order_sink_type = datahub::data_sink<datahub::data_model<Order, &Order::orderId>>;
+    using private_trade_sink_type = datahub::data_sink<datahub::data_model<Trade, &Trade::execId>>;
+
+    using instrument_feed_type = datahub::snapshot_data_feed<InstrumentInfo>;
+
+    using orderbook_feed_type      = datahub::snapshot_data_feed<OrderBookLevel>;
+    using orderbook_feed_ptr       = std::shared_ptr<orderbook_feed_type>;
+    using pubtrade_feed_type       = datahub::sorted_data_feed<PublicTrade, &PublicTrade::time, &PublicTrade::execId>;
+    using pubtrade_feed_ptr        = std::shared_ptr<pubtrade_feed_type>;
+    using private_order_feed_type  = datahub::sorted_data_feed<Order, &Order::updatedTime, &Order::orderId>;
+    using private_trade_feed_type  = datahub::sorted_data_feed<Trade, &Trade::execTime, &Trade::execId>;
 
 private:
     static const std::string BYBIT;
 
     std::shared_ptr<connect::context>          m_context;
     std::shared_ptr<SQLite::Database>          m_db;
-    std::shared_ptr<IExchangeConfig>             m_config;
+    std::shared_ptr<IExchangeConfig>           m_config;
 
-    std::shared_ptr<instrument_provider_type>  m_instrument_provider;
-    std::shared_ptr<connect::http_query>       m_instruments_query;
-    std::shared_ptr<pubtrade_provider_type>    m_pubtrade_provider;
-    std::shared_ptr<orderbook_provider_type>   m_orderbook_provider;
-    std::shared_ptr<order_provider_type>       m_order_provider;
-    std::shared_ptr<trade_provider_type>       m_trade_provider;
+    std::shared_ptr<instrument_feed_type>        m_instrument_feed;
+    std::shared_ptr<private_order_feed_type>     m_private_order_feed;
+    std::shared_ptr<private_trade_feed_type>     m_private_trade_feed;
+
+    std::shared_ptr<connect::http_query>         m_instruments_query;
+    std::shared_ptr<instrument_sink_type>        m_instrument_sink;
 
     std::shared_ptr<connect::websock_connection> m_public_stream;
+    boost::container::flat_map<std::string, std::tuple<orderbook_sink_ptr, orderbook_feed_ptr, pubtrade_sink_ptr, pubtrade_feed_ptr>> m_pubdata_accept;
+
+    std::shared_ptr<private_order_sink_type>     m_private_order_sink;
+    std::shared_ptr<private_trade_sink_type>     m_private_trade_sink;
     std::shared_ptr<connect::websock_connection> m_private_stream;
-
-    size_t m_next_sub_id = 1;
-
-    using instrument_handler = std::function<void(const std::deque<InstrumentInfo>&)>;
-    using trade_handler = std::function<void(const std::deque<PublicTrade>&)>;
-    using orderbook_handler = std::function<void(const std::vector<OrderBookLevel>&)>;
-
-    boost::container::flat_map<subscription_id, instrument_handler> m_instrument_handlers;
-    boost::container::flat_map<std::string, boost::container::flat_map<subscription_id, trade_handler>> m_trade_subs;
-    boost::container::flat_map<std::string, boost::container::flat_map<subscription_id, orderbook_handler>> m_orderbook_subs;
-
-    // symbol -> subscription_id reverse lookup (for unsubscribe)
-    boost::container::flat_map<subscription_id, std::string> m_trade_sub_symbol;
-    boost::container::flat_map<subscription_id, std::string> m_orderbook_sub_symbol;
 
     void SetupInstrumentDataSource();
     void SetupPublicDataSource();
@@ -94,23 +94,10 @@ public:
 
     void HandleError(std::exception_ptr eptr);
 
-    subscription_id SubscribeInstrumentList(std::function<void(const std::deque<InstrumentInfo>&)> handler) override;
-    void UnsubscribeInstrumentList(subscription_id id) override;
-
-    subscription_id SubscribePublicTrades(std::string symbol, std::function<void(const std::deque<PublicTrade>&)> handler) override;
-    void UnsubscribePublicTrades(subscription_id id) override;
-
-    subscription_id SubscribeOrderBook(std::string symbol, std::function<void(const std::vector<OrderBookLevel>&)> handler) override;
-    void UnsubscribeOrderBook(subscription_id id) override;
-
-    void SubscribeOrders(std::function<void(const std::deque<Order>&)> handler) override
-    { m_order_provider->subscribe(std::move(handler)); }
-
-    void SubscribeTrades(std::function<void(const std::deque<Trade>&)> handler) override
-    { m_trade_provider->subscribe(std::move(handler)); }
-
-    void SubscribeWallet(std::function<void(const WalletBalance&)> handler) override
-    { /* TODO: WalletBalance contains nested deque<CoinBalance>, not yet supported by data_model */ }
+    void SubscribeInstrumentList(std::weak_ptr<datahub::data_subscription<InstrumentInfo>> sub) override;
+    void SubscribeInstrument(std::string symbol, std::weak_ptr<datahub::data_subscription<OrderBookLevel>> ob_sub, std::weak_ptr<datahub::data_subscription<PublicTrade>> pt_sub) override;
+    void SubscribeOrders(std::weak_ptr<datahub::data_subscription<Order>> sub) override;
+    void SubscribeTrades(std::weak_ptr<datahub::data_subscription<Trade>> sub) override;
 
     void PlaceOrder(OrderRequest request, std::function<void(std::string orderId)> callback) override;
     void CancelOrder(const std::string& orderId, const std::string& symbol) override;

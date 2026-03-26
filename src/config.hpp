@@ -16,8 +16,9 @@
 #define CONFIG_HPP
 
 #include "cli11/CLI11.hpp"
+#include "exchange_config.hpp"
 
-class Config {
+class Config : public scratcher::IExchangeConfig {
     CLI::App mApp;
 
     size_t mVerbose;
@@ -31,6 +32,9 @@ class Config {
     std::string m_stream_host;
     std::string m_stream_port;
 
+    std::string m_api_key;
+    std::string m_api_secret;
+
 public:
     Config() = delete;
     Config(int argc, const char *const argv[]);
@@ -39,11 +43,15 @@ public:
     bool Trace() const {return mTrace; }
     const std::string& DataDir() const { return mDataDir; }
 
-    const std::string& HttpHost() const { return m_http_host; }
-    const std::string& HttpPort() const { return m_http_port; }
+    const std::string& HttpHost() const override { return m_http_host; }
+    const std::string& HttpPort() const override { return m_http_port; }
 
-    const std::string& StreamHost() const { return m_stream_host; }
-    const std::string& StreamPort() const { return m_stream_port; }
+    const std::string& StreamHost() const override { return m_stream_host; }
+    const std::string& StreamPort() const override { return m_stream_port; }
+
+    const std::string& ApiKey() const override { return m_api_key; }
+    const std::string& ApiSecret() const override { return m_api_secret; }
+    bool HasApiCredentials() const override { return !m_api_key.empty() && !m_api_secret.empty(); }
 };
 
 

@@ -119,23 +119,19 @@ set(core_SOURCES
         src/core/scheduler.hpp
         src/data/buoy_candle.cpp
         src/data/buoy_candle.hpp
-        # DEPRECATED: src/data/bybit.cpp - replaced by datahub stack
-        # DEPRECATED: src/data/bybit.hpp - replaced by datahub stack
         src/data/data_controller.hpp
         src/data/entities/common.hpp
         src/data/entities/common.cpp
         src/data/entities/instrument.hpp
         src/data/entities/trade.hpp
         src/data/entities/orderbook_level.hpp
-        # DEPRECATED: src/data/bybit/stream.cpp - replaced by websock_connection + data_sink
-        # DEPRECATED: src/data/bybit/stream.hpp - replaced by websock_connection + data_sink
+        src/data/entities/iso_time.hpp
         src/data/bybit/data_manager.cpp
         src/data/bybit/data_manager.hpp
         src/data/bybit/error.hpp
         src/data/orderbook.hpp
         src/data/bybit/entities/orderbookdata.hpp
         src/data/bybit/entities/wallet.hpp
-        # DEPRECATED: src/data/bybit/subscription.hpp - absorbed into data_sink pattern
         src/connect/connection_context.hpp
         src/connect/connection_context.cpp
         src/connect/http_query.hpp
@@ -147,6 +143,9 @@ set(core_SOURCES
         src/datahub/query_builder.hpp
         src/datahub/metadata.hpp
         src/datahub/data_sink.hpp
+        src/datahub/data_update.hpp
+        src/datahub/data_subscription.hpp
+        src/datahub/data_feed.hpp
 )
 
 add_library(core STATIC ${core_SOURCES})
@@ -275,6 +274,7 @@ if(NOT ANDROID)
     add_test(test_websocket test/connect/test_websocket.cpp)
     add_test(test_data_sink test/datahub/test_data_sink.cpp)
     add_test(test_data_model test/bybit/test_data_model.cpp)
+    add_test(test_data_sandbox test/datahub/test_data_sandbox.cpp)
     add_test(test_data_manager test/bybit/test_data_manager.cpp)
     add_test(test_orderbook test/bybit/test_orderbook.cpp)
 

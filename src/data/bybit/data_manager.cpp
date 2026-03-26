@@ -1,5 +1,5 @@
 // Scratcher project
-// Copyright (c) 2025 l2xl (l2xl/at/proton.me)
+// Copyright (c) 2025-2026 l2xl (l2xl/at/proton.me)
 // Distributed under the Intellectual Property Reserve License (IPRL)
 // -----BEGIN PGP PUBLIC KEY BLOCK-----
 //
@@ -106,8 +106,10 @@ ByBitDataManager::ByBitDataManager(std::shared_ptr<scheduler> scheduler, std::sh
     : m_context(connect::context::create(scheduler->io()))
     , m_db(std::move(db))
     , m_config(std::move(config))
-{
-}
+    , m_instrument_feed(instrument_feed_type::create())
+    , m_private_order_feed(private_order_feed_type::create())
+    , m_private_trade_feed(private_trade_feed_type::create())
+    { }
 
 std::shared_ptr<ByBitDataManager> ByBitDataManager::Create(std::shared_ptr<scheduler> scheduler, std::shared_ptr<IExchangeConfig> config, std::shared_ptr<SQLite::Database> db)
 {
@@ -116,13 +118,9 @@ std::shared_ptr<ByBitDataManager> ByBitDataManager::Create(std::shared_ptr<sched
 
     auto error_cb = [ref](std::exception_ptr e){ if (auto s = ref.lock()) s->HandleError(e); };
 
-    self->m_instrument_provider = datahub::make_data_sink<InstrumentInfo, &InstrumentInfo::symbol>(self->m_db, error_cb);
-    self->m_pubtrade_provider = datahub::make_data_sink<PublicTrade, &PublicTrade::execId>(self->m_db, error_cb);
-
-    self->m_orderbook_provider = datahub::make_data_sink(OrderBook::Create(), error_cb);
-
-    self->m_order_provider = datahub::make_data_sink<Order, &Order::orderId>(self->m_db, error_cb);
-    self->m_trade_provider = datahub::make_data_sink<Trade, &Trade::execId>(self->m_db, error_cb);
+    self->m_instrument_sink = datahub::make_data_sink<InstrumentInfo, &InstrumentInfo::symbol>(self->m_db, self->m_instrument_feed->data_acceptor<std::deque<InstrumentInfo>>(), error_cb);
+    self->m_private_order_sink = datahub::make_data_sink<Order, &Order::orderId>(self->m_db, self->m_private_order_feed->data_acceptor<std::deque<Order>>(), error_cb);
+    self->m_private_trade_sink = datahub::make_data_sink<Trade, &Trade::execId>(self->m_db, self->m_private_trade_feed->data_acceptor<std::deque<Trade>>(), error_cb);
 
     self->SetupInstrumentDataSource();
     self->SetupPublicDataSource();
@@ -145,23 +143,17 @@ void ByBitDataManager::SetupInstrumentDataSource()
     std::string url = "https://" + m_config->HttpHost() + ":" + m_config->HttpPort() + API_INSTRUMENTS;
     std::clog << "setupInstrumentDataSource: " << url << std::endl;
 
-    auto entity_acceptor = m_instrument_provider->data_acceptor<std::deque<InstrumentInfoAPI>>();
-    auto ref = weak_from_this();
+    auto data_sink = m_instrument_sink->data_acceptor<std::deque<InstrumentInfoAPI>>();
 
     auto resp_adapter = datahub::make_data_adapter<ApiResponse<ListResult<InstrumentInfoAPI>>>(
-        [entity_acceptor, ref](ApiResponse<ListResult<InstrumentInfoAPI>>&& response) mutable {
+        [data_sink = std::move(data_sink)](ApiResponse<ListResult<InstrumentInfoAPI>>&& response) mutable {
             std::clog << "Received " << response.result.list.size() << " instruments from server" << std::endl;
-            std::deque<InstrumentInfo> instruments;
-            for (const auto& api_item : response.result.list)
-                instruments.emplace_back(static_cast<InstrumentInfo>(api_item));
-            entity_acceptor(std::move(response.result.list));
-            if (auto self = ref.lock()) {
-                for (const auto& [id, handler] : self->m_instrument_handlers)
-                    handler(instruments);
-            }
+            data_sink(std::move(response.result.list));
+            return true;
         }
     );
 
+    auto ref = weak_from_this();
     auto dispatcher = datahub::make_data_dispatcher(m_context->io().get_executor(), std::move(resp_adapter));
 
     m_instruments_query = connect::http_query::create(m_context, url, std::move(dispatcher),
@@ -181,45 +173,44 @@ void ByBitDataManager::SetupPublicDataSource()
         "wss://" + m_config->StreamHost() + ":" + m_config->StreamPort() + STREAM_PUBLIC_SPOT,
         datahub::make_data_dispatcher(m_context->io().get_executor(),
 
-            datahub::make_data_adapter<WsApiPayload<std::deque<WsPublicTrade>>>([ref](WsApiPayload<std::deque<WsPublicTrade>>&& payload) mutable {
-                if (auto self = ref.lock()) {
-                    auto symbol = extract_symbol(payload.topic);
-                    std::deque<PublicTrade> trades(payload.data.begin(), payload.data.end());
-                    auto acceptor = self->m_pubtrade_provider->template data_acceptor<std::deque<WsPublicTrade>>();
-                    acceptor(std::move(payload.data));
-                    if (auto it = self->m_trade_subs.find(symbol); it != self->m_trade_subs.end()) {
-                        for (const auto& [id, handler] : it->second)
-                            handler(trades);
-                    }
-                }
-            }),
-
-            datahub::make_data_adapter<WsApiPayload<OrderBookData>>(
-                [ref](WsApiPayload<OrderBookData>&& payload) mutable {
+            datahub::make_data_adapter<WsApiPayload<std::deque<WsPublicTrade>>>(
+                [ref](WsApiPayload<std::deque<WsPublicTrade>>&& payload) {
                     if (auto self = ref.lock()) {
                         auto symbol = extract_symbol(payload.topic);
-
-                        // Negate ask sizes: wire format has positive sizes, domain uses negative for asks
-                        for (auto& ask : payload.data.a)
-                            ask.size = -ask.size;
-
-                        std::deque<scratcher::OrderBookLevel> levels;
-                        std::ranges::move(payload.data.b, std::back_inserter(levels));
-                        std::ranges::move(payload.data.a, std::back_inserter(levels));
-
-                        auto book = self->m_orderbook_provider->model();
-                        if (payload.type == "snapshot") book->Snapshot(levels);
-                        else book->Merge(levels);
-
-                        if (auto it = self->m_orderbook_subs.find(symbol); it != self->m_orderbook_subs.end()) {
-                            const auto& merged = book->Levels();
-                            for (const auto& [id, handler] : it->second)
-                                handler(merged);
+                        if (auto it = self->m_pubdata_accept.find(symbol); it != self->m_pubdata_accept.end()) {
+                            auto& [ob_sink, ob_feed, pt_sink, pt_feed] = it->second;
+                            if (pt_sink) {
+                                pt_sink->accept(payload.data);
+                                return true;
+                            }
                         }
                     }
+                    return false;
+                }),
+
+            datahub::make_data_adapter<WsApiPayload<OrderBookData>>(
+                [ref](WsApiPayload<OrderBookData>&& payload) {
+                    if (auto self = ref.lock()) {
+                        auto symbol = extract_symbol(payload.topic);
+                        if (auto it = self->m_pubdata_accept.find(symbol); it != self->m_pubdata_accept.end()) {
+                            auto& [ob_sink, ob_feed, pt_sink, pt_feed] = it->second;
+                            if (ob_sink) {
+                                for (auto& ask : payload.data.a)
+                                    ask.size = -ask.size;
+
+                                if (payload.type == "snapshot")
+                                    ob_sink->accept(std::vector<OrderBookLevel>{});
+
+                                if (!payload.data.b.empty()) ob_sink->accept(std::move(payload.data.b));
+                                if (!payload.data.a.empty()) ob_sink->accept(std::move(payload.data.a));
+                                return true;
+                            }
+                        }
+                    }
+                    return false;
                 })),
 
-        error_cb);
+                error_cb);
     m_public_stream->set_heartbeat(std::chrono::seconds(20), ping_message);
 }
 
@@ -233,24 +224,16 @@ void ByBitDataManager::SetupPrivateDataSource()
     auto ref = weak_from_this();
     auto error_cb = [ref](std::exception_ptr e){ if (auto s = ref.lock()) s->HandleError(e); };
 
+    auto order_acceptor = m_private_order_sink->data_acceptor<std::deque<Order>>();
+    auto trade_acceptor = m_private_trade_sink->data_acceptor<std::deque<Trade>>();
+
     m_private_stream = connect::websock_connection::create(m_context,
         "wss://" + m_config->StreamHost() + ":" + m_config->StreamPort() + STREAM_PRIVATE,
         datahub::make_data_dispatcher(m_context->io().get_executor(),
-
-            datahub::make_data_adapter<WsApiPayload<std::deque<Order>>>([ref](WsApiPayload<std::deque<Order>>&& payload) mutable {
-                if (auto self = ref.lock()) {
-                    auto acceptor = self->m_order_provider->template data_acceptor<std::deque<Order>>();
-                    acceptor(std::move(payload.data));
-                }
-            }),
-
-            datahub::make_data_adapter<WsApiPayload<std::deque<Trade>>>([ref](WsApiPayload<std::deque<Trade>>&& payload) mutable {
-                if (auto self = ref.lock()) {
-                    auto acceptor = self->m_trade_provider->template data_acceptor<std::deque<Trade>>();
-                    acceptor(std::move(payload.data));
-                }
-            })),
-
+            datahub::make_data_adapter<WsApiPayload<std::deque<Order>>>([order_acceptor = std::move(order_acceptor)](WsApiPayload<std::deque<Order>>&& payload) mutable
+                { order_acceptor(std::move(payload.data)); return true; }),
+            datahub::make_data_adapter<WsApiPayload<std::deque<Trade>>>([trade_acceptor = std::move(trade_acceptor)](WsApiPayload<std::deque<Trade>>&& payload) mutable
+                { trade_acceptor(std::move(payload.data)); return true; })),
         error_cb);
 
     (*m_private_stream)(ws_auth_message(m_config->ApiKey(), m_config->ApiSecret()));
@@ -261,61 +244,42 @@ void ByBitDataManager::SetupPrivateDataSource()
 
 // ─── IDataController subscriptions ───────────────────────────────────────────
 
-subscription_id ByBitDataManager::SubscribeInstrumentList(std::function<void(const std::deque<InstrumentInfo>&)> handler)
+void ByBitDataManager::SubscribeInstrumentList(std::weak_ptr<datahub::data_subscription<InstrumentInfo>> sub)
 {
-    auto id = m_next_sub_id++;
-    m_instrument_handlers.emplace(id, std::move(handler));
+    m_instrument_feed->subscribe(std::move(sub));
     (*m_instruments_query)();
-    return id;
 }
 
-void ByBitDataManager::UnsubscribeInstrumentList(subscription_id id)
+void ByBitDataManager::SubscribeInstrument(std::string symbol, std::weak_ptr<datahub::data_subscription<OrderBookLevel>> ob_sub, std::weak_ptr<datahub::data_subscription<PublicTrade>> pt_sub)
 {
-    m_instrument_handlers.erase(id);
-}
+    auto& [ob_sink, ob_feed, pt_sink, pt_feed] = m_pubdata_accept[symbol];
+    auto ref = weak_from_this();
+    auto error_cb = [ref](std::exception_ptr e){ if (auto s = ref.lock()) s->HandleError(e); };
 
-subscription_id ByBitDataManager::SubscribePublicTrades(std::string symbol, std::function<void(const std::deque<PublicTrade>&)> handler)
-{
-    auto id = m_next_sub_id++;
-    m_trade_subs[symbol].emplace(id, std::move(handler));
-    m_trade_sub_symbol.emplace(id, symbol);
-    (*m_public_stream)(subscribe_message("publicTrade." + symbol));
-    return id;
-}
-
-void ByBitDataManager::UnsubscribePublicTrades(subscription_id id)
-{
-    if (auto sym_it = m_trade_sub_symbol.find(id); sym_it != m_trade_sub_symbol.end()) {
-        auto& sym_map = m_trade_subs[sym_it->second];
-        sym_map.erase(id);
-        if (sym_map.empty()) {
-            (*m_public_stream)(unsubscribe_message("publicTrade." + sym_it->second));
-            m_trade_subs.erase(sym_it->second);
-        }
-        m_trade_sub_symbol.erase(sym_it);
+    if (!ob_feed) {
+        ob_feed = orderbook_feed_type::create();
+        ob_sink = datahub::make_data_sink(OrderBook::Create(), ob_feed->template data_acceptor<std::vector<OrderBookLevel>>(), error_cb);
+        (*m_public_stream)(subscribe_message("orderbook.50." + symbol));
     }
-}
+    ob_feed->subscribe(std::move(ob_sub));
 
-subscription_id ByBitDataManager::SubscribeOrderBook(std::string symbol, std::function<void(const std::vector<OrderBookLevel>&)> handler)
-{
-    auto id = m_next_sub_id++;
-    m_orderbook_subs[symbol].emplace(id, std::move(handler));
-    m_orderbook_sub_symbol.emplace(id, symbol);
-    (*m_public_stream)(subscribe_message("orderbook.50." + symbol));
-    return id;
-}
-
-void ByBitDataManager::UnsubscribeOrderBook(subscription_id id)
-{
-    if (auto sym_it = m_orderbook_sub_symbol.find(id); sym_it != m_orderbook_sub_symbol.end()) {
-        auto& sym_map = m_orderbook_subs[sym_it->second];
-        sym_map.erase(id);
-        if (sym_map.empty()) {
-            (*m_public_stream)(unsubscribe_message("orderbook.50." + sym_it->second));
-            m_orderbook_subs.erase(sym_it->second);
-        }
-        m_orderbook_sub_symbol.erase(sym_it);
+    if (!pt_feed) {
+        pt_feed = pubtrade_feed_type::create();
+        auto model = datahub::data_model<PublicTrade, &PublicTrade::execId>::create(m_db, "_" + symbol);
+        pt_sink = datahub::make_data_sink(std::move(model), pt_feed->data_acceptor<std::deque<PublicTrade>>(), std::move(error_cb));
+        (*m_public_stream)(subscribe_message("publicTrade." + symbol));
     }
+    pt_feed->subscribe(std::move(pt_sub));
+}
+
+void ByBitDataManager::SubscribeOrders(std::weak_ptr<datahub::data_subscription<Order>> sub)
+{
+    m_private_order_feed->subscribe(std::move(sub));
+}
+
+void ByBitDataManager::SubscribeTrades(std::weak_ptr<datahub::data_subscription<Trade>> sub)
+{
+    m_private_trade_feed->subscribe(std::move(sub));
 }
 
 // ─── Order management ─────────────────────────────────────────────────────────
