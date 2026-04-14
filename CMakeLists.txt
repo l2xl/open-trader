@@ -107,6 +107,9 @@ else()
     set(ELEMENTS_AVAILABLE OFF)
 endif()
 
+# Add Skia graphics library (downloaded via CPM, built with GN+Ninja in release mode)
+include(cmake/SkiaBuild.cmake)
+
 set(core_SOURCES
         src/common/exchange_config.hpp
         src/common/currency.hpp
@@ -202,7 +205,7 @@ add_executable(elscratcher
             src/config.hpp
             src/config.cpp
     )
-target_link_libraries(elscratcher PRIVATE elements core glaze::glaze)
+target_link_libraries(elscratcher PRIVATE elements core glaze::glaze Skia::skia)
 
 # Copy Elements font resources for elscratcher
 set(ELEMENTS_FONT_DIR "${elements_SOURCE_DIR}/resources/fonts")
