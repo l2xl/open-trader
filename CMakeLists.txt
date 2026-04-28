@@ -110,6 +110,9 @@ endif()
 # Add Skia graphics library (downloaded via CPM, built with GN+Ninja in release mode)
 include(cmake/SkiaBuild.cmake)
 
+# Add ThorVG vector graphics library (downloaded via CPM, built with Meson+Ninja)
+include(cmake/ThorvgBuild.cmake)
+
 set(core_SOURCES
         src/common/exchange_config.hpp
         src/common/currency.hpp
@@ -314,6 +317,13 @@ if(NOT ANDROID)
     add_test(test_data_manager test/bybit/test_data_manager.cpp)
     add_test(test_orderbook test/data/test_orderbook.cpp)
     add_test(test_bybit_orderbook test/bybit/test_orderbook.cpp)
+
+    # ThorVG render test — links only Catch2 + ThorVG (+ cairo for the bridge test)
+    if(THORVG_AVAILABLE AND CAIRO_FOUND)
+        add_executable(test_thorvg test/render/test_thorvg.cpp)
+        target_link_libraries(test_thorvg PRIVATE Catch2::Catch2WithMain Thorvg::thorvg ${CAIRO_LIBRARIES})
+        target_include_directories(test_thorvg PRIVATE ${CAIRO_INCLUDE_DIRS})
+    endif()
 
 endif()
 
