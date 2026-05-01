@@ -5,54 +5,52 @@
 #include "time_ruler.hpp"
 
 #include <algorithm>
-#include <chrono>
 
-#include "chart_panel.hpp"
+#include <thorvg.h>
+
+#include "instrument_panel.hpp"
 
 namespace scratcher::cockpit {
 
 namespace {
 
-uint64_t PickTickPeriod(uint64_t window_ms)
-{
-    using namespace std::chrono;
-    uint64_t day  = duration_cast<milliseconds>(days{1}).count();
-    uint64_t hour = duration_cast<milliseconds>(hours{1}).count();
-    uint64_t min  = duration_cast<milliseconds>(minutes{1}).count();
-    uint64_t sec  = duration_cast<milliseconds>(seconds{1}).count();
-
-    if (window_ms / day  >= 3) return day;
-    if (window_ms / hour >= 3) return hour;
-    if (window_ms / min  >= 3) return min;
-    if (window_ms / sec  >= 3) return sec;
-    return 0;
-}
+constexpr int kLabelPadding = 4;
 
 }
 
-void TimeRuler::CalculateSize(IChartPanel& w)
+void TimeRuler::CalculateSize(InstrumentContentPanel& panel)
 {
-    PixelRect& r = w.MutableClientRect();
-    int reserve = mTextHeight * 2 + mTextHeight / 2 + 1;
-    r.bottom = std::max(r.top, r.bottom - reserve);
+    const float font_size = panel.DefaultFontSize();
+    mReservedHeight = static_cast<int>(font_size * 1.2f) + kLabelPadding * 2;
+
+    PixelRect& rect = panel.MutableClientRect();
+    rect.bottom = std::max(rect.top, rect.bottom - mReservedHeight);
 }
 
-void TimeRuler::CalculatePaint(IChartPanel& w)
+void TimeRuler::EmitChanges(InstrumentContentPanel& panel)
 {
-    const PixelRect& rect = w.GetClientRect();
-    if (rect.empty()) {
-        mTicks.clear();
-        return;
-    }
+    auto* scene = panel.UiScene();
+    if (!scene) return;
 
-    mAxisY = rect.bottom + 1;
-    mTickY2 = mAxisY + mTextHeight / 4;
-    mTickY1 = mTickY2 - mTextHeight / 2;
-    mAxisLeft = rect.left;
-    mAxisRight = rect.right;
+    const PixelRect& rect = panel.GetClientRect();
+    const float axis_y = static_cast<float>(rect.bottom) + 0.5f;
 
-    uint64_t period = PickTickPeriod(w.GetDataViewRect().w);
-    mTicks = period ? w.GetTimeTicksMs(period) : std::vector<uint64_t>{};
+    auto* axis = tvg::Shape::gen();
+    axis->moveTo(static_cast<float>(rect.left), axis_y);
+    axis->lineTo(static_cast<float>(rect.right), axis_y);
+    axis->strokeFill(180, 180, 180, 255);
+    axis->strokeWidth(1.0f);
+    scene->add(axis);
+
+    auto* label = tvg::Text::gen();
+    label->font(panel.DefaultFontName());
+    label->size(panel.DefaultFontSize());
+    label->text("Time");
+    label->fill(200, 200, 200);
+    const float label_x = static_cast<float>(rect.left) + static_cast<float>(kLabelPadding);
+    const float label_y = axis_y + panel.DefaultFontSize() + static_cast<float>(kLabelPadding);
+    label->translate(label_x, label_y);
+    scene->add(label);
 }
 
 }

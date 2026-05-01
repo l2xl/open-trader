@@ -13,88 +13,125 @@
 
 #include "elements_instrument_panel.hpp"
 
-#include "content_panel.hpp"
-#include "currency.hpp"
-#include "scratch_panel.hpp"
-#include "time_ruler.hpp"
-#include "price_ruler.hpp"
-#include "scratchers/margin.hpp"
-#include "quote_scratcher.hpp"
-#include "price_indicator.hpp"
+#include <algorithm>
+#include <cstdint>
+#include <vector>
+
+#include <cairo/cairo.h>
+#include <elements.hpp>
 
 namespace scratcher::elements {
 
 namespace el = cycfi::elements;
 
-namespace {
-
-std::optional<bybit::InstrumentInfo> FindInstrument(const std::weak_ptr<IDataController>& weak, const std::string& symbol)
+class ChartElement : public el::element
 {
-    auto controller = weak.lock();
-    if (!controller) return {};
-    const auto& cache = controller->getInstrumentsFeed().get_snapshot();
-    for (const auto& info : cache) {
-        if (info.symbol == symbol) return info;
+    std::weak_ptr<cockpit::InstrumentContentPanel> mPanel;
+    int mWidth = 0;
+    int mHeight = 0;
+    int mStride = 0;
+    std::vector<uint8_t> mPixels;
+    cairo_surface_t* mSurface = nullptr;
+
+public:
+    explicit ChartElement(std::weak_ptr<cockpit::InstrumentContentPanel> panel)
+        : mPanel(std::move(panel))
+    {}
+
+    ~ChartElement() override
+    {
+        if (mSurface) cairo_surface_destroy(mSurface);
     }
-    return {};
-}
 
-std::shared_ptr<ScratchPanel> PopulateMarketGraph(std::weak_ptr<el::view> view,
-                         std::weak_ptr<IDataController> controller,
-                         const std::string& symbol,
-                         std::shared_ptr<el::deck_composite> work_area)
-{
-    auto info_opt = FindInstrument(controller, symbol);
-    if (!info_opt) return {};
+    el::view_limits limits(el::basic_context const&) const override
+    {
+        return {{120.0f, 80.0f}, {el::full_extent, el::full_extent}};
+    }
 
-    currency<uint64_t> price_point(info_opt->tickSize);
-    currency<uint64_t> volume_point(info_opt->basePrecision);
+    void layout(el::context const& ctx) override
+    {
+        const int w = static_cast<int>(ctx.bounds.width());
+        const int h = static_cast<int>(ctx.bounds.height());
+        if (w <= 0 || h <= 0) return;
+        if (w == mWidth && h == mHeight) return;
 
-    auto panel = ScratchPanel::Create(view, controller, symbol, price_point, volume_point);
-    panel->AddScratcher(std::make_shared<TimeRuler>());
-    panel->AddScratcher(std::make_shared<PriceRuler>(price_point));
-    panel->AddScratcher(std::make_shared<cockpit::Margin>(0.05));
-    panel->AddQuoteScratcher(std::make_shared<QuoteScratcher>(std::chrono::seconds{60}));
-    panel->AddScratcher(std::make_shared<PriceIndicator>(price_point));
+        mWidth = w;
+        mHeight = h;
+        mStride = cairo_format_stride_for_width(CAIRO_FORMAT_ARGB32, w);
+        mPixels.assign(static_cast<size_t>(mStride) * h, 0);
 
-    work_area->clear();
-    work_area->push_back(el::share(el::hold(panel)));
-    work_area->select(0);
-    return panel;
-}
+        if (mSurface) cairo_surface_destroy(mSurface);
+        mSurface = cairo_image_surface_create_for_data(mPixels.data(), CAIRO_FORMAT_ARGB32, w, h, mStride);
 
-}
+        if (auto panel = mPanel.lock()) {
+            panel->SetTarget(reinterpret_cast<uint32_t*>(mPixels.data()),
+                             static_cast<uint32_t>(mStride / 4),
+                             static_cast<uint32_t>(w),
+                             static_cast<uint32_t>(h));
+            panel->OnSize(w, h);
+        }
+    }
+
+    void draw(el::context const& ctx) override
+    {
+        auto panel = mPanel.lock();
+        if (!panel || !mSurface) return;
+
+        panel->Render();
+        cairo_surface_mark_dirty(mSurface);
+
+        cairo_t* cr = &ctx.canvas.cairo_context();
+        cairo_save(cr);
+        cairo_set_source_surface(cr, mSurface, ctx.bounds.left, ctx.bounds.top);
+        cairo_rectangle(cr, ctx.bounds.left, ctx.bounds.top, ctx.bounds.width(), ctx.bounds.height());
+        cairo_fill(cr);
+        cairo_restore(cr);
+    }
+};
 
 ElementsInstrumentPanel::ElementsInstrumentPanel(cockpit::PanelType type,
-    std::weak_ptr<el::view> view,
-    std::weak_ptr<IDataController> controller,
-    InstrumentPanelWidgets widgets,
-    EnsurePrivate)
-    : InstrumentPanel(type, std::move(controller))
+                                                 std::weak_ptr<el::view> view,
+                                                 std::weak_ptr<IDataController> controller,
+                                                 InstrumentPanelWidgets widgets,
+                                                 EnsurePrivate)
+    : cockpit::InstrumentContentPanel(type, std::move(controller))
     , mView(std::move(view))
     , mWidgets(std::move(widgets))
 {}
 
-std::shared_ptr<ElementsInstrumentPanel> ElementsInstrumentPanel::Create(cockpit::PanelType type, std::weak_ptr<el::view> view, std::weak_ptr<IDataController> controller, InstrumentPanelWidgets widgets)
+ElementsInstrumentPanel::~ElementsInstrumentPanel() = default;
+
+std::shared_ptr<ElementsInstrumentPanel> ElementsInstrumentPanel::Create(cockpit::PanelType type,
+                                                                         std::weak_ptr<el::view> view,
+                                                                         std::weak_ptr<IDataController> controller,
+                                                                         InstrumentPanelWidgets widgets)
 {
     auto self = std::make_shared<ElementsInstrumentPanel>(type, std::move(view), std::move(controller), std::move(widgets), EnsurePrivate{});
-    self->InitSubscription();
+    self->InitInstrumentSubscription(self);
+
+    self->mChartElement = std::make_shared<ChartElement>(std::weak_ptr<cockpit::InstrumentContentPanel>(self));
+
+    if (self->mWidgets.workArea) {
+        self->mWidgets.workArea->clear();
+        self->mWidgets.workArea->push_back(el::share(el::hold(self->mChartElement)));
+        self->mWidgets.workArea->select(0);
+    }
+
     return self;
 }
 
 void ElementsInstrumentPanel::SetDataReady(bool ready)
 {
-    std::weak_ptr ref = std::static_pointer_cast<ElementsInstrumentPanel>(shared_from_this());
-
+    std::weak_ptr ref = weak_from_this();
     PostToUi([ref, ready] {
-        if (auto self = ref.lock()) {
-            auto& deck = self->mWidgets.overlayDeck;
-            if (!deck || deck->size() < 2) return;
-            deck->select(ready ? 1 : 0);
-            if (auto v = self->mView.lock()) {
-                v->layout();
-                v->refresh();
-            }
+        auto self = ref.lock();
+        if (!self) return;
+        auto& deck = self->mWidgets.overlayDeck;
+        if (!deck || deck->size() < 2) return;
+        deck->select(ready ? 1 : 0);
+        if (auto v = self->mView.lock()) {
+            v->layout();
+            v->refresh();
         }
     });
 }
@@ -109,8 +146,7 @@ void ElementsInstrumentPanel::OnInstrumentsReady(std::vector<std::string> symbol
 {
     if (!mWidgets.SetInstruments) return;
 
-    std::weak_ptr ref = shared_from_this();
-
+    std::weak_ptr ref = weak_from_this();
     mWidgets.SetInstruments(symbols, [ref](std::string sym) {
         if (auto self = ref.lock())
             self->SelectSymbol(std::move(sym));
@@ -127,20 +163,10 @@ void ElementsInstrumentPanel::OnSymbolSelected(const std::string& symbol)
     if (mWidgets.SetTitle)
         mWidgets.SetTitle(symbol);
 
-    if (Type() == cockpit::PanelType::MarketGraph && mWidgets.workArea) {
-        mScratchPanel = PopulateMarketGraph(mView, mController, symbol, mWidgets.workArea);
-    }
-
     if (auto v = mView.lock()) {
         v->layout();
         v->refresh();
     }
-}
-
-void ElementsInstrumentPanel::Update()
-{
-    std::weak_ptr<ScratchPanel> weak = mScratchPanel;
-    PostToUi([weak]{ if (auto p = weak.lock()) p->Update(); });
 }
 
 } // namespace scratcher::elements

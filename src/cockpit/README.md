@@ -14,9 +14,10 @@ The content panels may be of two types:
   * Orderbook diagram
   * Indicator graphs
 
+Read [scratchers/README.md](scratchers/README.md) for design details
+
 * Table panels
   * Private orders
   * Private Trades
   * Account balances
 
-In the future the Trader Cockpit will provide API for automated trading bots and AI assistant.

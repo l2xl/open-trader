@@ -154,17 +154,11 @@ set(core_SOURCES
         src/datahub/data_feed.hpp
         src/datahub/data_condition.hpp
         src/cockpit/pixel_rect.hpp
-        src/cockpit/chart_panel.hpp
         src/cockpit/scratcher.hpp
-        src/cockpit/scratchers/quote_scratcher.hpp
-        src/cockpit/scratchers/quote_scratcher.cpp
         src/cockpit/scratchers/time_ruler.hpp
         src/cockpit/scratchers/time_ruler.cpp
         src/cockpit/scratchers/price_ruler.hpp
         src/cockpit/scratchers/price_ruler.cpp
-        src/cockpit/scratchers/price_indicator.hpp
-        src/cockpit/scratchers/margin.hpp
-        src/cockpit/scratchers/margin.cpp
 )
 
 add_library(core STATIC ${core_SOURCES})
@@ -217,24 +211,11 @@ add_executable(elscratcher
             src/app/elements/panel_node.cpp
             src/cockpit/trade_cockpit.hpp
             src/cockpit/trade_cockpit.cpp
-            src/app/elements/cairo_skia_bridge.hpp
-            src/app/elements/cairo_skia_bridge.cpp
-            src/app/elements/default_typeface.hpp
-            src/app/elements/default_typeface.cpp
-            src/app/elements/scratch_panel.hpp
-            src/app/elements/scratch_panel.cpp
-            src/app/elements/time_ruler.hpp
-            src/app/elements/time_ruler.cpp
-            src/app/elements/price_ruler.hpp
-            src/app/elements/price_ruler.cpp
-            src/app/elements/quote_scratcher.hpp
-            src/app/elements/quote_scratcher.cpp
-            src/app/elements/price_indicator.hpp
-            src/app/elements/price_indicator.cpp
             src/config.hpp
             src/config.cpp
     )
-target_link_libraries(elscratcher PRIVATE elements core glaze::glaze Skia::skia)
+target_link_libraries(elscratcher PRIVATE elements core glaze::glaze Thorvg::thorvg ${CAIRO_LIBRARIES})
+target_include_directories(elscratcher PRIVATE ${CAIRO_INCLUDE_DIRS})
 
 # Copy Elements font resources for elscratcher
 set(ELEMENTS_FONT_DIR "${elements_SOURCE_DIR}/resources/fonts")
@@ -273,6 +254,7 @@ target_link_libraries(core PRIVATE OpenSSL::SSL)
 target_link_libraries(core PRIVATE TBB::tbb)
 target_link_libraries(core PUBLIC SQLiteCpp)
 target_link_libraries(core PUBLIC glaze::glaze)
+target_link_libraries(core PUBLIC Thorvg::thorvg)
 
 #target_link_libraries(exscratcher PRIVATE core Qt6::Widgets Qt6::Svg)
 

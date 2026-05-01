@@ -5,7 +5,6 @@
 #pragma once
 
 #include <chrono>
-#include <cstdint>
 
 #include "buoy_candle.hpp"
 #include "scratcher.hpp"
@@ -18,7 +17,7 @@ protected:
     BuoyCandleQuotes mQuotes;
 
 public:
-    explicit QuoteScratcher(std::chrono::milliseconds buoy_duration)
+    explicit QuoteScratcher(milliseconds buoy_duration)
         : mQuotes(static_cast<uint64_t>(buoy_duration.count()))
     {}
 

@@ -4,17 +4,16 @@
 
 #pragma once
 
-#include "chart_panel.hpp"
-
 namespace scratcher::cockpit {
+
+class InstrumentContentPanel;
 
 struct Scratcher
 {
     virtual ~Scratcher() = default;
 
-    virtual void CalculateSize(IChartPanel&) = 0;
-    virtual void CalculatePaint(IChartPanel&) = 0;
-    virtual void Paint(IChartPanel&) const = 0;
+    virtual void CalculateSize(InstrumentContentPanel&) {}
+    virtual void EmitChanges(InstrumentContentPanel&) = 0;
 };
 
 }

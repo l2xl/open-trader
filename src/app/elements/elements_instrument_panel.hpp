@@ -13,8 +13,8 @@
 
 #pragma once
 
-#include <memory>
 #include <functional>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -25,19 +25,26 @@
 
 namespace scratcher::elements {
 
-class ScratchPanel;
+class ChartElement;
 
-class ElementsInstrumentPanel : public cockpit::InstrumentPanel
+class ElementsInstrumentPanel : public cockpit::InstrumentContentPanel, public std::enable_shared_from_this<ElementsInstrumentPanel>
 {
     struct EnsurePrivate {};
 
 public:
-    ElementsInstrumentPanel(cockpit::PanelType type, std::weak_ptr<cycfi::elements::view> view, std::weak_ptr<IDataController> controller, InstrumentPanelWidgets widgets, EnsurePrivate);
+    ElementsInstrumentPanel(cockpit::PanelType type,
+                            std::weak_ptr<cycfi::elements::view> view,
+                            std::weak_ptr<IDataController> controller,
+                            InstrumentPanelWidgets widgets,
+                            EnsurePrivate);
+    ~ElementsInstrumentPanel() override;
 
-    static std::shared_ptr<ElementsInstrumentPanel> Create(cockpit::PanelType type, std::weak_ptr<cycfi::elements::view> view, std::weak_ptr<IDataController> controller, InstrumentPanelWidgets widgets);
+    static std::shared_ptr<ElementsInstrumentPanel> Create(cockpit::PanelType type,
+                                                           std::weak_ptr<cycfi::elements::view> view,
+                                                           std::weak_ptr<IDataController> controller,
+                                                           InstrumentPanelWidgets widgets);
 
     void SetDataReady(bool ready) override;
-    void Update() override;
 
 protected:
     void PostToUi(std::function<void()> fn) override;
@@ -47,7 +54,7 @@ protected:
 private:
     std::weak_ptr<cycfi::elements::view> mView;
     InstrumentPanelWidgets mWidgets;
-    std::weak_ptr<ScratchPanel> mScratchPanel;
+    std::shared_ptr<ChartElement> mChartElement;
 };
 
 } // namespace scratcher::elements
