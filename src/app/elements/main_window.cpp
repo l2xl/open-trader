@@ -4,7 +4,7 @@
 // -----BEGIN PGP PUBLIC KEY BLOCK-----
 //
 // mDMEYdxcVRYJKwYBBAHaRw8BAQdAfacBVThCP5QDPEgSbSIudtpJS4Y4Imm5dzaN
-// lM1HTem0IkwyIFhsIChsMnhsKSA8bDJ4bEBwcm90b21tYWlsLmNvbT6IkAQTFggA
+// lM1HTem0IkwyIFhsIChsMnhsKSA8bDJ4bEBwcm90b25tYWlsLmNvbT6IkAQTFggA
 // OBYhBKRCfUyWnduCkisNl+WRcOaCK79JBQJh3FxVAhsDBQsJCAcCBhUKCQgLAgQW
 // AgMBAh4BAheAAAoJEOWRcOaCK79JDl8A/0/AjYVbAURZJXP3tHRgZyYyN9txT6mW
 // 0bYCcOf0rZ4NAQDoFX4dytPDvcjV7ovSQJ6dzvIoaRbKWGbHRCufrm5QBA==
@@ -12,7 +12,7 @@
 // -----END PGP PUBLIC KEY BLOCK-----
 
 #include "main_window.hpp"
-#include "elements_instrument_panel.hpp"
+#include "instrument_panel_element.hpp"
 
 namespace scratcher::elements {
 
@@ -63,13 +63,10 @@ private:
     std::shared_ptr<cycfi::elements::deck_composite> mOverlayDeck;
 };
 
-
-
-
 } // anonymous namespace
 
 MainWindow::MainWindow(UiBuilder& builder)
-    : mApp("Scratcher")
+    : mApp("Exchange Scratchpad")
     , mWindow(mApp.name())
     , mBuilder(builder)
 {
@@ -86,6 +83,11 @@ MainWindow::~MainWindow()
 
 int MainWindow::Run()
 {
+    PanelType initialType = PanelType::Empty;
+    if (mDefaultPanelTypeAccessor)
+        initialType = mDefaultPanelTypeAccessor();
+    OnNewTab(initialType);
+
     mApp.run();
     return 0;
 }
@@ -100,9 +102,14 @@ void MainWindow::SetOnPanelClosed(on_panel_closed_t handler)
     mOnPanelClosed = std::move(handler);
 }
 
-void MainWindow::SetDataControllerAccessor(data_controller_accessor_t accessor)
+void MainWindow::SetDefaultPanelTypeAccessor(default_panel_type_accessor_t accessor)
 {
-    mDataControllerAccessor = std::move(accessor);
+    mDefaultPanelTypeAccessor = std::move(accessor);
+}
+
+void MainWindow::SetInstrumentPanelDefaultsAccessor(instrument_panel_defaults_accessor_t accessor)
+{
+    mInstrumentPanelDefaultsAccessor = std::move(accessor);
 }
 
 void MainWindow::SetupContent()
@@ -135,11 +142,9 @@ void MainWindow::SetupContent()
             el::vstretch(1.0, el::hold(tab_bar_element))
         )
     );
-
-    OnNewTab(PanelType::Empty);
 }
 
-void MainWindow::OnNewTab(PanelType type)
+std::shared_ptr<LeafPanelNode> MainWindow::OnNewTab(PanelType type)
 {
     auto leaf = MakeLeaf(type);
 
@@ -149,6 +154,7 @@ void MainWindow::OnNewTab(PanelType type)
 
     tab_id tid = mTabBar->AddTab(PanelTypeName(type), el::share(el::hold(slot)));
     mTabRoots[tid] = TabRoot{leaf, slot};
+    return leaf;
 }
 
 std::shared_ptr<LeafPanelNode> MainWindow::MakeLeaf(PanelType type)
@@ -170,11 +176,11 @@ std::shared_ptr<LeafPanelNode> MainWindow::MakeLeaf(PanelType type)
 
     const bool instrumentBased = (type == PanelType::MarketGraph || type == PanelType::OrderBook);
 
-    if (instrumentBased && mDataControllerAccessor) {
+    if (instrumentBased) {
         auto widgets = mBuilder.MakeInstrumentPanel(type, std::move(onClose), std::move(onSplit));
         element = widgets.root;
-        std::weak_ptr<IDataController> ctl = mDataControllerAccessor();
-        panel = ElementsInstrumentPanel::Create(type, mView, std::move(ctl), std::move(widgets));
+        const auto defaults = mInstrumentPanelDefaultsAccessor ? mInstrumentPanelDefaultsAccessor() : InstrumentPanelDefaults{};
+        panel = InstrumentPanelElement::Create(type, defaults.candle_period, defaults.candle_width_pixels, mView, std::move(widgets));
     } else {
         auto [elem, deck] = mBuilder.MakePanel(type, std::move(onChangeType), std::move(onClose), std::move(onSplit));
         element = std::move(elem);
@@ -241,7 +247,6 @@ void MainWindow::HandleClose(std::shared_ptr<LeafPanelNode> node)
 
 void MainWindow::ReplaceNode(std::shared_ptr<PanelNode> oldNode, std::shared_ptr<PanelNode> newNode)
 {
-    // Check if oldNode is a tab root
     for (auto& [tid, root] : mTabRoots) {
         if (root.node == oldNode) {
             root.node = newNode;
@@ -255,10 +260,8 @@ void MainWindow::ReplaceNode(std::shared_ptr<PanelNode> oldNode, std::shared_ptr
         }
     }
 
-    // Search for parent split containing oldNode
     for (auto& [tid, root] : mTabRoots) {
         if (!root.node->IsLeaf() && ContainsNode(root.node.get(), oldNode.get())) {
-            // DFS to find the direct parent split
             std::function<std::shared_ptr<SplitPanelNode>(std::shared_ptr<PanelNode>)> findParent;
             findParent = [&](std::shared_ptr<PanelNode> current) -> std::shared_ptr<SplitPanelNode> {
                 if (current->IsLeaf()) return nullptr;

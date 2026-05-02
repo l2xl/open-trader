@@ -4,10 +4,15 @@
 
 #pragma once
 
+#include <algorithm>
 #include <chrono>
+#include <cstdint>
+#include <optional>
+#include <ranges>
 
 #include "buoy_candle.hpp"
 #include "scratcher.hpp"
+#include "timedef.hpp"
 
 namespace scratcher::cockpit {
 
@@ -15,6 +20,7 @@ class QuoteScratcher : public Scratcher
 {
 protected:
     BuoyCandleQuotes mQuotes;
+    uint64_t mLastPrice = 0;
 
 public:
     explicit QuoteScratcher(milliseconds buoy_duration)
@@ -26,11 +32,38 @@ public:
     uint64_t BuoyDuration() const { return mQuotes.buoy_duration(); }
     std::optional<uint64_t> FirstBuoyTimestamp() const { return mQuotes.first_buoy_timestamp(); }
 
-    void CalculateSize(IChartPanel&) override {}
-    void CalculatePaint(IChartPanel&) override;
+    template <std::ranges::forward_range Range>
+    requires requires(std::ranges::range_value_t<Range> trade) {
+        trade.trade_time;
+        trade.price_points;
+        trade.volume_points;
+    }
+    void IngestTrades(const Range& trades);
 
-private:
-    void IngestNewTrades(IChartPanel&);
+    void EmitChanges(InstrumentContentPanel& panel) override;
 };
+
+template <std::ranges::forward_range Range>
+requires requires(std::ranges::range_value_t<Range> trade) {
+    trade.trade_time;
+    trade.price_points;
+    trade.volume_points;
+}
+void QuoteScratcher::IngestTrades(const Range& trades)
+{
+    auto begin = std::ranges::begin(trades);
+    const auto end = std::ranges::end(trades);
+
+    if (mQuotes.last_trade_timestamp()) {
+        const uint64_t last_seen = *mQuotes.last_trade_timestamp();
+        begin = std::upper_bound(begin, end, last_seen,
+            [](uint64_t v, const auto& t) { return v < get_timestamp(t.trade_time); });
+    }
+    if (begin == end) return;
+
+    const uint64_t last_price = mQuotes.last_trade_timestamp() ? mLastPrice : begin->price_points;
+    const uint64_t now_ts = get_timestamp(std::chrono::utc_clock::now());
+    mLastPrice = mQuotes.AppendTrades(std::ranges::subrange(begin, end), now_ts, last_price);
+}
 
 }

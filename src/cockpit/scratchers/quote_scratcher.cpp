@@ -4,53 +4,84 @@
 
 #include "quote_scratcher.hpp"
 
-#include <algorithm>
-#include <limits>
+#include <cstdint>
 
-#include "entities/trade.hpp"
-#include "timedef.hpp"
+#include <thorvg.h>
+
+#include "instrument_panel.hpp"
 
 namespace scratcher::cockpit {
 
-void QuoteScratcher::IngestNewTrades(IChartPanel& w)
+namespace {
+
+struct Color { uint8_t r, g, b, a; };
+
+constexpr Color kGreen{40, 200, 80, 255};
+constexpr Color kRed{220, 50, 50, 255};
+
+constexpr Color BuoyColor(uint64_t prev, uint64_t curr)
 {
-    auto lock = w.LockTradeCache();
-    const auto& cache = w.TradeCache();
-    if (cache.empty()) return;
-
-    auto start = cache.begin();
-    if (mQuotes.last_trade_timestamp()) {
-        uint64_t last = *mQuotes.last_trade_timestamp();
-        start = std::upper_bound(cache.begin(), cache.end(), last,
-            [](uint64_t v, const data::PublicTrade& t) { return v < get_timestamp(t.trade_time); });
-    }
-    if (start == cache.end()) return;
-
-    uint64_t last_price = (start != cache.begin() ? (start - 1)->price_points : start->price_points);
-    uint64_t now_ts = get_timestamp(std::chrono::utc_clock::now());
-    mQuotes.AppendTrades(std::ranges::subrange(start, cache.end()), now_ts, last_price);
+    return curr >= prev ? kGreen : kRed;
 }
 
-void QuoteScratcher::CalculatePaint(IChartPanel& w)
+inline float SubToFloat(uint64_t value, uint64_t floor)
 {
-    IngestNewTrades(w);
+    return static_cast<float>(static_cast<int64_t>(value) - static_cast<int64_t>(floor));
+}
 
-    uint64_t maxv = 0;
-    uint64_t minv = std::numeric_limits<uint64_t>::max();
-    for (const auto& b : mQuotes.quotes()) {
-        maxv = std::max(maxv, b.max);
-        minv = std::min(minv, b.min);
+void EmitLine(tvg::Scene* scene, float x1, float y1, float x2, float y2, Color c)
+{
+    auto* line = tvg::Shape::gen();
+    line->moveTo(x1, y1);
+    line->lineTo(x2, y2);
+    line->strokeFill(c.r, c.g, c.b, c.a);
+    line->strokeWidth(1.0f);
+    scene->add(line);
+}
+
+void EmitBuoy(tvg::Scene* scene, uint64_t buoy_ts, uint64_t duration,
+              const BuoyCandleQuotes::candle_t& curr,
+              const BuoyCandleQuotes::candle_t& prev,
+              const SceneFloor& floor)
+{
+    const float mid_x = SubToFloat(buoy_ts + duration / 2, floor.time_ms);
+    const float left_x = SubToFloat(buoy_ts, floor.time_ms);
+    const float right_x = SubToFloat(buoy_ts + duration, floor.time_ms);
+
+    const float min_y = SubToFloat(curr.min, floor.price_points);
+    const float max_y = SubToFloat(curr.max, floor.price_points);
+    const float mean_y = SubToFloat(curr.mean, floor.price_points);
+
+    EmitLine(scene, mid_x, min_y, mid_x, mean_y, BuoyColor(prev.min, curr.min));
+    EmitLine(scene, mid_x, mean_y, mid_x, max_y, BuoyColor(prev.max, curr.max));
+    EmitLine(scene, left_x, mean_y, right_x, mean_y, BuoyColor(prev.mean, curr.mean));
+}
+
+}
+
+void QuoteScratcher::EmitChanges(InstrumentContentPanel& panel)
+{
+    auto* scene = panel.LogicalScene();
+    if (!scene) return;
+    if (!mQuotes.first_buoy_timestamp()) return;
+
+    const SceneFloor& floor = panel.GetSceneFloor();
+    const uint64_t duration = mQuotes.buoy_duration();
+    uint64_t buoy_ts = *mQuotes.first_buoy_timestamp();
+
+    BuoyCandleQuotes::candle_t prev{};
+    bool has_prev = false;
+
+    for (const auto& buoy : mQuotes.quotes()) {
+        EmitBuoy(scene, buoy_ts, duration, buoy, has_prev ? prev : buoy, floor);
+        prev = buoy;
+        has_prev = true;
+        buoy_ts += duration;
     }
-    auto active = mQuotes.active_candle();
+
+    const auto active = mQuotes.active_candle();
     if (active.volume > 0) {
-        maxv = std::max(maxv, active.max);
-        minv = std::min(minv, active.min);
-    }
-
-    if (minv != std::numeric_limits<uint64_t>::max() && maxv >= minv) {
-        Rectangle& rect = w.MutableDataViewRect();
-        rect.y = minv;
-        rect.h = std::max<uint64_t>(maxv - minv, 1);
+        EmitBuoy(scene, buoy_ts, duration, active, has_prev ? prev : active, floor);
     }
 }
 

@@ -33,7 +33,7 @@
 #include "websocket.hpp"
 #include "datahub/data_sink.hpp"
 #include "datahub/data_feed.hpp"
-#include "exchange_config.hpp"
+#include "cli11/CLI11.hpp"
 
 namespace scratcher {
 namespace bybit {
@@ -64,7 +64,7 @@ private:
 
     std::shared_ptr<connect::context>          m_context;
     std::shared_ptr<SQLite::Database>          m_db;
-    std::shared_ptr<IExchangeConfig>           m_config;
+    CLI::App&                                  m_config;
     db_strand_type                             m_db_strand;
 
     std::shared_ptr<instrument_feed_type>        m_instrument_feed;
@@ -87,10 +87,10 @@ private:
 
     struct ensure_private {};
 public:
-    ByBitDataManager(std::shared_ptr<scheduler> scheduler, std::shared_ptr<IExchangeConfig> config, std::shared_ptr<SQLite::Database> db, ensure_private);
+    ByBitDataManager(std::shared_ptr<scheduler> scheduler, CLI::App& config, std::shared_ptr<SQLite::Database> db, ensure_private);
     ~ByBitDataManager() override = default;
 
-    static std::shared_ptr<ByBitDataManager> Create(std::shared_ptr<scheduler> scheduler, std::shared_ptr<IExchangeConfig> config, std::shared_ptr<SQLite::Database> db);
+    static std::shared_ptr<ByBitDataManager> Create(std::shared_ptr<scheduler> scheduler, CLI::App& config, std::shared_ptr<SQLite::Database> db);
 
     const std::string& Name() const override { return BYBIT; }
 

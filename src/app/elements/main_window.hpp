@@ -4,7 +4,7 @@
 // -----BEGIN PGP PUBLIC KEY BLOCK-----
 //
 // mDMEYdxcVRYJKwYBBAHaRw8BAQdAfacBVThCP5QDPEgSbSIudtpJS4Y4Imm5dzaN
-// lM1HTem0IkwyIFhsIChsMnhsKSA8bDJ4bEBwcm90b21tYWlsLmNvbT6IkAQTFggA
+// lM1HTem0IkwyIFhsIChsMnhsKSA8bDJ4bEBwcm90b25tYWlsLmNvbT6IkAQTFggA
 // OBYhBKRCfUyWnduCkisNl+WRcOaCK79JBQJh3FxVAhsDBQsJCAcCBhUKCQgLAgQW
 // AgMBAh4BAheAAAoJEOWRcOaCK79JDl8A/0/AjYVbAURZJXP3tHRgZyYyN9txT6mW
 // 0bYCcOf0rZ4NAQDoFX4dytPDvcjV7ovSQJ6dzvIoaRbKWGbHRCufrm5QBA==
@@ -13,6 +13,8 @@
 
 #pragma once
 
+#include <chrono>
+#include <cstdint>
 #include <memory>
 #include <functional>
 #include <unordered_map>
@@ -23,16 +25,22 @@
 #include "tab_bar.hpp"
 #include "panel_node.hpp"
 #include "ui_builder.hpp"
-#include "data_controller.hpp"
 
 namespace scratcher::elements {
+
+struct InstrumentPanelDefaults
+{
+    std::chrono::seconds candle_period{60};
+    uint32_t candle_width_pixels = 8;
+};
 
 class MainWindow
 {
 public:
     using on_panel_created_t = std::function<cockpit::panel_id(std::shared_ptr<cockpit::ContentPanel>)>;
     using on_panel_closed_t = std::function<void(cockpit::panel_id)>;
-    using data_controller_accessor_t = std::function<std::shared_ptr<IDataController>()>;
+    using default_panel_type_accessor_t = std::function<cockpit::PanelType()>;
+    using instrument_panel_defaults_accessor_t = std::function<InstrumentPanelDefaults()>;
 
     explicit MainWindow(UiBuilder& builder);
     ~MainWindow();
@@ -41,11 +49,12 @@ public:
 
     void SetOnPanelCreated(on_panel_created_t handler);
     void SetOnPanelClosed(on_panel_closed_t handler);
-    void SetDataControllerAccessor(data_controller_accessor_t accessor);
+    void SetDefaultPanelTypeAccessor(default_panel_type_accessor_t accessor);
+    void SetInstrumentPanelDefaultsAccessor(instrument_panel_defaults_accessor_t accessor);
 
 private:
     void SetupContent();
-    void OnNewTab(cockpit::PanelType type);
+    std::shared_ptr<LeafPanelNode> OnNewTab(cockpit::PanelType type);
 
     std::shared_ptr<LeafPanelNode> MakeLeaf(cockpit::PanelType type);
 
@@ -62,7 +71,8 @@ private:
 
     on_panel_created_t mOnPanelCreated;
     on_panel_closed_t mOnPanelClosed;
-    data_controller_accessor_t mDataControllerAccessor;
+    default_panel_type_accessor_t mDefaultPanelTypeAccessor;
+    instrument_panel_defaults_accessor_t mInstrumentPanelDefaultsAccessor;
 
     std::unique_ptr<TabBar> mTabBar;
 

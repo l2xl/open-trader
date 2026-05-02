@@ -22,6 +22,7 @@
 #include <openssl/evp.h>
 
 #include "data_manager.hpp"
+#include "bybit_config.hpp"
 #include "datahub/data_sink.hpp"
 #include "entities/orderbookdata.hpp"
 #include "common/hex.hpp"
@@ -97,19 +98,19 @@ namespace {
 
 const std::string ByBitDataManager::BYBIT = "ByBit";
 
-ByBitDataManager::ByBitDataManager(std::shared_ptr<scheduler> scheduler, std::shared_ptr<IExchangeConfig> config, std::shared_ptr<SQLite::Database> db, ensure_private)
+ByBitDataManager::ByBitDataManager(std::shared_ptr<scheduler> scheduler, CLI::App& config, std::shared_ptr<SQLite::Database> db, ensure_private)
     : m_context(connect::context::create(scheduler->io()))
     , m_db(std::move(db))
-    , m_config(std::move(config))
+    , m_config(config)
     , m_db_strand(boost::asio::make_strand(m_context->io().get_executor()))
     , m_instrument_feed(instrument_feed_type::create())
     , m_private_order_feed(private_order_feed_type::create())
     , m_private_trade_feed(private_trade_feed_type::create())
     { }
 
-std::shared_ptr<ByBitDataManager> ByBitDataManager::Create(std::shared_ptr<scheduler> scheduler, std::shared_ptr<IExchangeConfig> config, std::shared_ptr<SQLite::Database> db)
+std::shared_ptr<ByBitDataManager> ByBitDataManager::Create(std::shared_ptr<scheduler> scheduler, CLI::App& config, std::shared_ptr<SQLite::Database> db)
 {
-    auto self = std::make_shared<ByBitDataManager>(scheduler, std::move(config), std::move(db), ensure_private{});
+    auto self = std::make_shared<ByBitDataManager>(scheduler, config, std::move(db), ensure_private{});
     std::weak_ptr<ByBitDataManager> ref = self;
 
     auto error_cb = [ref](std::exception_ptr e){ HandleError(ref, e); };
@@ -143,7 +144,7 @@ void ByBitDataManager::HandleError(std::weak_ptr<ByBitDataManager> ref, std::exc
 
 void ByBitDataManager::SetupInstrumentDataSource()
 {
-    const std::string url = "https://" + m_config->HttpHost() + ":" + m_config->HttpPort() + API_INSTRUMENTS;
+    const std::string url = "https://" + m_config.get_option(config_keys::http_host)->as<std::string>() + ":" + m_config.get_option(config_keys::http_port)->as<std::string>() + API_INSTRUMENTS;
     std::clog << "setupInstrumentDataSource: " << url << std::endl;
 
     auto data_sink = m_instrument_sink->data_acceptor<std::deque<InstrumentInfoAPI>>();
@@ -169,7 +170,7 @@ void ByBitDataManager::SetupPublicDataSource()
     auto error_cb = [ref](std::exception_ptr e){ HandleError(ref, e); };
 
     m_public_stream = connect::websock_connection::create(m_context,
-        "wss://" + m_config->StreamHost() + ":" + m_config->StreamPort() + STREAM_PUBLIC_SPOT,
+        "wss://" + m_config.get_option(config_keys::stream_host)->as<std::string>() + ":" + m_config.get_option(config_keys::stream_port)->as<std::string>() + STREAM_PUBLIC_SPOT,
         datahub::make_data_dispatcher(m_context->io().get_executor(),
 
             datahub::make_data_adapter<WsApiPayload<std::deque<WsPublicTrade>>>(
@@ -219,7 +220,9 @@ void ByBitDataManager::SetupPublicDataSource()
 
 void ByBitDataManager::SetupPrivateDataSource()
 {
-    if (!m_config->HasApiCredentials()) {
+    const auto api_key = m_config.get_option(config_keys::api_key)->as<std::string>();
+    const auto api_secret = m_config.get_option(config_keys::api_secret)->as<std::string>();
+    if (api_key.empty() || api_secret.empty()) {
         std::clog << "No API credentials, skipping private stream" << std::endl;
         return;
     }
@@ -231,7 +234,7 @@ void ByBitDataManager::SetupPrivateDataSource()
     auto trade_acceptor = m_private_trade_sink->data_acceptor<std::deque<Trade>>();
 
     m_private_stream = connect::websock_connection::create(m_context,
-        "wss://" + m_config->StreamHost() + ":" + m_config->StreamPort() + STREAM_PRIVATE,
+        "wss://" + m_config.get_option(config_keys::stream_host)->as<std::string>() + ":" + m_config.get_option(config_keys::stream_port)->as<std::string>() + STREAM_PRIVATE,
         datahub::make_data_dispatcher(m_context->io().get_executor(),
             datahub::make_data_adapter<WsApiPayload<std::deque<Order>>>([order_acceptor = std::move(order_acceptor)](WsApiPayload<std::deque<Order>>&& payload) mutable
                 { order_acceptor(std::move(payload.data));}),
@@ -239,7 +242,7 @@ void ByBitDataManager::SetupPrivateDataSource()
                 { trade_acceptor(std::move(payload.data));})),
         error_cb);
 
-    (*m_private_stream)(ws_auth_message(m_config->ApiKey(), m_config->ApiSecret()));
+    (*m_private_stream)(ws_auth_message(api_key, api_secret));
     (*m_private_stream)(subscribe_message("order"));
     (*m_private_stream)(subscribe_message("execution"));
     m_private_stream->set_heartbeat(std::chrono::seconds(20), ping_message);
@@ -292,17 +295,19 @@ void ByBitDataManager::SubscribeTrades(std::weak_ptr<datahub::data_subscription<
 
 void ByBitDataManager::PlaceOrder(OrderRequest request, std::function<void(std::string orderId)> callback)
 {
-    if (!m_config->HasApiCredentials()) {
+    const auto api_key = m_config.get_option(config_keys::api_key)->as<std::string>();
+    const auto api_secret = m_config.get_option(config_keys::api_secret)->as<std::string>();
+    if (api_key.empty() || api_secret.empty()) {
         std::cerr << "PlaceOrder: no API credentials configured" << std::endl;
         return;
     }
 
     std::string body  = glz::write_json(request).value_or("{}");
-    auto headers      = sign_rest_request(m_config->ApiKey(), m_config->ApiSecret(), "5000", body);
+    auto headers      = sign_rest_request(api_key, api_secret, "5000", body);
     auto ref          = weak_from_this();
 
     auto query = connect::http_query::create(m_context, boost::beast::http::verb::post,
-        "https://" + m_config->HttpHost() + ":" + m_config->HttpPort() + "/v5/order/create",
+        "https://" + m_config.get_option(config_keys::http_host)->as<std::string>() + ":" + m_config.get_option(config_keys::http_port)->as<std::string>() + "/v5/order/create",
         [callback](std::string&& response_json) {
             ApiResponse<PlaceOrderResult> resp;
             if (!glz::read<glz::opts{.error_on_unknown_keys = false}>(resp, response_json) && resp.retCode == 0) {
@@ -317,18 +322,20 @@ void ByBitDataManager::PlaceOrder(OrderRequest request, std::function<void(std::
 
 void ByBitDataManager::CancelOrder(const std::string& orderId, const std::string& symbol)
 {
-    if (!m_config->HasApiCredentials()) {
+    const auto api_key = m_config.get_option(config_keys::api_key)->as<std::string>();
+    const auto api_secret = m_config.get_option(config_keys::api_secret)->as<std::string>();
+    if (api_key.empty() || api_secret.empty()) {
         std::cerr << "CancelOrder: no API credentials configured" << std::endl;
         return;
     }
 
     CancelOrderRequest req{.category = "spot", .symbol = symbol, .orderId = orderId};
     std::string body  = glz::write_json(req).value_or("{}");
-    auto headers      = sign_rest_request(m_config->ApiKey(), m_config->ApiSecret(), "5000", body);
+    auto headers      = sign_rest_request(api_key, api_secret, "5000", body);
     auto ref          = weak_from_this();
 
     auto query = connect::http_query::create(m_context, boost::beast::http::verb::post,
-        "https://" + m_config->HttpHost() + ":" + m_config->HttpPort() + "/v5/order/cancel",
+        "https://" + m_config.get_option(config_keys::http_host)->as<std::string>() + ":" + m_config.get_option(config_keys::http_port)->as<std::string>() + "/v5/order/cancel",
         [](std::string&& response_json) { std::clog << "CancelOrder response: " << response_json << std::endl; },
         [ref](std::exception_ptr e){ HandleError(ref, e); });
     (*query)({}, std::move(headers), std::move(body));

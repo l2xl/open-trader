@@ -20,6 +20,7 @@
 
 #include "scheduler.hpp"
 #include "config.hpp"
+#include "config_helper.hpp"
 
 namespace SQLite {
 
@@ -42,7 +43,7 @@ int main(int argc, char* argv[])
         scratcher::elements::UiBuilder builder;
         scratcher::elements::MainWindow window(builder);
 
-        auto cockpit = scratcher::cockpit::TradeCockpit::Create(sched, config, database);
+        auto cockpit = scratcher::cockpit::TradeCockpit::Create(sched, config->App(), database);
 
         window.SetOnPanelCreated([&cockpit](auto panel) {
             return cockpit->RegisterPanel(std::move(panel));
@@ -50,8 +51,14 @@ int main(int argc, char* argv[])
         window.SetOnPanelClosed([&cockpit](scratcher::cockpit::panel_id pid) {
             cockpit->UnregisterPanel(pid);
         });
-        window.SetDataControllerAccessor([&cockpit]() {
-            return cockpit->GetDataController();
+        window.SetDefaultPanelTypeAccessor([&cockpit]() {
+            return cockpit->GetDefaultContentPanelType();
+        });
+        window.SetInstrumentPanelDefaultsAccessor([&cockpit]() {
+            return scratcher::elements::InstrumentPanelDefaults{
+                cockpit->GetDefaultCandlePeriod(),
+                cockpit->GetDefaultCandleWidth(),
+            };
         });
 
         return window.Run();

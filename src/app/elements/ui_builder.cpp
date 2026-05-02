@@ -248,32 +248,15 @@ InstrumentPanelWidgets UiBuilder::MakeInstrumentPanel(PanelType type,
     );
 
     w.workArea = std::make_shared<el::deck_composite>();
-    w.workArea->push_back(
-        el::share(
-            el::layer(
-                el::align_center_middle(
-                    el::label("No instrument selected").font_size(14).font_color(dim_text_color)
-                ),
-                el::box(content_bg_color)
-            )
-        )
-    );
-    w.workArea->select(0);
+    // ChartElement is pushed by ElementsInstrumentPanel::Create as the sole child.
 
-    auto content = el::share(
+    w.root = el::share(
         el::vtile(
             el::hold(header),
             el::vstretch(1.0, el::hold(w.workArea)),
             el::hold(MakePanelFooter(std::move(onSplit)))
         )
     );
-
-    w.overlayDeck = std::make_shared<el::deck_composite>();
-    w.overlayDeck->push_back(MakeWaitingIndicator());
-    w.overlayDeck->push_back(std::move(content));
-    w.overlayDeck->select(0);
-
-    w.root = el::share(el::hold(w.overlayDeck));
 
     return w;
 }

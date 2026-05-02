@@ -27,7 +27,6 @@ namespace scratcher::elements {
 struct InstrumentPanelWidgets
 {
     cycfi::elements::element_ptr root;
-    std::shared_ptr<cycfi::elements::deck_composite> overlayDeck;
     std::shared_ptr<cycfi::elements::deck_composite> workArea;
     std::function<void(const std::vector<std::string>&, std::function<void(std::string)>)> SetInstruments;
     std::function<void(const std::string&)> SetTitle;

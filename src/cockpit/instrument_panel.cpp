@@ -12,6 +12,7 @@
 
 #include "scratchers/price_ruler.hpp"
 #include "scratchers/time_ruler.hpp"
+#include "timedef.hpp"
 
 namespace scratcher::cockpit {
 
@@ -88,43 +89,70 @@ bool LoadDefaultFont()
     return loaded;
 }
 
+tvg_ptr<tvg::Scene> MakeRetainedScene()
+{
+    tvg_ptr<tvg::Scene> scene{tvg::Scene::gen()};
+    scene->ref();
+    return scene;
 }
 
-InstrumentContentPanel::InstrumentContentPanel(PanelType type, std::weak_ptr<IDataController> controller)
-    : ContentPanel(type)
-    , mController(std::move(controller))
+}
+
+InstrumentContentPanel::ThorvgRuntimeRef::ThorvgRuntimeRef()
 {
     ThorvgRuntime::Instance().Acquire();
-    LoadDefaultFont();
-
-    mCanvas = tvg::SwCanvas::gen();
-    BuildSceneTree();
-    InitScratchers();
 }
 
-InstrumentContentPanel::~InstrumentContentPanel()
+InstrumentContentPanel::ThorvgRuntimeRef::~ThorvgRuntimeRef()
 {
-    if (mCanvas) {
-        delete mCanvas;
-    }
     ThorvgRuntime::Instance().Release();
 }
 
-void InstrumentContentPanel::BuildSceneTree()
+InstrumentContentPanel::InstrumentContentPanel(PanelType type, std::chrono::seconds candle_period, uint32_t candle_width_pixels)
+    : ContentPanel(type)
+    , mRuntime{}
+    , mCanvas{tvg::SwCanvas::gen()}
+    , mRootScene{MakeRetainedScene()}
+    , mUiScene{MakeRetainedScene()}
+    , mLogicalCanvasScene{MakeRetainedScene()}
+    , mLogicalScene{MakeRetainedScene()}
+    , mCandlePeriod{candle_period}
+    , mCandleWidthPixels{candle_width_pixels}
 {
-    mRootScene = tvg::Scene::gen();
-    mUiScene = tvg::Scene::gen();
-    mLogicalCanvasScene = tvg::Scene::gen();
-    mLogicalScene = tvg::Scene::gen();
+    LoadDefaultFont();
 
-    mLogicalCanvasScene->add(mLogicalScene);
-    mRootScene->add(mLogicalCanvasScene);
-    mRootScene->add(mUiScene);
+    mLogicalCanvasScene->add(mLogicalScene.get());
+    mRootScene->add(mLogicalCanvasScene.get());
+    mRootScene->add(mUiScene.get());
+    mCanvas->add(mRootScene.get());
 
-    mCanvas->add(mRootScene);
+    if (Type() == PanelType::MarketGraph) {
+        AddScratcher(std::make_shared<TimeRuler>());
+        AddScratcher(std::make_shared<PriceRuler>());
+        mQuoteScratcher = std::make_shared<QuoteScratcher>(std::chrono::milliseconds(mCandlePeriod));
+        AddScratcher(mQuoteScratcher);
+    }
+
+    const uint64_t period_ms = static_cast<uint64_t>(mCandlePeriod.count()) * 1000ull;
+    const uint64_t now_ms = get_timestamp(std::chrono::utc_clock::now());
+    mSceneFloor.time_ms = period_ms > 0 ? (now_ms / period_ms) * period_ms : now_ms;
+
+    const float px_per_ms = period_ms > 0
+        ? static_cast<float>(mCandleWidthPixels) / static_cast<float>(period_ms)
+        : 0.0f;
+    mLogicalScene->transform(tvg::Matrix{px_per_ms, 0.0f, 0.0f,
+                                          0.0f,      0.0f, 0.0f,
+                                          0.0f,      0.0f, 1.0f});
 }
 
-void InstrumentContentPanel::ApplySceneTransforms()
+InstrumentContentPanel::~InstrumentContentPanel() = default;
+
+void InstrumentContentPanel::SetSceneFloor(SceneFloor floor)
+{
+    mSceneFloor = floor;
+}
+
+void InstrumentContentPanel::ApplyOuterSceneTransforms()
 {
     const float w = static_cast<float>(std::max(0, mCanvasWidth));
     const float h = static_cast<float>(std::max(0, mCanvasHeight));
@@ -138,16 +166,26 @@ void InstrumentContentPanel::ApplySceneTransforms()
                                0.0f, 0.0f, 1.0f};
     mRootScene->transform(identity);
     mUiScene->transform(identity);
-    mLogicalScene->transform(identity);
 
     mLogicalCanvasScene->transform(tvg::Matrix{1.0f, 0.0f, 0.0f,
                                                 0.0f, -1.0f, h,
                                                 0.0f, 0.0f, 1.0f});
 }
 
+void InstrumentContentPanel::ApplyLogicalSceneTransform()
+{
+    const float outer_h = static_cast<float>(std::max(0, mCanvasHeight));
+    const float inner_left = static_cast<float>(mInnerDataRect.left);
+    const float inner_bottom = static_cast<float>(mInnerDataRect.bottom);
+
+    const tvg::Matrix cur = mLogicalScene->transform();
+    mLogicalScene->transform(tvg::Matrix{cur.e11, 0.0f,    inner_left,
+                                          0.0f,    cur.e22, outer_h - inner_bottom,
+                                          0.0f,    0.0f,    1.0f});
+}
+
 void InstrumentContentPanel::SetTarget(uint32_t* buffer, uint32_t stride, uint32_t width, uint32_t height)
 {
-    if (!mCanvas) return;
     mCanvas->target(buffer, stride, width, height, tvg::ColorSpace::ARGB8888);
 }
 
@@ -155,17 +193,19 @@ void InstrumentContentPanel::OnSize(int width, int height)
 {
     mCanvasWidth = width;
     mCanvasHeight = height;
-    mClientRect = PixelRect{0, 0, width, height};
+    mInnerDataRect = PixelRect{0, 0, width, height};
 
-    ApplySceneTransforms();
+    ApplyOuterSceneTransforms();
 
     {
         std::shared_lock lock(mScratcherMutex);
         for (const auto& s : mScratchers) s->CalculateSize(*this);
     }
 
-    if (mUiScene) mUiScene->remove();
-    if (mLogicalScene) mLogicalScene->remove();
+    ApplyLogicalSceneTransform();
+
+    mUiScene->remove();
+    mLogicalScene->remove();
 
     {
         std::shared_lock lock(mScratcherMutex);
@@ -175,7 +215,6 @@ void InstrumentContentPanel::OnSize(int width, int height)
 
 void InstrumentContentPanel::Render()
 {
-    if (!mCanvas) return;
     mCanvas->update();
     mCanvas->draw(true);
     mCanvas->sync();
@@ -192,57 +231,29 @@ const char* InstrumentContentPanel::DefaultFontName() const
     return kDefaultFontName;
 }
 
-void InstrumentContentPanel::InitScratchers()
-{
-    if (Type() == PanelType::MarketGraph) {
-        AddScratcher(std::make_shared<TimeRuler>());
-        AddScratcher(std::make_shared<PriceRuler>());
-    }
-}
-
-void InstrumentContentPanel::InitInstrumentSubscription(std::weak_ptr<InstrumentContentPanel> self)
-{
-    mListSub = datahub::make_data_subscription<std::deque<bybit::InstrumentInfo>>(
-        [self](auto /*update*/) {
-            auto p = self.lock();
-            if (!p) return;
-            p->PostToUi([self]() {
-                auto sp = self.lock();
-                if (!sp) return;
-                auto ctl = sp->mController.lock();
-                if (!ctl) return;
-                const auto& snapshot = ctl->getInstrumentsFeed().get_snapshot();
-                std::vector<std::string> symbols;
-                symbols.reserve(snapshot.size());
-                for (const auto& inst : snapshot)
-                    symbols.emplace_back(inst.symbol);
-                sp->OnInstrumentsReady(std::move(symbols));
-            });
-        });
-
-    if (auto ctl = mController.lock())
-        ctl->SubscribeInstrumentList(mListSub);
-}
-
-void InstrumentContentPanel::ResolveInstrument()
-{
-    mInstrument.reset();
-    auto ctl = mController.lock();
-    if (!ctl) return;
-    const auto& snapshot = ctl->getInstrumentsFeed().get_snapshot();
-    for (const auto& info : snapshot) {
-        if (info.symbol == mSymbol) {
-            mInstrument = info;
-            return;
-        }
-    }
-}
-
-void InstrumentContentPanel::SelectSymbol(std::string symbol)
+void InstrumentContentPanel::SetSymbol(std::string symbol)
 {
     mSymbol = std::move(symbol);
-    ResolveInstrument();
-    OnSymbolSelected(mSymbol);
+    OnSymbolChanged(mSymbol);
+}
+
+void InstrumentContentPanel::SetInstrumentList(std::vector<std::string> symbols)
+{
+    mInstrumentList = std::move(symbols);
+    OnInstrumentListChanged(mInstrumentList);
+}
+
+void InstrumentContentPanel::SetInstrumentInfo(std::optional<bybit::InstrumentInfo> info)
+{
+    if (info) mSymbol = info->symbol;
+    mInstrument = std::move(info);
+    OnInstrumentInfoChanged(mInstrument);
+}
+
+void InstrumentContentPanel::EmitUserSymbolSelection(std::string symbol)
+{
+    if (mOnUserSymbolSelection)
+        mOnUserSymbolSelection(std::move(symbol));
 }
 
 } // namespace scratcher::cockpit

@@ -107,14 +107,13 @@ else()
     set(ELEMENTS_AVAILABLE OFF)
 endif()
 
-# Add Skia graphics library (downloaded via CPM, built with GN+Ninja in release mode)
-include(cmake/SkiaBuild.cmake)
-
 # Add ThorVG vector graphics library (downloaded via CPM, built with Meson+Ninja)
 include(cmake/ThorvgBuild.cmake)
 
 set(core_SOURCES
-        src/common/exchange_config.hpp
+        src/common/config_helper.hpp
+        src/data/bybit/bybit_config.hpp
+        src/cockpit/trade_cockpit_config.hpp
         src/common/currency.hpp
         src/common/hex.cpp
         src/common/hex.hpp
@@ -159,6 +158,14 @@ set(core_SOURCES
         src/cockpit/scratchers/time_ruler.cpp
         src/cockpit/scratchers/price_ruler.hpp
         src/cockpit/scratchers/price_ruler.cpp
+        src/cockpit/scratchers/quote_scratcher.hpp
+        src/cockpit/scratchers/quote_scratcher.cpp
+        src/cockpit/content_panel.hpp
+        src/cockpit/content_panel.cpp
+        src/cockpit/instrument_panel.hpp
+        src/cockpit/instrument_panel.cpp
+        src/cockpit/trade_cockpit.hpp
+        src/cockpit/trade_cockpit.cpp
 )
 
 add_library(core STATIC ${core_SOURCES})
@@ -199,18 +206,14 @@ add_executable(elscratcher
             src/app/elements/ui_builder.hpp
             src/app/elements/ui_builder.cpp
             src/app/elements/split_direction.hpp
-            src/cockpit/content_panel.hpp
-            src/cockpit/content_panel.cpp
-            src/cockpit/instrument_panel.hpp
-            src/cockpit/instrument_panel.cpp
-            src/app/elements/elements_instrument_panel.hpp
-            src/app/elements/elements_instrument_panel.cpp
+            src/app/elements/instrument_panel_element.hpp
+            src/app/elements/instrument_panel_element.cpp
+            src/app/elements/pixel_buffer_element.hpp
+            src/app/elements/pixel_buffer_element.cpp
             src/app/elements/tab_bar.hpp
             src/app/elements/tab_bar.cpp
             src/app/elements/panel_node.hpp
             src/app/elements/panel_node.cpp
-            src/cockpit/trade_cockpit.hpp
-            src/cockpit/trade_cockpit.cpp
             src/config.hpp
             src/config.cpp
     )

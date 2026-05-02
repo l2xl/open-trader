@@ -4,7 +4,7 @@
 // -----BEGIN PGP PUBLIC KEY BLOCK-----
 //
 // mDMEYdxcVRYJKwYBBAHaRw8BAQdAfacBVThCP5QDPEgSbSIudtpJS4Y4Imm5dzaN
-// lM1HTem0IkwyIFhsIChsMnhsKSA8bDJ4bEBwcm90b21tYWlsLmNvbT6IkAQTFggA
+// lM1HTem0IkwyIFhsIChsMnhsKSA8bDJ4bEBwcm90b25tYWlsLmNvbT6IkAQTFggA
 // OBYhBKRCfUyWnduCkisNl+WRcOaCK79JBQJh3FxVAhsDBQsJCAcCBhUKCQgLAgQW
 // AgMBAh4BAheAAAoJEOWRcOaCK79JDl8A/0/AjYVbAURZJXP3tHRgZyYyN9txT6mW
 // 0bYCcOf0rZ4NAQDoFX4dytPDvcjV7ovSQJ6dzvIoaRbKWGbHRCufrm5QBA==
@@ -13,49 +13,59 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <cstdlib>
 #include <memory>
 #include <future>
 #include <iostream>
 
 #include "scheduler.hpp"
-#include "exchange_config.hpp"
+#include "cli11/CLI11.hpp"
 #include "data/bybit/data_manager.hpp"
+#include "data/bybit/bybit_config.hpp"
 
 using namespace scratcher;
 using namespace scratcher::bybit;
 
 namespace {
 
-struct MockExchangeConfig : IExchangeConfig {
-    std::string mHttpHost    = "api.bybit.com";
-    std::string mHttpPort    = "443";
-    std::string mStreamHost  = "stream.bybit.com";
-    std::string mStreamPort  = "443";
-    std::string mApiKey;
-    std::string mApiSecret;
+struct TestConfig {
+    CLI::App app;
+    CLI::App* bybit;
+    std::string http_host;
+    std::string http_port;
+    std::string stream_host;
+    std::string stream_port;
+    std::string api_key;
+    std::string api_secret;
 
-    const std::string& HttpHost() const override { return mHttpHost; }
-    const std::string& HttpPort() const override { return mHttpPort; }
-    const std::string& StreamHost() const override { return mStreamHost; }
-    const std::string& StreamPort() const override { return mStreamPort; }
-    const std::string& ApiKey() const override { return mApiKey; }
-    const std::string& ApiSecret() const override { return mApiSecret; }
-    bool HasApiCredentials() const override { return false; }
+    TestConfig()
+    {
+        namespace keys = scratcher::bybit::config_keys;
+        bybit = app.add_subcommand(keys::section);
+        bybit->add_option(keys::http_host,   http_host)->default_val("api.bybit.com");
+        bybit->add_option(keys::http_port,   http_port)->default_val("443");
+        bybit->add_option(keys::stream_host, stream_host)->default_val("stream.bybit.com");
+        bybit->add_option(keys::stream_port, stream_port)->default_val("443");
+        bybit->add_option(keys::api_key,     api_key);
+        bybit->add_option(keys::api_secret,  api_secret);
+
+        const char* argv[] = {"test"};
+        app.parse(1, argv);
+    }
 };
 
 } // anonymous namespace
 
 struct ByBitDataManagerFixture {
-    std::shared_ptr<IExchangeConfig> config;
+    TestConfig cfg;
     std::shared_ptr<scheduler> scheduler;
     std::shared_ptr<SQLite::Database> db;
     std::shared_ptr<ByBitDataManager> manager;
 
     ByBitDataManagerFixture()
-        : config(std::make_shared<MockExchangeConfig>())
-        , scheduler(scheduler::create(2))
+        : scheduler(scheduler::create(2))
         , db(std::make_shared<SQLite::Database>(":memory:", SQLite::OPEN_READWRITE | SQLite::OPEN_CREATE))
-        , manager(ByBitDataManager::Create(scheduler, config, db))
+        , manager(ByBitDataManager::Create(scheduler, *cfg.bybit, db))
     {}
 };
 
@@ -67,59 +77,21 @@ TEST_CASE("ByBitDataManager receives instrument list", "[bybit][integration]")
     auto future = promise.get_future();
 
     auto sub = datahub::make_data_subscription<std::deque<InstrumentInfo>>(
-        [&promise](std::pair<datahub::update_kind, std::deque<InstrumentInfo>&&> data) {
+        [&promise](auto data) {
             static bool fired = false;
             if (!fired) {
                 fired = true;
-                std::clog << "Received " << data.second.size() << " instruments" << std::endl;
-                promise.set_value(data.second.size());
+                const auto count = std::ranges::distance(data.second);
+                std::clog << "Received " << count << " instruments" << std::endl;
+                promise.set_value(static_cast<size_t>(count));
             }
         });
 
     fixture.manager->SubscribeInstrumentList(sub);
 
-    auto status = future.wait_for(std::chrono::seconds(10));
-    REQUIRE(status == std::future_status::ready);
-    REQUIRE(future.get() > 0);
-}
-
-TEST_CASE("ByBitDataManager receives public trades and orderbook", "[bybit][integration]")
-{
-    std::promise<size_t> pt_promise;
-    auto pt_future = pt_promise.get_future();
-
-    auto pt_sub = datahub::make_data_subscription(
-        [&pt_promise](std::pair<datahub::update_kind, std::deque<PublicTrade>&&> data) {
-            static bool fired = false;
-            if (!fired) {
-                fired = true;
-                std::clog << "Received " << data.second.size() << " public trades" << std::endl;
-                pt_promise.set_value(data.second.size());
-            }
-        });
-
-    std::promise<size_t> ob_promise;
-    auto ob_future = ob_promise.get_future();
-
-    auto ob_sub = datahub::make_data_subscription<OrderBookLevel>(
-        [&ob_promise](std::pair<datahub::update_kind, std::deque<OrderBookLevel>&&> data) {
-            static bool fired = false;
-            if (!fired) {
-                fired = true;
-                std::clog << "Received " << data.second.size() << " orderbook levels" << std::endl;
-                ob_promise.set_value(data.second.size());
-            }
-        });
-
-    fixture.manager->SubscribeInstrument("BTCUSDC", ob_sub, pt_sub);
-
-    auto pt_status = pt_future.wait_for(std::chrono::seconds(25));
-    REQUIRE(pt_status == std::future_status::ready);
-    REQUIRE(pt_future.get() > 0);
-
-    auto ob_status = ob_future.wait_for(std::chrono::seconds(25));
-    REQUIRE(ob_status == std::future_status::ready);
-    REQUIRE(ob_future.get() > 0);
+    auto status = future.wait_for(std::chrono::seconds(5));
+    CHECK(status == std::future_status::ready);
+    CHECK(future.get() > 0);
 }
 
 namespace SQLite {

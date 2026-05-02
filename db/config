@@ -4,4 +4,7 @@ http-port=443
 stream-host=stream.bybit.com
 stream-port=443
 [application]
-panels={"type":"tabs", panels:[{"type":"instrument", "symbol":"BTCUSDT"}]}
+default-instrument=BTCUSDT
+default-candle-period=60
+default-candle-width=8
+

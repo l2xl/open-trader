@@ -25,7 +25,7 @@ void PriceRuler::CalculateSize(InstrumentContentPanel& panel)
     const int char_width = static_cast<int>(font_size * 0.55f);
     mReservedWidth = char_width * kLabelChars + kLabelPadding * 2;
 
-    PixelRect& rect = panel.MutableClientRect();
+    PixelRect& rect = panel.MutableInnerDataRect();
     rect.right = std::max(rect.left, rect.right - mReservedWidth);
 }
 
@@ -34,14 +34,14 @@ void PriceRuler::EmitChanges(InstrumentContentPanel& panel)
     auto* scene = panel.UiScene();
     if (!scene) return;
 
-    const PixelRect& rect = panel.GetClientRect();
+    const PixelRect& rect = panel.InnerDataRect();
     const float axis_x = static_cast<float>(rect.right) + 0.5f;
 
     auto* axis = tvg::Shape::gen();
     axis->moveTo(axis_x, static_cast<float>(rect.top));
     axis->lineTo(axis_x, static_cast<float>(rect.bottom));
     axis->strokeFill(180, 180, 180, 255);
-    axis->strokeWidth(1.0f);
+    axis->strokeWidth(0.5f);
     scene->add(axis);
 
     auto* label = tvg::Text::gen();

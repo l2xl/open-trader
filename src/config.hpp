@@ -15,10 +15,13 @@
 #ifndef CONFIG_HPP
 #define CONFIG_HPP
 
-#include "cli11/CLI11.hpp"
-#include "exchange_config.hpp"
+#include <cstdint>
+#include <string>
 
-class Config : public scratcher::IExchangeConfig {
+#include "cli11/CLI11.hpp"
+
+class Config
+{
     CLI::App mApp;
 
     size_t mVerbose;
@@ -35,23 +38,20 @@ class Config : public scratcher::IExchangeConfig {
     std::string m_api_key;
     std::string m_api_secret;
 
+    std::string mDefaultInstrument;
+    uint32_t mDefaultCandlePeriodSeconds = 60;
+    uint32_t mDefaultCandleWidthPixels = 8;
+
 public:
     Config() = delete;
     Config(int argc, const char *const argv[]);
 
     size_t Verbose() const { return mVerbose; }
-    bool Trace() const {return mTrace; }
+    bool Trace() const { return mTrace; }
     const std::string& DataDir() const { return mDataDir; }
 
-    const std::string& HttpHost() const override { return m_http_host; }
-    const std::string& HttpPort() const override { return m_http_port; }
-
-    const std::string& StreamHost() const override { return m_stream_host; }
-    const std::string& StreamPort() const override { return m_stream_port; }
-
-    const std::string& ApiKey() const override { return m_api_key; }
-    const std::string& ApiSecret() const override { return m_api_secret; }
-    bool HasApiCredentials() const override { return !m_api_key.empty() && !m_api_secret.empty(); }
+    CLI::App& App() { return mApp; }
+    const CLI::App& App() const { return mApp; }
 };
 
 
