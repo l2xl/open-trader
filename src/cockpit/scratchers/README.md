@@ -6,9 +6,13 @@ The content panels may use UI library components layout or a custom drawing canv
 Scratcher is a class responsible for drawing on the content panel canvas. Multiple scratchers collaboratively draw on the canvas creating complex UI visualizations like a quote graph with visual indicators.
 Everything on the canvas is controlled collaboratively by a number of scratchers. Examples are the quote graph candles, rulers, or even graph margins.
 
-The scratcher interface contains two methods:
-- `CalculateSize(InstrumentContentPanel&)` — called every time the size of the content panel changes; scratchers adjust pixel geometry (e.g. reserve space for axis labels).
-- `EmitChanges(InstrumentContentPanel&)` — performs the actual emission of vector graphics objects into the panel's ThorVG scenes.
+The scratcher interface follows an observer-driven lifecycle (no `EmitChanges` mass-rebuild):
+- `OnAttach(InstrumentContentPanel&)` — called once when added to a panel. The scratcher creates its own sub-scene(s), attaches them under `panel.HudScene()` or `panel.LogicalScene()`, and (typically) subscribes to view-change notifications via `panel.SubscribeView(...)`.
+- `CalculateSize(InstrumentContentPanel&)` — pre-layout phase, called when the panel's canvas size changes. Rulers shrink `panel.MutableInnerDataRect()` here to reserve their axis strips.
+- `OnLayout(InstrumentContentPanel&)` — post-layout phase. Called after the inner-rect is finalised and the logical-scene transform has been applied; scratchers update geometry to match the new layout.
+- `OnDetach(InstrumentContentPanel&)` — unsubscribe and release sub-scenes; runs from the panel's destructor in reverse-attach order.
+
+Mid-frame mutations (e.g. TimeRuler pan-extend) announce themselves to the panel via `panel.MarkDirty(paint)`. The damage-tracked render loop captures pre-mutation `bounds()` for each dirty paint and invokes `Canvas::viewport(damage_union)` for the next `Canvas::draw(false)` so the redraw stays incremental. Resize forces a full redraw via `mLayoutDirty`.
 
 # Coordinate & Transform Pipeline
 
@@ -79,20 +83,22 @@ Reverse mouse-pick → model time/price uses `(scene_x_inv + floor.time_ms, scen
 
 ```
 SwCanvas (layer 3, pixels — uint32_t target, int rect)
-└─ mRootScene             T = I,           clip = rect(0, 0, canvas_w, canvas_h)
-   ├─ mLogicalCanvasScene T = M_view · Y-flip-about(innerDataRect.height)
-   │                      # M_view holds pan/zoom; Y-flip turns canvas pixels Y-up
-   │   └─ mLogicalScene   T = M_logical = scale(px_per_unit_t, px_per_unit_p) ·
-   │                                       translate(-sceneFloor.t0, -sceneFloor.p0)
-   │                      # scratchers emit (timestamp_ms, price_points) in layer-1
-   │                      # numeric domain; M_logical maps them onto the inner data rect
-   └─ mUiScene            T = I    (Y-down pixel space, full canvas rect)
-                          # rulers, ticks, labels, hover overlays
+└─ mHudScene              T = Y-flip-about(canvas_h),  clip = rect(0, 0, canvas_w, canvas_h)
+   │                      # Y-flip-about-canvas_h turns the entire scene's contents into
+   │                      # HUD-Y-up: y=0 at canvas bottom, y=canvas_h at canvas top.
+   │                      # Rulers, ticks, labels, hover overlays live here directly.
+   ├─ <ruler subtrees>     # TimeRuler, PriceRuler each own a sub-scene attached here
+   └─ mLogicalScene        T = M_view · scale(px_per_ms, px_per_pt) · translate(-floor)
+                           clip = inner data rect (HUD-Y-up corners)
+                           # scratchers emit (timestamp_ms, price_points) in layer-1
+                           # numeric domain; the matrix maps them onto the inner data rect.
+                           # Pan/zoom UI composes into M_view (Phase 4 work).
 ```
 
-- `mLogicalScene` is the only scene that carries layer-1 business values. Scratchers drawing market data emit there; the panel composes the floor + scale + Y-flip via the matrix chain.
-- `mLogicalCanvasScene` carries Y-up canvas pixels. `M_view` (pan/zoom) is a property of this scene — the single point at which reverse projections are inverted.
-- `mUiScene` is plain Y-down canvas pixels. Rulers, axis lines, tick labels, mouse overlays, and static legends live here. Coordinates are integers (`PixelRect`) cast to floats at emission. This scene does **not** participate in pan/zoom and never sees layer-1 model values directly — rulers consume `t0..t1` / `p0..p1` window extents from the panel and emit pre-computed pixel positions.
+- `mLogicalScene` is the only scene that carries layer-1 business values. Scratchers drawing market data (e.g. `QuoteScratcher`) emit there; the panel composes the floor + scale via the matrix.
+- `mHudScene` carries HUD-Y-up pixel coordinates. Rulers and labels live here. Their X coordinates are absolute HUD pixels; their Y coordinates are HUD-Y-up (so a tick line below the axis has a SMALLER y_hud than the axis itself).
+- Text inside `mHudScene` requires a per-paint counter-flip (matrix `{1, 0, x; 0, -1, y_hud; 0, 0, 1}` instead of `translate(x, y_hud)`) to keep glyphs upright under HUD's outer Y-flip. Lines and shapes are unaffected.
+- `mHudScene`'s clip is in canvas-pixel space (HUD's parent is the canvas with identity transform). `mLogicalScene`'s clip is in HUD space (parent of mLogicalScene), since Paint::clip is applied with the parent-matrix per ThorVG's renderer; the inner data rect therefore maps to HUD coords as `(rect.left, canvas_h - rect.bottom, rect.width, rect.height)`.
 
 ## 5. Panel-side state
 
@@ -101,19 +107,25 @@ SwCanvas (layer 3, pixels — uint32_t target, int rect)
 - `mCanvasWidth`, `mCanvasHeight` (`int`) — layer-3 outer canvas size set by host on resize. `OuterCanvasRect()` exposes them as a `PixelRect`.
 - `mInnerDataRect` (`PixelRect`, `int`) — layer-3 canvas area left after rulers reserve their strips during `CalculateSize`. Accessed via `MutableInnerDataRect()` (mutating, by rulers) and `InnerDataRect()` (read-only, by everyone else).
 - `mSceneFloor` (`SceneFloor { uint64_t time_ms; uint64_t price_points; }`) — layer-1→2 boundary floor subtracted before the float cast. Configurable via `SetSceneFloor`.
-- `mLogicalScene->transform()` (`tvg::Matrix`) — single source of truth for the layer-1→2 scale and the layer-2 inner-rect translation. `e11 = px_per_ms`, `e22 = px_per_point`, `e13 = inner.left`, `e23 = outer_h - inner.bottom`. There is no parallel `LogicalScale` field — readers that need a scale (rulers computing tick spacing, mouse-pick reverse projection, tests) take it directly from this matrix. The panel writes scale via `SeedDefaultLogicalSceneScale()` (during `Initialize`); external configuration goes through `mLogicalScene->transform(...)` directly.
-- `mLogicalCanvasScene->transform()` — Y-flip about outer canvas height. `M_view` (pan/zoom) will compose into the same matrix once wired; reverse projections invert it there.
+- `mLogicalScene->transform()` (`tvg::Matrix`) — single source of truth for the layer-1→2 scale and the layer-2 inner-rect translation. `e11 = px_per_ms`, `e22 = px_per_point`, `e13 = inner.left - e11 * (view_left - floor.t)`, `e23 = canvas_h - inner.bottom`. There is no parallel `LogicalScale` field — readers that need a scale (rulers computing tick spacing, mouse-pick reverse projection, tests) take it directly from this matrix. The panel exposes `HudXOfTime(int64_t)` and `TimeOfHudX(float)` that read this matrix as the live source. `M_view` (pan/zoom) will eventually compose into the same matrix; reverse projections invert it there.
+- `mHudScene->transform()` — Y-flip about outer canvas height. Children of mHudScene (rulers and the logical scene) inherit Y-up coords; text paints inside HUD apply a per-paint counter-flip to keep glyphs upright.
 
-## 6. Two-phase pipeline (current contract)
+## 6. Lifecycle pipeline (current contract)
 
 `InstrumentContentPanel::OnSize(width, height)`:
 1. `mCanvasWidth/Height` ← input; `mInnerDataRect` ← `(0, 0, w, h)` (full canvas; rulers will shrink it).
-2. `ApplyOuterSceneTransforms()` — sets `mRootScene` clip and `mLogicalCanvasScene` Y-flip about the outer canvas height; `mUiScene` and `mRootScene` get identity. Pan/zoom would compose into `mLogicalCanvasScene` here once wired.
+2. `ApplyOuterSceneTransforms()` — sets `mHudScene` Y-flip-about-canvas_h transform and canvas-rect clip.
 3. For each scratcher: `CalculateSize(panel)` — may shrink `mInnerDataRect` (rulers reserve outer strips for axis space). Order matters; the standard chain is `TimeRuler → PriceRuler → QuoteScratcher`.
-4. `ApplyLogicalSceneTransform()` — composes `M_logical` from `mLogicalScale` + `mInnerDataRect` + outer canvas height and assigns it to `mLogicalScene`. Scratchers that have already produced floor-anchored model coordinates (via `panel.GetSceneFloor()`) end up positioned inside the inner data rect.
-5. Clear children of `mUiScene` and `mLogicalScene`; call `EmitChanges` for each scratcher.
+4. `ApplyLogicalSceneTransform()` — composes `M_logical` from `mLogicalScene`'s current scale, the view-left anchor, the new `mInnerDataRect`, and the canvas height; also assigns the inner-rect clip in HUD space.
+5. For each scratcher: `OnLayout(panel)` — scratcher updates its sub-scene contents (axis lines, tick labels, etc.) to match the new inner rect.
+6. Fire SubscribeSize subscribers, set `mLayoutDirty = true` so the next `Render()` does a full clear-and-redraw.
 
-`InstrumentContentPanel::Render()` is invoked from `PixelBufferElement::draw()`; it issues `tvg::SwCanvas::update/draw/sync` and the resulting ARGB32 buffer is blitted into the host Cairo context. No data transformation happens during render — only rasterisation. Float→`int` rounding at the layer-3/4 boundary is owned exclusively by ThorVG / Cairo; scratchers never round to pixels by themselves.
+`InstrumentContentPanel::Render()` is invoked from `PixelBufferElement::draw()`. It returns a `PixelRect` describing the canvas-pixel region that was repainted (empty rect = nothing drawn this frame, host skips `cairo_surface_mark_dirty_rectangle`):
+- **Full-redraw path** (taken when `mLayoutDirty`): `viewport(0,0,w,h)` → `update()` → `draw(true)` → `sync()`. Returns the full canvas rect.
+- **Incremental path** (taken when scratchers populated `mDirtyPaints` via `MarkDirty`): compute damage union from captured pre-bounds, `viewport(damage)` → `update()` → `draw(false)` → `sync()`. Returns the damage rect.
+- **Early-out**: no dirty paints and no layout dirty → return empty rect.
+
+Float→`int` rounding at the layer-3/4 boundary is owned exclusively by ThorVG / Cairo; scratchers never round to pixels by themselves.
 
 ## 7. Prototype-vs-target gap (intentional)
 
@@ -124,9 +136,10 @@ Wired now:
 - Outer canvas rect (`OuterCanvasRect()`, computed from `mCanvasWidth/Height`) and inner data rect (`MutableInnerDataRect`/`InnerDataRect`) are split.
 
 Still gapped (intentional, prototype):
-- `M_view` (pan/zoom) on `mLogicalCanvasScene` is not wired — currently identity. Reverse mouse-pick → model also still unimplemented; both belong to the same future iteration.
+- `M_view` (pan/zoom) on `mLogicalScene` is not wired — currently the matrix only carries scale + view-left offset. Reverse mouse-pick → model also still unimplemented (`HudXOfTime` / `TimeOfHudX` are wired but no UI consumer yet); both belong to the same future iteration.
 - Price scale (`mLogicalScene->transform().e22`) has no automatic data-extent derivation; the cockpit / data layer must rewrite the matrix once the visible price window is known.
-- Ruler labels remain static "Price" / "Time" placeholders; tick generation driven by `(t0..t1, p0..p1)` is not yet implemented.
+- TimeRuler emits persistent paints with full-rebuild on view changes; the in-place pan-translate optimisation (within ± 0.5 viewport buffer) is supported architecturally but the current `RebuildAll` path always re-emits.
+- PriceRuler's tick generation driven by `(p0..p1)` is not yet implemented; only the axis line + static "Price" label render today.
 - `BuoyCandleData<uint64_t, uint64_t>` raw points have not been replaced by `currency<uint64_t>`; this waits on the upstream parser ditching `std::string`.
 - `margin.{hpp,cpp}` and `price_indicator.hpp` still hold obsolete `IChartPanel` API and should be deleted in a follow-up.
 
@@ -140,14 +153,18 @@ Gaps above are accepted while the data and persistence layers below are not yet 
 # Layered Class Hierarchy
 
 ```
-Scratcher (pure interface: CalculateSize / EmitChanges)
-├── PriceRuler         — vertical price-axis geometry, axis line + label into UI scene
-├── QuoteScratcher     — ingests PublicTrade stream, builds BuoyCandleQuotes, emits buoy shapes into the logical scene
-└── TimeRuler          — horizontal time-axis geometry, axis line + label into UI scene
+Scratcher (interface: OnAttach / CalculateSize / OnLayout / OnDetach)
+├── PriceRuler         — vertical price-axis geometry, axis line + label; sub-scene under HudScene
+├── QuoteScratcher     — ingests PublicTrade stream, builds BuoyCandleQuotes, emits buoy shapes; sub-scene under LogicalScene
+└── TimeRuler          — horizontal time-axis with persistent paints (axis shape, tick lines scene,
+                         label scene, leftmost-timestamp text), boundary labels above + regular ticks
+                         below the line; sub-scene under HudScene
 ```
 
-`InstrumentContentPanel` (`cockpit`) owns the ordered list of scratchers and drives the two-phase pipeline:
-1. On resize → `CalculateSize` for every scratcher (geometry adjustments, pixel-space reservations)
-2. On render → `EmitChanges` for every scratcher (re-emit vector objects into the appropriate scenes)
+`InstrumentContentPanel` (`cockpit`) owns the ordered list of scratchers, drives the lifecycle pipeline (see §6), and exposes:
+- `HudScene()` / `LogicalScene()` — parent scenes for scratcher-owned sub-trees.
+- `SubscribeSize(cb)` / `SubscribeView(cb)` / `Unsubscribe(id)` — observer registration for size/view notifications.
+- `MarkDirty(paint)` — announce a paint that's about to mutate so the next `Render()` damages its pre-mutation bounds.
+- `HudXOfTime(time_ms)` / `TimeOfHudX(hud_x)` — forward and reverse projection through `mLogicalScene`'s X-axis transform.
 
 The standard scratcher registration order for a quote chart is: `TimeRuler` → `PriceRuler` → `QuoteScratcher`.

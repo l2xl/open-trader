@@ -45,8 +45,12 @@ void PixelBufferElement::draw(el::context const& ctx)
 {
     if (!mSurface) return;
 
-    if (mOnRender) mOnRender();
-    cairo_surface_mark_dirty(mSurface);
+    if (mOnRender) {
+        const auto dmg = mOnRender();
+        if (!dmg.empty()) {
+            cairo_surface_mark_dirty_rectangle(mSurface, dmg.left, dmg.top, dmg.width(), dmg.height());
+        }
+    }
 
     cairo_t* cr = &ctx.canvas.cairo_context();
     cairo_save(cr);

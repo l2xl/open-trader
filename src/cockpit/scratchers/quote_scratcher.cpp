@@ -6,8 +6,6 @@
 
 #include <cstdint>
 
-#include <thorvg.h>
-
 #include "instrument_panel.hpp"
 
 namespace scratcher::cockpit {
@@ -29,17 +27,17 @@ inline float SubToFloat(uint64_t value, uint64_t floor)
     return static_cast<float>(static_cast<int64_t>(value) - static_cast<int64_t>(floor));
 }
 
-void EmitLine(tvg::Scene* scene, float x1, float y1, float x2, float y2, Color c)
+void EmitLine(tvg::Scene& scene, float x1, float y1, float x2, float y2, Color c)
 {
-    auto* line = tvg::Shape::gen();
+    tvg_ptr<tvg::Shape> line{tvg::Shape::gen()};
     line->moveTo(x1, y1);
     line->lineTo(x2, y2);
     line->strokeFill(c.r, c.g, c.b, c.a);
     line->strokeWidth(1.0f);
-    scene->add(line);
+    scene.add(line.get());
 }
 
-void EmitBuoy(tvg::Scene* scene, uint64_t buoy_ts, uint64_t duration,
+void EmitBuoy(tvg::Scene& scene, uint64_t buoy_ts, uint64_t duration,
               const BuoyCandleQuotes::candle_t& curr,
               const BuoyCandleQuotes::candle_t& prev,
               const SceneFloor& floor)
@@ -59,11 +57,28 @@ void EmitBuoy(tvg::Scene* scene, uint64_t buoy_ts, uint64_t duration,
 
 }
 
-void QuoteScratcher::EmitChanges(InstrumentContentPanel& panel)
+void QuoteScratcher::OnAttach(InstrumentContentPanel& panel)
 {
-    auto* scene = panel.LogicalScene();
-    if (!scene) return;
+    mScene.reset(tvg::Scene::gen());
+    panel.LogicalScene().add(mScene.get());
+}
+
+void QuoteScratcher::OnDetach(InstrumentContentPanel& /*panel*/)
+{
+    mScene.reset();
+}
+
+void QuoteScratcher::OnLayout(InstrumentContentPanel& panel)
+{
+    if (!mScene) return;
+    mScene->remove();
+
     if (!mQuotes.first_buoy_timestamp()) return;
+
+    // QuoteScratcher emits in (timestamp_ms - floor.t, price_pts - floor.p) coordinates.
+    // High-price buoys land at higher logical Y, and the HUD's outer Y-flip carries that
+    // upward on canvas — no explicit flip in this scratcher.
+    auto& scene = *mScene;
 
     const SceneFloor& floor = panel.GetSceneFloor();
     const uint64_t duration = mQuotes.buoy_duration();

@@ -13,6 +13,7 @@
 
 #include "instrument_panel_element.hpp"
 
+#include <span>
 #include <utility>
 
 #include <elements.hpp>
@@ -23,7 +24,7 @@ namespace scratcher::elements {
 
 namespace el = cycfi::elements;
 
-InstrumentPanelElement::InstrumentPanelElement(cockpit::PanelType type, std::chrono::seconds candle_period, uint32_t candle_width_pixels,
+InstrumentPanelElement::InstrumentPanelElement(cockpit::PanelType type, seconds candle_period, uint32_t candle_width_pixels,
                                                   std::weak_ptr<el::view> view, InstrumentPanelWidgets widgets, EnsurePrivate)
     : InstrumentContentPanel(type, candle_period, candle_width_pixels)
     , mView(std::move(view))
@@ -32,22 +33,23 @@ InstrumentPanelElement::InstrumentPanelElement(cockpit::PanelType type, std::chr
 
 InstrumentPanelElement::~InstrumentPanelElement() = default;
 
-std::shared_ptr<InstrumentPanelElement> InstrumentPanelElement::Create(cockpit::PanelType type, std::chrono::seconds candle_period, uint32_t candle_width_pixels,
+std::shared_ptr<InstrumentPanelElement> InstrumentPanelElement::Create(cockpit::PanelType type, seconds candle_period, uint32_t candle_width_pixels,
                                                                           std::weak_ptr<el::view> view, InstrumentPanelWidgets widgets)
 {
     auto self = std::make_shared<InstrumentPanelElement>(type, candle_period, candle_width_pixels, std::move(view), std::move(widgets), EnsurePrivate{});
 
     self->mPixelBuffer = std::make_shared<PixelBufferElement>();
 
-    std::weak_ptr<cockpit::InstrumentContentPanel> panel_ref = self;
-    self->mPixelBuffer->SetOnResize([panel_ref](uint32_t* buffer, uint32_t stride, uint32_t w, uint32_t h) {
-        if (auto p = panel_ref.lock()) {
-            p->SetTarget(buffer, stride, w, h);
+    std::weak_ptr<InstrumentContentPanel> ref = self;
+    self->mPixelBuffer->SetOnResize([ref](uint32_t* buffer, uint32_t stride, uint32_t w, uint32_t h) {
+        if (auto p = ref.lock()) {
+            p->SetTarget(std::span<uint32_t>{buffer, static_cast<size_t>(stride) * h}, stride, w, h);
             p->OnSize(static_cast<int>(w), static_cast<int>(h));
         }
     });
-    self->mPixelBuffer->SetOnRender([panel_ref] {
-        if (auto p = panel_ref.lock()) p->Render();
+    self->mPixelBuffer->SetOnRender([ref] {
+        if (auto p = ref.lock()) return p->Render();
+        return cockpit::PixelRect{};
     });
 
     if (self->mWidgets.workArea) {

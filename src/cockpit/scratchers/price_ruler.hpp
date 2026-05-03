@@ -5,18 +5,22 @@
 #pragma once
 
 #include "scratcher.hpp"
+#include "tvg_ptr.hpp"
 
 namespace scratcher::cockpit {
 
 class PriceRuler final : public Scratcher
 {
     int mReservedWidth = 0;
+    tvg_ptr<tvg::Scene> mScene;  // self-owned subtree; attached to panel.HudScene() in OnAttach
 
 public:
     PriceRuler() = default;
 
-    void CalculateSize(InstrumentContentPanel&) override;
-    void EmitChanges(InstrumentContentPanel&) override;
+    void OnAttach(InstrumentContentPanel& panel) override;
+    void CalculateSize(InstrumentContentPanel& panel) override;
+    void OnLayout(InstrumentContentPanel& panel) override;
+    void OnDetach(InstrumentContentPanel& panel) override;
 };
 
 }

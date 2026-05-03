@@ -11,6 +11,8 @@
 #include <cairo/cairo.h>
 #include <elements.hpp>
 
+#include "pixel_rect.hpp"
+
 namespace scratcher::elements {
 
 // A cycfi/elements widget backed by a Cairo image surface and a raw ARGB32 pixel buffer.
@@ -20,13 +22,15 @@ namespace scratcher::elements {
 // Two callbacks plumb the lifecycle:
 //  - on_resize: invoked whenever the widget's bounds change. Hand the fresh buffer pointer +
 //    dimensions over to whatever owns the renderer so it can retarget.
-//  - on_render: invoked on every draw pass, just before the blit. The owner should drive its
-//    renderer to write a fresh frame into the buffer it received from on_resize.
-class PixelBufferElement : public cycfi::elements::element
+//  - on_render: invoked on every draw pass, just before the blit. The owner drives its
+//    renderer to write into the buffer and returns the canvas-pixel rect that was modified
+//    (empty rect = nothing drawn this frame, buffer is unchanged from the previous frame).
+//    cairo_surface_mark_dirty_rectangle is then called only on the modified region.
+class  PixelBufferElement : public cycfi::elements::element
 {
 public:
     using on_resize_t = std::function<void(uint32_t* buffer, int stride_pixels, int width, int height)>;
-    using on_render_t = std::function<void()>;
+    using on_render_t = std::function<cockpit::PixelRect()>;
 
     PixelBufferElement() = default;
     ~PixelBufferElement() override;

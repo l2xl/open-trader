@@ -153,6 +153,7 @@ set(core_SOURCES
         src/datahub/data_feed.hpp
         src/datahub/data_condition.hpp
         src/cockpit/pixel_rect.hpp
+        src/cockpit/tvg_ptr.hpp
         src/cockpit/scratcher.hpp
         src/cockpit/scratchers/time_ruler.hpp
         src/cockpit/scratchers/time_ruler.cpp
@@ -308,6 +309,17 @@ if(NOT ANDROID)
         add_executable(test_thorvg test/render/test_thorvg.cpp)
         target_link_libraries(test_thorvg PRIVATE Catch2::Catch2WithMain Thorvg::thorvg ${CAIRO_LIBRARIES})
         target_include_directories(test_thorvg PRIVATE ${CAIRO_INCLUDE_DIRS})
+
+        # TimeRuler image-series test — emits PNGs of the rendered time axis at multiple zoom
+        # levels into ${CMAKE_BINARY_DIR}/test_output/time_ruler/ for visual analysis.
+        add_executable(test_time_ruler test/render/test_time_ruler.cpp)
+        target_link_libraries(test_time_ruler PRIVATE core Catch2::Catch2WithMain ${CAIRO_LIBRARIES})
+        target_include_directories(test_time_ruler PRIVATE ${CAIRO_INCLUDE_DIRS})
+        target_compile_definitions(test_time_ruler PRIVATE
+            "TIME_RULER_OUTPUT_DIR=\"${CMAKE_BINARY_DIR}/test_output/time_ruler\""
+            "ELSCRATCHER_RUNTIME_DIR=\"$<TARGET_FILE_DIR:elscratcher>\""
+        )
+        add_dependencies(test_time_ruler elscratcher)  # ensures resources/ is populated
     endif()
 
 endif()

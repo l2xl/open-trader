@@ -13,6 +13,7 @@
 #include "buoy_candle.hpp"
 #include "scratcher.hpp"
 #include "timedef.hpp"
+#include "tvg_ptr.hpp"
 
 namespace scratcher::cockpit {
 
@@ -21,6 +22,7 @@ class QuoteScratcher : public Scratcher
 protected:
     BuoyCandleQuotes mQuotes;
     uint64_t mLastPrice = 0;
+    tvg_ptr<tvg::Scene> mScene;  // self-owned subtree; attached to panel.LogicalScene() on first emit
 
 public:
     explicit QuoteScratcher(milliseconds buoy_duration)
@@ -40,7 +42,9 @@ public:
     }
     void IngestTrades(const Range& trades);
 
-    void EmitChanges(InstrumentContentPanel& panel) override;
+    void OnAttach(InstrumentContentPanel& panel) override;
+    void OnLayout(InstrumentContentPanel& panel) override;
+    void OnDetach(InstrumentContentPanel& panel) override;
 };
 
 template <std::ranges::forward_range Range>

@@ -26,7 +26,18 @@ using std::chrono::seconds;
 using std::chrono::minutes;
 using std::chrono::hours;
 using std::chrono::days;
+using std::chrono::weeks;
+using std::chrono::months;
+using std::chrono::years;
 
+using std::chrono::sys_time;
+using std::chrono::sys_days;
+using std::chrono::year_month_day;
+using std::chrono::weekday;
+using std::chrono::Monday;
+using std::chrono::utc_clock;
+using std::chrono::last;
+using std::chrono::floor;
 using std::chrono::duration_cast;
 
 inline uint64_t get_timestamp(time_point t)
