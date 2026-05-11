@@ -11,17 +11,17 @@
 namespace scratcher::cockpit {
 
 // std::shared_ptr-style handle for ThorVG Paint subclasses (Scene, Shape, Text, ...).
-// ThorVG already carries an intrusive ref count on every Paint via Paint::ref() /
-// Paint::rel(); we wrap that model directly rather than std::shared_ptr's external
-// control block so the ref count and the object stay in lockstep across native
-// ThorVG APIs (Scene::add, Scene::clip, ...).
+// ThorVG carries an intrusive ref count on every Paint (Paint::ref / Paint::unref).
 //
-// Construction from a raw T* (typically T::gen()) bumps the ref count, so a freshly
-// genned object held by a single tvg_ptr has refCnt = 2 (gen + wrapper). Handing it
-// to a parent via Scene::add consumes one slot but leaves refCnt unchanged, so the
-// wrapper still owns a slot until destruction; when wrapper and parent both release,
-// refCnt hits 0 and ThorVG frees the object. Copy/move follow std::shared_ptr
-// semantics — copy bumps ref, move transfers, destruction always rel()s.
+// IMPORTANT — Paint::rel(paint) is NOT a counterpart to ref(): it only deletes the
+// paint if refCnt() <= 0 and never decrements. We therefore use unref(true) here,
+// which decrements and deletes when the count hits zero.
+//
+// Lifecycle: T::gen() returns a paint with refCnt = 0. The tvg_ptr ctor calls ref(),
+// taking refCnt to 1. When the paint is handed to a parent via Scene::add the parent
+// also calls ref() internally — refCnt becomes 2. Destruction of the wrapper calls
+// unref() back to 1 (parent still holds), and the parent's own teardown later drops
+// the last slot, freeing the paint.
 template<typename T>
 class tvg_ptr
 {
@@ -38,7 +38,7 @@ public:
     {
         if (mPtr != o.mPtr) {
             if (o.mPtr) o.mPtr->ref();
-            if (mPtr)   tvg::Paint::rel(mPtr);
+            if (mPtr)   mPtr->unref();
             mPtr = o.mPtr;
         }
         return *this;
@@ -47,14 +47,14 @@ public:
     tvg_ptr& operator=(tvg_ptr&& o) noexcept
     {
         if (this != &o) {
-            if (mPtr) tvg::Paint::rel(mPtr);
+            if (mPtr) mPtr->unref();
             mPtr = o.mPtr;
             o.mPtr = nullptr;
         }
         return *this;
     }
 
-    ~tvg_ptr() noexcept { if (mPtr) tvg::Paint::rel(mPtr); }
+    ~tvg_ptr() noexcept { if (mPtr) mPtr->unref(); }
 
     T* get() const noexcept { return mPtr; }
     T& operator*() const noexcept { return *mPtr; }
@@ -65,7 +65,7 @@ public:
     {
         if (p == mPtr) return;
         if (p)    p->ref();
-        if (mPtr) tvg::Paint::rel(mPtr);
+        if (mPtr) mPtr->unref();
         mPtr = p;
     }
 

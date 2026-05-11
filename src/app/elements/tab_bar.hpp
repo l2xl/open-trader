@@ -24,10 +24,13 @@ namespace scratcher::elements {
 
 using tab_id = size_t;
 
-class TabBar
+class TabBar : public std::enable_shared_from_this<TabBar>
 {
+    struct EnsurePrivate {};
 public:
-    explicit TabBar(std::weak_ptr<cycfi::elements::view> view);
+    TabBar(std::weak_ptr<cycfi::elements::view> view, EnsurePrivate);
+
+    static std::shared_ptr<TabBar> Create(std::weak_ptr<cycfi::elements::view> view);
 
     cycfi::elements::element_ptr Build();
 

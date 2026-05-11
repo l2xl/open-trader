@@ -13,11 +13,9 @@
 
 #include "panel_node.hpp"
 
-#include <stdexcept>
+#include <utility>
 
 namespace scratcher::elements {
-
-namespace el = cycfi::elements;
 
 namespace {
 el::color divider_color = el::rgba(80, 80, 90, 255);
@@ -25,19 +23,12 @@ el::color divider_color = el::rgba(80, 80, 90, 255);
 
 // --- PanelNode ---
 
-PanelNode::PanelNode(std::weak_ptr<el::view> view)
-    : mView(std::move(view))
-    , mDeck(std::make_shared<el::deck_composite>())
+PanelNode::PanelNode(std::shared_ptr<el::view> root_view)
+    : mRootView(std::move(root_view)) , mDeck(std::make_shared<el::deck_composite>())
 {
+    // deck_composite with 0 children crashes on render — seed a placeholder.
     mDeck->push_back(el::share(el::element{}));
     mDeck->select(0);
-}
-
-std::shared_ptr<el::view> PanelNode::View() const
-{
-    auto v = mView.lock();
-    if (!v) throw std::logic_error("PanelNode: view expired");
-    return v;
 }
 
 el::element_ptr PanelNode::GetElement()
@@ -51,38 +42,92 @@ void PanelNode::RefreshDeck(el::element_ptr content)
     mDeck->push_back(std::move(content));
     mDeck->select(0);
 
-    auto v = View();
-    v->layout();
-    v->refresh();
+    mRootView->layout();
+    mRootView->refresh();
 }
 
 // --- LeafPanelNode ---
 
-LeafPanelNode::LeafPanelNode(std::weak_ptr<el::view> view, PanelType type)
-    : PanelNode(std::move(view))
-    , mType(type)
-{}
-
-LeafPanelNode::~LeafPanelNode()
-{
-    if (mCleanup) mCleanup();
-}
-
-void LeafPanelNode::Initialize(el::element_ptr content, panel_id pid, std::function<void()> cleanup)
+void LeafPanelNode::Initialize(el::element_ptr content, panel_id pid)
 {
     mPanelId = pid;
-    mCleanup = std::move(cleanup);
     RefreshDeck(std::move(content));
+}
+
+// --- InstrumentPanelNode ---
+
+void InstrumentPanelNode::SetInstruments(const std::vector<std::string>& symbols, std::function<void(std::string)> onSelect)
+{
+    if (!mInstrumentButton) return;
+
+    el::vtile_composite items;
+    for (const auto& sym : symbols) {
+        auto item = el::menu_item(sym);
+        std::string captured = sym;
+        item.on_click = [onSelect, captured]() {
+            if (onSelect) onSelect(captured);
+        };
+        items.push_back(el::share(std::move(item)));
+    }
+
+    constexpr float instrument_menu_max_height = 400.0f;
+    mInstrumentButton->menu(
+        el::layer(
+            el::vsize(instrument_menu_max_height, el::vscroller(el::vtile(std::move(items)))),
+            el::panel{}
+        )
+    );
+}
+
+void InstrumentPanelNode::SetTitle(const std::string& text)
+{
+    if (mTitleLabel) mTitleLabel->set_text(text);
+}
+
+void InstrumentPanelNode::InstallChart(el::element_ptr chart_element, cockpit::panel_id pid)
+{
+    if (mWorkArea) {
+        // Hold the old chart through the deck mutation; release it only after
+        // layout/refresh have settled so the chart's destruction (which can recurse
+        // into ThorVG's cascade-free) happens outside any deck/cycfi-internal walk.
+        el::element_ptr old_panel = nullptr;
+        if (mWorkArea->size() < 2) {
+            mWorkArea->push_back(chart_element);
+        } else {
+            old_panel = *(mWorkArea->begin() + 1);
+            mWorkArea->select(0);
+            mWorkArea->erase(mWorkArea->begin() + 1);
+            mWorkArea->push_back(chart_element);
+        }
+
+        mWorkArea->select(1);
+        mPanelId = pid;
+        mHasChart = true;
+
+        mRootView->layout();
+        mRootView->refresh();
+        old_panel.reset();
+    }
+}
+
+void InstrumentPanelNode::UninstallChart()
+{
+    if (mWorkArea) {
+        if (mWorkArea->size() >= 2) {
+            mWorkArea->pop_back();/*erase(mWorkArea->begin() + 1);*/
+        }
+        mWorkArea->select(0);
+    }
+
+    mPanelId = 0;
+    mHasChart = false;
+
+    mRootView->layout();
+    mRootView->refresh();
 }
 
 // --- SplitPanelNode ---
 
-SplitPanelNode::SplitPanelNode(std::weak_ptr<el::view> view, SplitDirection direction,
-                               std::shared_ptr<PanelNode> first, std::shared_ptr<PanelNode> second)
-    : PanelNode(std::move(view)) , mDirection(direction) , mFirst(std::move(first)) , mSecond(std::move(second))
-{
-    BuildLayout();
-}
 
 void SplitPanelNode::ReplaceChild(std::shared_ptr<PanelNode> oldChild, std::shared_ptr<PanelNode> newChild)
 {

@@ -48,16 +48,16 @@ struct SceneFloor
 class InstrumentPanel : public ContentPanel
 {
 public:
-    InstrumentPanel(PanelType type, std::chrono::seconds candle_period, uint32_t candle_width_pixels);
+    InstrumentPanel(PanelType type, seconds candle_period, uint32_t candle_width_pixels);
     ~InstrumentPanel() override;
 
-    void SetSymbol(std::string symbol);
-    void SetInstrumentList(std::vector<std::string> symbols);
-    void SetInstrumentInfo(std::optional<bybit::InstrumentInfo> info);
+    // Bind the panel to its instrument. Called once by the cockpit at registration time;
+    // the instrument never mutates within a panel's lifetime — symbol re-selection is a
+    // panel-replace operation in MainWindow, not an in-place rebind.
+    void SetInstrumentInfo(bybit::InstrumentInfo info);
 
-    const std::string& Symbol() const { return mSymbol; }
-    const std::vector<std::string>& InstrumentList() const { return mInstrumentList; }
-    const std::optional<bybit::InstrumentInfo>& Instrument() const { return mInstrument; }
+    const bybit::InstrumentInfo& Instrument() const { return mInstrument; }
+    const std::string& Symbol() const { return mInstrument.symbol; }
 
     // Two-scene layered model: mHudScene carries pixel-space widgets (rulers, labels)
     // in HUD-Y-up coords (Y=0 at canvas bottom), achieved via a Y-flip-about-canvas_h on
@@ -84,7 +84,7 @@ public:
     int64_t ViewLeftTimeMs() const;
     void SetViewLeftTimeMs(std::optional<int64_t> t_ms);
 
-    const char* DefaultFontName() const;
+    const std::string& DefaultFontName() const;
     float DefaultFontSize() const { return mFontSize; }
 
     seconds CandlePeriod() const { return mCandlePeriod; }
@@ -118,12 +118,19 @@ public:
     float HudXOfTime(int64_t time_ms) const;
     int64_t TimeOfHudX(float hud_x) const;
 
-    // `buffer` is the pixel framebuffer ThorVG draws into. Caller owns the storage and
-    // must keep it alive at least as long as Render() / Canvas::draw() may run; we hold
-    // a non-owning view. `stride` is the row stride in pixels (may exceed `width` for
-    // alignment padding); `buffer.size()` must therefore equal `stride * height`.
-    void SetTarget(std::span<uint32_t> buffer, uint32_t stride, uint32_t width, uint32_t height);
-    void OnSize(int width, int height);
+    // Allocate (or reallocate) the render buffer at the given dimensions and bind it
+    // as the ThorVG canvas target as a single action. The new buffer replaces any
+    // previous one atomically: the canvas is rebound to the fresh storage BEFORE the
+    // previous buffer is freed, so the canvas target never points at freed memory.
+    // After allocation the layout is recomputed for the new size. The buffer is laid
+    // out as ARGB8888 with a tight stride of `width` pixels per row.
+    void AllocatePixelBuffer(int width, int height);
+
+    // Raw access to the render buffer for callers that need to wrap it in a
+    // platform-specific surface (e.g. a cairo image surface for cycfi/elements).
+    // Returns nullptr until AllocatePixelBuffer has been called. The wrapper must
+    // not outlive the panel — the panel owns the storage.
+    uint32_t* PixelBufferData() noexcept { return mPixels.data(); }
 
     // Circuit B (worker-safe, blocking): take the data lock, run DoUpdate, stamp the
     // monotonic timestamp, release. Subclasses post the UI redraw via Refresh().
@@ -138,20 +145,13 @@ public:
     // Damage-tracked render. Returns the rect that was repainted, in canvas-pixel coords;
     // an empty rect means no draw happened this frame and the host should NOT call
     // cairo_surface_mark_dirty_rectangle (the buffer is unchanged from the previous frame).
-    // Two-stage locking: viewport()+canvas->update() run under the data lock so a worker
-    // cannot mutate paint state during ThorVG's tree walk; draw()+sync() run lock-free
-    // (the command buffer has already been built by update(), and sync() is the dominant
-    // blocking cost — releasing here lets workers progress while the rasteriser runs).
+    // Holds mDataMutex across the whole viewport→update→draw→sync sequence — workers
+    // wait one frame's rasterisation latency, which the 100 ms worker tick absorbs.
     PixelRect Render();
 
-    using on_user_symbol_selection_t = std::function<void(std::string)>;
-    void SetOnUserSymbolSelection(on_user_symbol_selection_t handler) { mOnUserSymbolSelection = std::move(handler); }
-
-    virtual void PostToUi(std::function<void()> fn) = 0;
+    //virtual void PostToUi(std::function<void()> fn) = 0;
 
 protected:
-    void EmitUserSymbolSelection(std::string symbol);
-
     // Pure scene/scratcher recalculation. PRECONDITION: caller holds mDataMutex.
     void DoUpdate();
 
@@ -159,9 +159,7 @@ protected:
     // where deterministic single-frame rendering is required).
     void SetUpdateThrottle(std::chrono::nanoseconds dt) noexcept { mUpdateThrottleNs = dt.count(); }
 
-    virtual void OnSymbolChanged(const std::string& /*symbol*/) {}
-    virtual void OnInstrumentListChanged(const std::vector<std::string>& /*symbols*/) {}
-    virtual void OnInstrumentInfoChanged(const std::optional<bybit::InstrumentInfo>& /*info*/) {}
+    virtual void OnInstrumentInfoChanged(const bybit::InstrumentInfo& /*info*/) {}
 
 private:
     struct ThorvgRuntimeRef
@@ -176,12 +174,15 @@ private:
     void ApplyLogicalSceneTransform();
     void EnsureViewAnchor();
 
-    std::string mSymbol;
-    std::vector<std::string> mInstrumentList;
-    std::optional<bybit::InstrumentInfo> mInstrument;
-    on_user_symbol_selection_t mOnUserSymbolSelection;
+    bybit::InstrumentInfo mInstrument;
 
     ThorvgRuntimeRef mRuntime;
+
+    // Render buffer; declared BEFORE mCanvas so that reverse-of-declaration member
+    // destruction tears down the canvas (which holds mPixels.data() as its target
+    // pointer) BEFORE the buffer storage is released.
+    std::vector<uint32_t> mPixels;
+
     std::unique_ptr<tvg::SwCanvas> mCanvas;
     tvg_ptr<tvg::Scene> mHudScene;
     tvg_ptr<tvg::Scene> mLogicalScene;

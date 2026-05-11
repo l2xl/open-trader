@@ -27,7 +27,7 @@ el::color text_color = el::rgba(200, 200, 200, 255);
 
 } // anonymous namespace
 
-TabBar::TabBar(std::weak_ptr<el::view> view)
+TabBar::TabBar(std::weak_ptr<el::view> view, EnsurePrivate)
     : mView(std::move(view))
     , mButtonDeck(std::make_shared<el::deck_composite>())
     , mPageDeck(std::make_shared<el::deck_composite>())
@@ -37,6 +37,11 @@ TabBar::TabBar(std::weak_ptr<el::view> view)
     mButtonDeck->select(0);
     mPageDeck->push_back(el::share(el::element{}));
     mPageDeck->select(0);
+}
+
+std::shared_ptr<TabBar> TabBar::Create(std::weak_ptr<el::view> view)
+{
+    return std::make_shared<TabBar>(std::move(view), EnsurePrivate{});
 }
 
 std::shared_ptr<el::view> TabBar::View() const
@@ -139,8 +144,8 @@ void TabBar::RebuildTabButtons()
             )
         );
 
-        tab_btn->on_click = [this, tab_index](bool) {
-            SwitchTab(tab_index);
+        tab_btn->on_click = [w = weak_from_this(), tab_index](bool) {
+            if (auto t = w.lock()) t->SwitchTab(tab_index);
         };
 
         if (mTabs.size() > 1) {
@@ -153,8 +158,8 @@ void TabBar::RebuildTabButtons()
                 )
             );
 
-            close_btn->on_click = [this, tid](bool) {
-                if (onTabClosed) onTabClosed(tid);
+            close_btn->on_click = [w = weak_from_this(), tid](bool) {
+                if (auto t = w.lock(); t && t->onTabClosed) t->onTabClosed(tid);
             };
 
             buttons.push_back(el::share(

@@ -1,5 +1,5 @@
 // Scratcher project
-// Copyright (c) 2025 l2xl (l2xl/at/proton.me)
+// Copyright (c) 2025-2026 l2xl (l2xl/at/proton.me)
 // Distributed under the Intellectual Property Reserve License (IPRL)
 // -----BEGIN PGP PUBLIC KEY BLOCK-----
 //
@@ -15,48 +15,57 @@
 
 #include <chrono>
 #include <cstdint>
-#include <memory>
 #include <functional>
+#include <memory>
+#include <string>
 #include <unordered_map>
+#include <vector>
 
 #include <elements.hpp>
+
 #include "content_panel.hpp"
+#include "panel_node.hpp"
 #include "split_direction.hpp"
 #include "tab_bar.hpp"
-#include "panel_node.hpp"
 #include "ui_builder.hpp"
 
-namespace scratcher::elements {
+namespace scratcher::cockpit { class TradeCockpit; }
 
-struct InstrumentPanelDefaults
-{
-    std::chrono::seconds candle_period{60};
-    uint32_t candle_width_pixels = 8;
-};
+namespace scratcher::elements {
 
 class MainWindow
 {
 public:
-    using on_panel_created_t = std::function<cockpit::panel_id(std::shared_ptr<cockpit::ContentPanel>)>;
-    using on_panel_closed_t = std::function<void(cockpit::panel_id)>;
-    using default_panel_type_accessor_t = std::function<cockpit::PanelType()>;
-    using instrument_panel_defaults_accessor_t = std::function<InstrumentPanelDefaults()>;
-
-    explicit MainWindow(UiBuilder& builder);
+    MainWindow(UiBuilder& builder, std::shared_ptr<cockpit::TradeCockpit> cockpit);
     ~MainWindow();
 
     int Run();
-
-    void SetOnPanelCreated(on_panel_created_t handler);
-    void SetOnPanelClosed(on_panel_closed_t handler);
-    void SetDefaultPanelTypeAccessor(default_panel_type_accessor_t accessor);
-    void SetInstrumentPanelDefaultsAccessor(instrument_panel_defaults_accessor_t accessor);
 
 private:
     void SetupContent();
     std::shared_ptr<LeafPanelNode> OnNewTab(cockpit::PanelType type);
 
+    // Creates a leaf for `type`. Instrument-bearing leaves are built with their full
+    // chrome (header + dropdown + work-area + footer); the work-area shows a waiting
+    // indicator until OnInstrumentsArrived installs a chart in-place.
     std::shared_ptr<LeafPanelNode> MakeLeaf(cockpit::PanelType type);
+
+    // Build a non-instrument leaf (Empty/etc.) wrapping a UiBuilder-built chrome.
+    std::shared_ptr<LeafPanelNode> MakeGenericLeaf(cockpit::PanelType type);
+
+    // Build an instrument leaf chrome for `type` with the work-area parked on the
+    // waiting indicator. The chart is installed later via InstallChart once the
+    // instrument list arrives (or symbol selection changes).
+    std::shared_ptr<InstrumentPanelNode> MakeInstrumentLeaf(cockpit::PanelType type);
+
+    // Build a chart panel for `symbol` and install it inside the existing leaf's
+    // work-area deck (deck-switch from waiting indicator to chart). The cockpit
+    // owns the symbol→InstrumentInfo lookup performed at registration time.
+    void InstallChart(std::shared_ptr<InstrumentPanelNode> leaf, std::string symbol);
+
+    // Returns the configured default symbol if it is in the current symbol list,
+    // otherwise the first known symbol, otherwise empty.
+    std::string ResolveDefaultSymbol() const;
 
     void HandleChangeType(std::shared_ptr<LeafPanelNode> node, cockpit::PanelType newType);
     void HandleSplit(std::shared_ptr<LeafPanelNode> node, cockpit::PanelType newType, SplitDirection dir);
@@ -64,23 +73,27 @@ private:
 
     void ReplaceNode(std::shared_ptr<PanelNode> oldNode, std::shared_ptr<PanelNode> newNode);
 
+    void OnSymbolsArrived(std::vector<std::string> symbols);
+    void ForEachInstrumentLeaf(const std::function<void(std::shared_ptr<InstrumentPanelNode>)>& fn);
+    void PushSymbolListTo(std::shared_ptr<InstrumentPanelNode> leaf);
+
     cycfi::elements::app mApp;
     cycfi::elements::window mWindow;
     std::shared_ptr<cycfi::elements::view> mView;
     UiBuilder& mBuilder;
+    std::shared_ptr<cockpit::TradeCockpit> mCockpit;
 
-    on_panel_created_t mOnPanelCreated;
-    on_panel_closed_t mOnPanelClosed;
-    default_panel_type_accessor_t mDefaultPanelTypeAccessor;
-    instrument_panel_defaults_accessor_t mInstrumentPanelDefaultsAccessor;
-
-    std::unique_ptr<TabBar> mTabBar;
+    std::shared_ptr<TabBar> mTabBar;
 
     struct TabRoot {
         std::shared_ptr<PanelNode> node;
         std::shared_ptr<cycfi::elements::deck_composite> slot;
     };
     std::unordered_map<tab_id, TabRoot> mTabRoots;
+
+    std::vector<std::string> mSymbols;
+    bool mInstrumentsReady = false;
+    uint64_t mInstrumentSubId = 0;
 
     bool mMenuVisible = false;
 };

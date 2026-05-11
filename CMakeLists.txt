@@ -209,8 +209,6 @@ add_executable(elscratcher
             src/app/elements/split_direction.hpp
             src/app/elements/instrument_panel_element.hpp
             src/app/elements/instrument_panel_element.cpp
-            src/app/elements/pixel_buffer_element.hpp
-            src/app/elements/pixel_buffer_element.cpp
             src/app/elements/tab_bar.hpp
             src/app/elements/tab_bar.cpp
             src/app/elements/panel_node.hpp

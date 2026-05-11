@@ -65,7 +65,7 @@ void PriceRuler::OnLayout(InstrumentPanel& panel)
     // text-internal coords) would render as upward on canvas. {1, 0, x; 0, -1, y_hud; 0, 0, 1}
     // inverts the text's local Y so the resultant canvas orientation is upright.
     tvg_ptr<tvg::Text> label{tvg::Text::gen()};
-    label->font(panel.DefaultFontName());
+    label->font(panel.DefaultFontName().c_str());
     label->size(panel.DefaultFontSize());
     label->text("Price");
     label->fill(200, 200, 200);

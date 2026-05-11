@@ -52,6 +52,8 @@ The upper tier is **application-layer code** (e.g. `src/cockpit/`, `src/app/elem
 - Do not wrap lines shorter than 220 characters.
 - Never use include paths that traverse up-folder (`../`); arbitrary in-project relative paths are forbidden. Always include via the canonical path that CMake exposes.
 - Place file-local helper functions in an anonymous namespace at the top of the `.cpp` file. Do not expose them as free functions in headers unless they are part of the component's public surface.
+- Make default class members defined within the class body. 
+- If a constructor contains only the initialization list, then define it within the class body.
 
 ## Comments & self-documentation
 

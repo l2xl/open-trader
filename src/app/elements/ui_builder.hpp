@@ -4,7 +4,7 @@
 // -----BEGIN PGP PUBLIC KEY BLOCK-----
 //
 // mDMEYdxcVRYJKwYBBAHaRw8BAQdAfacBVThCP5QDPEgSbSIudtpJS4Y4Imm5dzaN
-// lM1HTem0IkwyIFhsIChsMnhsKSA8bDJ4bEBwcm90b21tYWlsLmNvbT6IkAQTFggA
+// lM1HTem0IkwyIFhsIChsMnhsKSA8bDJ4bEBwcm08b21tYWlsLmNvbT6IkAQTFggA
 // OBYhBKRCfUyWnduCkisNl+WRcOaCK79JBQJh3FxVAhsDBQsJCAcCBhUKCQgLAgQW
 // AgMBAh4BAheAAAoJEOWRcOaCK79JDl8A/0/AjYVbAURZJXP3tHRgZyYyN9txT6mW
 // 0bYCcOf0rZ4NAQDoFX4dytPDvcjV7ovSQJ6dzvIoaRbKWGbHRCufrm5QBA==
@@ -13,29 +13,24 @@
 
 #pragma once
 
-#include <memory>
 #include <functional>
+#include <memory>
 #include <string>
 #include <vector>
 
 #include <elements.hpp>
+
 #include "content_panel.hpp"
 #include "split_direction.hpp"
 
 namespace scratcher::elements {
 
-struct InstrumentPanelWidgets
-{
-    cycfi::elements::element_ptr root;
-    std::shared_ptr<cycfi::elements::deck_composite> workArea;
-    std::function<void(const std::vector<std::string>&, std::function<void(std::string)>)> SetInstruments;
-    std::function<void(const std::string&)> SetTitle;
-};
+class InstrumentPanelNode;
 
 class UiBuilder
 {
 public:
-    InstrumentPanelWidgets MakeInstrumentPanel(cockpit::PanelType type, std::function<void()> onClose, std::function<void(cockpit::PanelType, SplitDirection)> onSplit);
+    std::shared_ptr<InstrumentPanelNode> MakeInstrumentPanel(std::shared_ptr<cycfi::elements::view> root_view, cockpit::PanelType type, std::function<void()> onClose, std::function<void(cockpit::PanelType, SplitDirection)> onSplit);
 
     cycfi::elements::element_ptr MakeAppBar(cycfi::elements::element_ptr tab_bar_area, cycfi::elements::element_ptr menu_items, std::function<void(bool)> onHamburger);
 

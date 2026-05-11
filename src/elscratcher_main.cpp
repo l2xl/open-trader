@@ -1,5 +1,5 @@
 // Scratcher project
-// Copyright (c) 2025 l2xl (l2xl/at/proton.me)
+// Copyright (c) 2025-2026 l2xl (l2xl/at/proton.me)
 // Distributed under the Intellectual Property Reserve License (IPRL)
 // -----BEGIN PGP PUBLIC KEY BLOCK-----
 //
@@ -37,29 +37,13 @@ int main(int argc, char* argv[])
 {
     try {
         auto config = std::make_shared<Config>(argc, argv);
-        auto sched = scratcher::scheduler::create(2);
+        auto sched = scratcher::scheduler::create(1);
         auto database = std::make_shared<SQLite::Database>(config->DataDir() + "/market_data.sqlite", SQLite::OPEN_READWRITE | SQLite::OPEN_CREATE);
-
-        scratcher::elements::UiBuilder builder;
-        scratcher::elements::MainWindow window(builder);
 
         auto cockpit = scratcher::cockpit::TradeCockpit::Create(sched, config->App(), database);
 
-        window.SetOnPanelCreated([&cockpit](auto panel) {
-            return cockpit->RegisterPanel(std::move(panel));
-        });
-        window.SetOnPanelClosed([&cockpit](scratcher::cockpit::panel_id pid) {
-            cockpit->UnregisterPanel(pid);
-        });
-        window.SetDefaultPanelTypeAccessor([&cockpit]() {
-            return cockpit->GetDefaultContentPanelType();
-        });
-        window.SetInstrumentPanelDefaultsAccessor([&cockpit]() {
-            return scratcher::elements::InstrumentPanelDefaults{
-                cockpit->GetDefaultCandlePeriod(),
-                cockpit->GetDefaultCandleWidth(),
-            };
-        });
+        scratcher::elements::UiBuilder builder;
+        scratcher::elements::MainWindow window(builder, cockpit);
 
         return window.Run();
     }

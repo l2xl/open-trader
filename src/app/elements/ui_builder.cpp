@@ -13,6 +13,8 @@
 
 #include "ui_builder.hpp"
 
+#include "panel_node.hpp"
+
 namespace scratcher::elements {
 
 namespace el = cycfi::elements;
@@ -60,9 +62,7 @@ public:
 
 } // anonymous namespace
 
-el::element_ptr UiBuilder::MakeAppBar(el::element_ptr tab_bar_area,
-                                       el::element_ptr menu_items,
-                                       std::function<void(bool)> onHamburger)
+el::element_ptr UiBuilder::MakeAppBar(el::element_ptr tab_bar_area, el::element_ptr menu_items, std::function<void(bool)> onHamburger)
 {
     auto& thm = el::get_theme();
     auto menu_bg_color = thm.panel_color;
@@ -79,9 +79,9 @@ el::element_ptr UiBuilder::MakeAppBar(el::element_ptr tab_bar_area,
         )
     );
 
-    auto deck_raw = app_deck.get();
-    hamburger->on_click = [onHamburger, deck_raw](bool state) {
-        if (auto* deck_ptr = dynamic_cast<el::deck_element*>(deck_raw)) {
+    std::weak_ptr deck_ref = app_deck;
+    hamburger->on_click = [onHamburger, deck_ref](bool state) {
+        if (auto deck_ptr = deck_ref.lock()) {
             deck_ptr->select(state ? 1 : 0);
         }
         if (onHamburger) onHamburger(state);
@@ -170,15 +170,12 @@ el::element_ptr UiBuilder::MakePanelTypeSelector(
     return popup;
 }
 
-InstrumentPanelWidgets UiBuilder::MakeInstrumentPanel(PanelType type,
-    std::function<void()> onClose,
-    std::function<void(PanelType, SplitDirection)> onSplit)
+std::shared_ptr<InstrumentPanelNode> UiBuilder::MakeInstrumentPanel( std::shared_ptr<cycfi::elements::view> root_view, PanelType type,
+    std::function<void()> onClose, std::function<void(PanelType, SplitDirection)> onSplit)
 {
-    InstrumentPanelWidgets w;
+    auto title_label = el::share(el::label("Select instrument").font_size(12).font_color(label_text_color));
 
-    auto titleLabel = el::share(el::label("Select instrument").font_size(12).font_color(label_text_color));
-
-    auto instrumentBtn = el::share(
+    auto instrument_btn = el::share(
         el::momentary_button<AutoPositionMenu>(
             el::margin({6, 2, 6, 2},
                 el::icon(el::icons::down_dir, 1.0f)
@@ -187,12 +184,11 @@ InstrumentPanelWidgets UiBuilder::MakeInstrumentPanel(PanelType type,
     );
 
     constexpr float instrument_menu_max_height = 400.0f;
-
     {
         el::vtile_composite placeholder;
         auto item = el::menu_item("Loading...");
         placeholder.push_back(el::share(std::move(item)));
-        instrumentBtn->menu(
+        instrument_btn->menu(
             el::layer(
                 el::vsize(instrument_menu_max_height, el::vscroller(el::vtile(std::move(placeholder)))),
                 el::panel{}
@@ -200,33 +196,11 @@ InstrumentPanelWidgets UiBuilder::MakeInstrumentPanel(PanelType type,
         );
     }
 
-    w.SetInstruments = [instrumentBtn](const std::vector<std::string>& symbols, std::function<void(std::string)> onSelect) {
-        el::vtile_composite items;
-        for (const auto& sym : symbols) {
-            auto item = el::menu_item(sym);
-            std::string captured = sym;
-            item.on_click = [onSelect, captured]() {
-                if (onSelect) onSelect(captured);
-            };
-            items.push_back(el::share(std::move(item)));
-        }
-        instrumentBtn->menu(
-            el::layer(
-                el::vsize(instrument_menu_max_height, el::vscroller(el::vtile(std::move(items)))),
-                el::panel{}
-            )
-        );
-    };
-
-    w.SetTitle = [titleLabel](const std::string& text) {
-        titleLabel->set_text(text);
-    };
-
     auto title_group = el::share(
         el::htile(
-            el::hold(instrumentBtn),
+            el::hold(instrument_btn),
             el::hspace(4),
-            el::align_middle(el::hold(titleLabel)),
+            el::align_middle(el::hold(title_label)),
             el::hspace(4),
             el::hold(MakeCloseButton(std::move(onClose)))
         )
@@ -247,18 +221,24 @@ InstrumentPanelWidgets UiBuilder::MakeInstrumentPanel(PanelType type,
         )
     );
 
-    w.workArea = std::make_shared<el::deck_composite>();
-    // ChartElement is pushed by ElementsInstrumentPanel::Create as the sole child.
+    // The work area is a 2-child deck: index 0 is the waiting indicator, index 1 is
+    // the chart (installed later via InstrumentPanelNode::InstallChart). Flipping
+    // select(0|1) avoids the layout glitch from wholesale leaf replacement.
+    auto work_area = std::make_shared<el::deck_composite>();
+    work_area->push_back(MakeWaitingIndicator());
+    work_area->select(0);
 
-    w.root = el::share(
+    auto root = el::share(
         el::vtile(
             el::hold(header),
-            el::vstretch(1.0, el::hold(w.workArea)),
+            el::vstretch(1.0, el::hold(work_area)),
             el::hold(MakePanelFooter(std::move(onSplit)))
         )
     );
 
-    return w;
+    auto node = std::make_shared<InstrumentPanelNode>(std::move(root_view), type, title_label, instrument_btn, work_area);
+    node->Initialize(root, 0);
+    return node;
 }
 
 el::element_ptr UiBuilder::MakePanel(PanelType type, std::function<void(PanelType)> onChangeType, std::function<void()> onClose, std::function<void(PanelType, SplitDirection)> onSplit)

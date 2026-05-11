@@ -289,11 +289,11 @@ int approx_label_px(const std::string& s, float font_size)
 
 // Helper: emit a left-anchored Text into a scene at HUD-pixel coordinates. Counter-flips
 // Y so glyphs render upright under the HUD scene's Y-flip-about-canvas_h transform.
-void emit_label(tvg::Scene& scene, const char* font, float font_size, const std::string& text,
+void emit_label(tvg::Scene& scene, const std::string& font, float font_size, const std::string& text,
                 float x, float y_hud, uint8_t r, uint8_t g, uint8_t b)
 {
     tvg_ptr<tvg::Text> lbl{tvg::Text::gen()};
-    lbl->font(font);
+    lbl->font(font.c_str());
     lbl->size(font_size);
     lbl->text(text.c_str());
     lbl->fill(r, g, b);
@@ -327,9 +327,9 @@ void TimeRuler::OnAttach(InstrumentPanel& panel)
     // a full rebuild. This is Phase-3-minimum: persistent paints structure is wired but
     // the in-place pan-translate optimisation is deferred — the rebuild keeps the contract
     // identical to OnLayout, which is enough for visual correctness.
-    mViewSubscriptionId = panel.SubscribeView([this, &panel]() {
-        RebuildAll(panel);
-    });
+    // mViewSubscriptionId = panel.SubscribeView([this, &panel]() {
+    //     RebuildAll(panel);
+    // });
 }
 
 void TimeRuler::OnDetach(InstrumentPanel& panel)
@@ -430,7 +430,7 @@ void TimeRuler::RebuildAll(InstrumentPanel& panel)
     // ticks scroll past. Empty for year-step views (no coarser context exists).
     const sys_time<milliseconds> view_left_tp{milliseconds{view_left_ms}};
     const std::string leftmost_text = format_leftmost(view_left_tp, step.unit);
-    mLeftmostTimestamp->font(panel.DefaultFontName());
+    mLeftmostTimestamp->font(panel.DefaultFontName().c_str());
     mLeftmostTimestamp->size(font_size);
     mLeftmostTimestamp->text(leftmost_text.c_str());
     mLeftmostTimestamp->fill(220, 220, 220);

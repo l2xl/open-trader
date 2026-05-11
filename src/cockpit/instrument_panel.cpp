@@ -55,7 +55,7 @@ private:
     int mRefCount = 0;
 };
 
-constexpr const char* kDefaultFontName = "OpenSans";
+constexpr const std::string kDefaultFontName = "OpenSans";
 
 std::filesystem::path FindDefaultFontPath()
 {
@@ -92,7 +92,7 @@ bool LoadDefaultFont()
     buffer.resize(static_cast<size_t>(size));
     if (!file.read(buffer.data(), size)) return false;
 
-    auto result = tvg::Text::load(kDefaultFontName, buffer.data(), static_cast<uint32_t>(buffer.size()), "ttf", false);
+    auto result = tvg::Text::load(kDefaultFontName.c_str(), buffer.data(), static_cast<uint32_t>(buffer.size()), "ttf", false);
     loaded = (result == tvg::Result::Success);
     return loaded;
 }
@@ -113,10 +113,11 @@ InstrumentPanel::InstrumentPanel(PanelType type, seconds candle_period, uint32_t
     : ContentPanel(type)
     , mRuntime{}
     , mCanvas{tvg::SwCanvas::gen()}
-    , mHudScene{tvg::Scene::gen()}              // tvg_ptr ctor bumps ref → refCnt = 2 (gen + wrapper);
-    , mLogicalScene{tvg::Scene::gen()}          // when added to a parent, parent claims one slot,
-    , mCandlePeriod{candle_period}              // wrapper keeps the other until ~tvg_ptr.
-    , mCandleWidthPixels{candle_width_pixels}
+    , mHudScene{tvg::Scene::gen()}              // gen() returns refCnt=0; tvg_ptr ctor calls ref()
+    , mLogicalScene{tvg::Scene::gen()}          // → refCnt=1. Scene::add() below ref()s again
+    , mCandlePeriod{candle_period}              // → refCnt=2 (wrapper + parent). On teardown the
+    , mCandleWidthPixels{candle_width_pixels}   // wrapper's unref() drops it back to 1, and the
+                                                // parent's cascade unref() takes it to 0 → freed.
 {
     LoadDefaultFont();
 
@@ -154,8 +155,14 @@ InstrumentPanel::InstrumentPanel(PanelType type, seconds candle_period, uint32_t
 
 InstrumentPanel::~InstrumentPanel()
 {
-    // Detach scratchers in reverse-attach order so their dependents (e.g. quote scratcher
-    // depending on rulers' inner-rect work) tear down before their dependencies.
+    // Detach scratchers in reverse-attach order so their dependents (e.g. quote
+    // scratcher depending on rulers' inner-rect work) tear down before their
+    // dependencies. mDataMutex serialises against any in-flight worker Update();
+    // mScratcherMutex protects the deque iteration. Remaining members (scene
+    // wrappers, canvas, pixel buffer) tear down via their member destructors in
+    // reverse declaration order; mPixels is declared before mCanvas so the canvas
+    // dies before its target buffer is freed.
+    std::lock_guard data_lock(mDataMutex);
     std::unique_lock lock(mScratcherMutex);
     for (auto it = mScratchers.rbegin(); it != mScratchers.rend(); ++it) {
         (*it)->OnDetach(*this);
@@ -218,20 +225,28 @@ void InstrumentPanel::MarkDirty(tvg::Paint* paint)
 
 float InstrumentPanel::HudXOfTime(int64_t time_ms) const
 {
-    // mLogicalScene's matrix is the live source of truth: e11 carries scale (px / ms)
-    // and e13 carries the (inner_left - e11 * (view_left - floor)) offset. Reading from
-    // it preserves the single-source-of-truth invariant — no parallel cached scale.
+    // The LogicalScene matrix maps (t - floor) → HUD-X via e11*(t-floor) + e13, with
+    // e13 = inner_left - e11*(view_left-floor). For a 1-year floor offset, (t-floor) is
+    // ~3e10 ms; cast to FP32 it has ulp ~2 s. The composition is the catastrophic-cancel
+    // pattern e11*X1 + (inner_left - e11*X2) where X1 ≈ X2, so the result inherits noise
+    // proportional to e11·ulp — for a 25 px/s scale that is ~50 px of jitter, enough to
+    // collide adjacent 1 s ticks and rip prior-frame label remnants through the strip.
+    //
+    // Solve the bias by computing the X delta directly from (t - view_left) in int64
+    // (~tens of thousands of ms, exact in FP32) and applying the scale in double. The
+    // matrix retains the (t-floor) form for ThorVG's render of the LogicalScene; only
+    // the HUD-pixel projection that the scratchers consume is re-derived precisely.
     const tvg::Matrix m = mLogicalScene->transform();
-    const float t_offset = static_cast<float>(time_ms - static_cast<int64_t>(mSceneFloor.time_ms));
-    return m.e11 * t_offset + m.e13;
+    const int64_t dt_ms = time_ms - ViewLeftTimeMs();
+    return static_cast<float>(mInnerDataRect.left) + static_cast<float>(static_cast<double>(m.e11) * static_cast<double>(dt_ms));
 }
 
 int64_t InstrumentPanel::TimeOfHudX(float hud_x) const
 {
     const tvg::Matrix m = mLogicalScene->transform();
-    if (m.e11 == 0.0f) return static_cast<int64_t>(mSceneFloor.time_ms);
-    const float t_offset = (hud_x - m.e13) / m.e11;
-    return static_cast<int64_t>(mSceneFloor.time_ms) + static_cast<int64_t>(std::llround(t_offset));
+    if (m.e11 == 0.0f) return ViewLeftTimeMs();
+    const double dx = static_cast<double>(hud_x) - static_cast<double>(mInnerDataRect.left);
+    return ViewLeftTimeMs() + static_cast<int64_t>(std::llround(dx / static_cast<double>(m.e11)));
 }
 
 int64_t InstrumentPanel::ViewLeftTimeMs() const
@@ -247,8 +262,7 @@ int64_t InstrumentPanel::ViewLeftTimeMs() const
     const int    right_pad     = std::max(0, mRightPadPx);
     const int    now_anchor_px = std::max(0, mInnerDataRect.width() - right_pad);
     const auto   time_at_left  = now_ms - milliseconds{static_cast<int64_t>(static_cast<double>(now_anchor_px) * ms_per_px)};
-    const auto   snapped       = time_at_left - (time_at_left % period);
-    return snapped.count();
+    return time_at_left.count();
 }
 
 void InstrumentPanel::EnsureViewAnchor()
@@ -308,17 +322,25 @@ void InstrumentPanel::ApplyLogicalSceneTransform()
     }
 }
 
-void InstrumentPanel::SetTarget(std::span<uint32_t> buffer, uint32_t stride, uint32_t width, uint32_t height)
+void InstrumentPanel::AllocatePixelBuffer(int width, int height)
 {
-    mCanvas->target(buffer.data(), stride, width, height, tvg::ColorSpace::ARGB8888);
-}
-
-void InstrumentPanel::OnSize(int width, int height)
-{
-    // OnSize runs on the UI thread (Cycfi size-allocate). Take mDataMutex blockingly
-    // to serialise against any in-flight worker Update(); skip the throttle because a
-    // resize must always rebuild the layout before the next paint.
+    // Runs on the UI thread (Cycfi size-allocate, or directly from tests). Take
+    // mDataMutex blockingly to serialise against any in-flight worker Update() and
+    // satisfy DoUpdate's precondition.
     std::lock_guard lock(mDataMutex);
+
+    // Allocate the new buffer first, bind it as the canvas target, THEN move-assign
+    // onto mPixels. The rebind happens BEFORE mPixels' old storage is freed by the
+    // move, so the canvas never holds a pointer into deallocated memory. After the
+    // move, mPixels owns the storage the canvas now points at.
+    std::vector<uint32_t> new_pixels(static_cast<size_t>(width) * static_cast<size_t>(height), 0);
+    mCanvas->target(new_pixels.data(),
+                    static_cast<uint32_t>(width),   // tight ARGB8888 stride in pixels
+                    static_cast<uint32_t>(width),
+                    static_cast<uint32_t>(height),
+                    tvg::ColorSpace::ARGB8888);
+    mPixels = std::move(new_pixels);
+
     mCanvasWidth = width;
     mCanvasHeight = height;
     DoUpdate();
@@ -389,16 +411,13 @@ void InstrumentPanel::DoUpdate()
 
 PixelRect InstrumentPanel::Render()
 {
-    // Two-stage lock: viewport+canvas->update() must run under mDataMutex so a worker
-    // mid-DoUpdate cannot mutate paint state during ThorVG's tree walk. Once update()
-    // returns the renderer has buffered the command list internally and subsequent
-    // scene mutations only affect the *next* update(), so we release the lock before
-    // draw()+sync() — letting workers progress while the rasteriser runs.
-    bool   full_redraw = false;
-    PixelRect dmg{};
-
-    {
-        std::lock_guard lock(mDataMutex);
+    // Whole-Render lock. ThorVG's draw()/sync() are not guaranteed to read solely from
+    // the command buffer built by update() — empirically a worker mutating paints between
+    // unlock and sync() leaves first-frame artefacts (a gray strip along the canvas edge
+    // that disappears once the next worker tick forces a full redraw). Holding mDataMutex
+    // through sync() costs at most one frame's rasterisation latency to off-UI Update()
+    // callers, which is comfortably absorbed by the 100 ms coUpdate cadence.
+    std::lock_guard lock(mDataMutex);
 
         if (mLayoutDirty) {
             // Reset viewport to full canvas — a previous incremental render may have
@@ -409,9 +428,13 @@ PixelRect InstrumentPanel::Render()
             mCanvas->update();
             mLayoutDirty = false;
             mDirtyPaints.clear();
-            full_redraw = true;
-        } else {
-            if (mDirtyPaints.empty()) return PixelRect{};
+
+            mCanvas->draw(true);
+            mCanvas->sync();
+            return PixelRect{0, 0, mCanvasWidth, mCanvasHeight};
+        }
+
+        if (mDirtyPaints.empty()) return PixelRect{};
 
             // Damage union from captured pre-bounds. Inflate-to-pixel-grid keeps every
             // dirtied sub-pixel covered: floor() the upper-left, ceil() the lower-right,
@@ -433,21 +456,12 @@ PixelRect InstrumentPanel::Render()
             const int r = std::min(mCanvasWidth,  static_cast<int>(std::ceil(max_x)));
             const int b = std::min(mCanvasHeight, static_cast<int>(std::ceil(max_y)));
 
-            dmg = PixelRect{x, y, r, b};
-            mDirtyPaints.clear();
-            if (dmg.empty()) return PixelRect{};
+            PixelRect dmg{x, y, r, b};
+    mDirtyPaints.clear();
+    if (dmg.empty()) return PixelRect{};
 
-            mCanvas->viewport(dmg.left, dmg.top, dmg.width(), dmg.height());
-            mCanvas->update();
-        }
-    }
-
-    // Lock released. draw()+sync() touch only the previously-built command buffer.
-    if (full_redraw) {
-        mCanvas->draw(true);
-        mCanvas->sync();
-        return PixelRect{0, 0, mCanvasWidth, mCanvasHeight};
-    }
+    mCanvas->viewport(dmg.left, dmg.top, dmg.width(), dmg.height());
+    mCanvas->update();
     mCanvas->draw(false);
     mCanvas->sync();
     return dmg;
@@ -460,34 +474,15 @@ void InstrumentPanel::AddScratcher(std::shared_ptr<Scratcher> scratcher)
     slot->OnAttach(*this);
 }
 
-const char* InstrumentPanel::DefaultFontName() const
+const std::string& InstrumentPanel::DefaultFontName() const
 {
     return kDefaultFontName;
 }
 
-void InstrumentPanel::SetSymbol(std::string symbol)
+void InstrumentPanel::SetInstrumentInfo(bybit::InstrumentInfo info)
 {
-    mSymbol = std::move(symbol);
-    OnSymbolChanged(mSymbol);
-}
-
-void InstrumentPanel::SetInstrumentList(std::vector<std::string> symbols)
-{
-    mInstrumentList = std::move(symbols);
-    OnInstrumentListChanged(mInstrumentList);
-}
-
-void InstrumentPanel::SetInstrumentInfo(std::optional<bybit::InstrumentInfo> info)
-{
-    if (info) mSymbol = info->symbol;
     mInstrument = std::move(info);
     OnInstrumentInfoChanged(mInstrument);
-}
-
-void InstrumentPanel::EmitUserSymbolSelection(std::string symbol)
-{
-    if (mOnUserSymbolSelection)
-        mOnUserSymbolSelection(std::move(symbol));
 }
 
 } // namespace scratcher::cockpit
