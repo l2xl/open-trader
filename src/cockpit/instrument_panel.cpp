@@ -222,6 +222,26 @@ int64_t InstrumentPanel::TimeOfHudX(float hud_x) const
     return ViewLeftTimeMs() + static_cast<int64_t>(std::llround(dx / static_cast<double>(m.e11)));
 }
 
+ScenePixelSize InstrumentPanel::PixelSizeOf(const tvg::Scene& scene) const
+{
+    // LogicalScene: composed local → canvas scale is |e11| on X (HUD parent is identity
+    // on X) and |e22| on Y (HUD's Y-flip just negates, magnitude preserved). Invert per
+    // axis to express one canvas pixel back in local units. Guard near-zero scale so
+    // an early frame with an unset matrix never returns +inf.
+    if (&scene == mLogicalScene.get()) {
+        const tvg::Matrix m = mLogicalScene->transform();
+        const float ax = std::abs(m.e11);
+        const float ay = std::abs(m.e22);
+        return ScenePixelSize{
+            ax > 1e-9f ? 1.0f / ax : 1.0f,
+            ay > 1e-9f ? 1.0f / ay : 1.0f,
+        };
+    }
+    // HudScene (or unknown): HUD applies only a Y-flip-about-canvas_h, no scaling, so
+    // one canvas pixel equals one HUD-local unit on either axis.
+    return ScenePixelSize{1.0f, 1.0f};
+}
+
 int64_t InstrumentPanel::ViewLeftTimeMs() const
 {
     if (mPinnedViewLeftMs) return *mPinnedViewLeftMs;
@@ -448,10 +468,35 @@ const std::string& InstrumentPanel::DefaultFontName() const
     return kDefaultFontName;
 }
 
-void InstrumentPanel::SetInstrumentInfo(bybit::InstrumentInfo info)
+namespace {
+
+// Derive fractional-digit count from a tick-size string like "0.01" → 2, "1" → 0.
+// Trailing zeros after the decimal point ("0.10" → 1) are stripped so the resulting
+// scale matches the exchange's intent rather than the string's accidental padding.
+std::size_t DecimalsFromTickSize(const std::string& tick_size)
+{
+    if (tick_size.empty()) return 0;
+    const auto dot = tick_size.find('.');
+    if (dot == std::string::npos) return 0;
+    std::size_t end = tick_size.size();
+    while (end > dot + 1 && tick_size[end - 1] == '0') --end;
+    return end - dot - 1;
+}
+
+} // namespace
+
+void InstrumentPanel::SetInstrumentFeed(bybit::InstrumentInfo info,
+                                        std::shared_ptr<const IDataController::public_trades_feed_type> feed)
 {
     mInstrument = std::move(info);
-    OnInstrumentInfoChanged(mInstrument);
+    mPriceDecimals = DecimalsFromTickSize(mInstrument.tickSize);
+    // Volume scale comes from basePrecision (e.g. "0.000001" → 6 decimals for BTC).
+    // Fallback to 8 (typical max precision) when basePrecision is unset so the
+    // currency parser doesn't reject sub-cent fractional sizes that exceed the
+    // declared scale.
+    const std::size_t base_decimals = DecimalsFromTickSize(mInstrument.basePrecision);
+    mSizeDecimals = base_decimals > 0 ? base_decimals : 8;
+    mPublicTradesFeed = std::move(feed);
 }
 
 } // namespace scratcher::cockpit

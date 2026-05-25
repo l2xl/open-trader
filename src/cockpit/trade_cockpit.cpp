@@ -14,7 +14,9 @@
 #include "trade_cockpit.hpp"
 
 #include <chrono>
+#include <cstddef>
 #include <optional>
+#include <string>
 #include <utility>
 
 #include <boost/asio/co_spawn.hpp>
@@ -119,6 +121,18 @@ panel_id TradeCockpit::RegisterPanel(std::shared_ptr<ContentPanel> panel)
     return pid;
 }
 
+namespace {
+
+std::vector<std::string> SymbolList(const std::vector<bybit::InstrumentInfo>& snapshot)
+{
+    std::vector<std::string> out;
+    out.reserve(snapshot.size());
+    for (const auto& i : snapshot) out.push_back(i.symbol);
+    return out;
+}
+
+} // anonymous namespace
+
 panel_id TradeCockpit::RegisterInstrumentPanel(const std::string& symbol, std::shared_ptr<InstrumentPanel> panel)
 {
     // If the snapshot has not arrived yet (early registration race) the panel is
@@ -130,19 +144,19 @@ panel_id TradeCockpit::RegisterInstrumentPanel(const std::string& symbol, std::s
             if (i.symbol == symbol) { info = i; break; }
         }
     }
-    panel->SetInstrumentInfo(std::move(info));
+
+    // Trigger feed creation + WS subscription via the data-controller's existing
+    // SubscribeInstrument entry point. Empty weak_ptr subs are tolerated by every
+    // feed in the pipeline (sorted_data_feed::subscribe only stores the weak ref
+    // and prunes dead ones on the next push), and we don't need a per-panel
+    // subscription callback at all — the panel reads the live snapshot from the
+    // feed on its regular Update() tick.
+    mDataManager->SubscribeInstrument(symbol, {}, {});
+
+    panel->SetInstrumentFeed(std::move(info), mDataManager->getPublicTradesFeed(symbol));
+
     return RegisterPanel(std::move(panel));
 }
-
-namespace {
-std::vector<std::string> SymbolList(const std::vector<bybit::InstrumentInfo>& snapshot)
-{
-    std::vector<std::string> out;
-    out.reserve(snapshot.size());
-    for (const auto& i : snapshot) out.push_back(i.symbol);
-    return out;
-}
-} // anonymous namespace
 
 TradeCockpit::subscription_id TradeCockpit::SubscribeInstruments(InstrumentsCallback cb)
 {

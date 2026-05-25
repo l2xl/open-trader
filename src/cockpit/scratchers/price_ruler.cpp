@@ -47,10 +47,15 @@ void PriceRuler::OnLayout(InstrumentPanel& panel)
     const PixelRect& rect = panel.InnerDataRect();
     const float canvas_h = static_cast<float>(panel.OuterCanvasRect().height());
 
+    // One canvas pixel in HUD-local units. (1, 1) under the current Y-flip-only HUD
+    // transform; consulted via the panel supplier so the same source of truth covers
+    // any future HUD-scene scaling change without per-scratcher edits.
+    const ScenePixelSize hud_px = panel.PixelSizeOf(panel.HudScene());
+
     // HUD-Y-up conversion: canvas Y → HUD-y is canvas_h - canvas_y.
-    // The +0.5f half-pixel offset for the vertical axis is on X (rect.right + 0.5),
-    // so it carries through unchanged.
-    const float axis_x = static_cast<float>(rect.right) + 0.5f;
+    // The +0.5 px half-pixel offset for the vertical axis centres the half-pixel-wide
+    // stroke on a pixel boundary; expressed via hud_px.x so it tracks the supplier.
+    const float axis_x = static_cast<float>(rect.right) + 0.5f * hud_px.x;
     const float y_top_hud    = canvas_h - static_cast<float>(rect.top);
     const float y_bottom_hud = canvas_h - static_cast<float>(rect.bottom);
 
@@ -58,7 +63,7 @@ void PriceRuler::OnLayout(InstrumentPanel& panel)
     axis->moveTo(axis_x, y_top_hud);
     axis->lineTo(axis_x, y_bottom_hud);
     axis->strokeFill(180, 180, 180, 255);
-    axis->strokeWidth(0.5f);
+    axis->strokeWidth(0.5f * hud_px.x);
     scene.add(axis.get());
 
     // Counter-flip per Text paint: under HUD's Y-flip, glyph local +Y (downward in

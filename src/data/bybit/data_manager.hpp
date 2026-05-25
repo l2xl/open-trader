@@ -104,6 +104,13 @@ public:
     const datahub::keyed_snapshot_data_feed<InstrumentInfo, &InstrumentInfo::symbol>& getInstrumentsFeed() const override
     { return *m_instrument_feed; }
 
+    std::shared_ptr<const public_trades_feed_type> getPublicTradesFeed(const std::string& symbol) const override
+    {
+        auto it = m_pubdata_accept.find(symbol);
+        if (it == m_pubdata_accept.end()) return nullptr;
+        return std::get<pubtrade_feed_ptr>(it->second);
+    }
+
     void PlaceOrder(OrderRequest request, std::function<void(std::string orderId)> callback) override;
     void CancelOrder(const std::string& orderId, const std::string& symbol) override;
 };

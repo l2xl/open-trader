@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cstddef>
 #include <cstdint>
 #include <optional>
 #include <ranges>
@@ -17,12 +18,73 @@
 
 namespace scratcher::cockpit {
 
+class InstrumentPanel;
+
+// QuoteScratcher maintains a persistent ThorVG sub-scene under panel.LogicalScene().
+// Each buoy is rendered as up to three pieces:
+//
+//  * A wick triangle above mean — apex at curr.max, base from (left, mean) to
+//    (right, mean). Color follows curr.max vs prev.max.
+//  * A wick triangle below mean — apex at curr.min, base from (left, mean) to
+//    (right, mean). Color follows curr.min vs prev.min.
+//  * A horizontal diamond body centered on mean — width = candle_width, height =
+//    candle_width / 2 (both in CANVAS PIXELS, sized via InstrumentPanel::PixelSizeOf
+//    on LogicalScene). Color follows curr.mean vs prev.mean. Drawn on top of the
+//    wicks so the triangle bases meeting at mean are visually capped.
+//
+//  Empty buoys (volume == 0) render as a single gray 0.5 px-tall filled rect at the
+//  carried-forward last price level — no diamond, no wicks.
+//
+// Shape pool layout (Z-order is add() order under mScene):
+//   mClosedGrayShape         — gray rects for past empty buoys
+//   mClosedWicks{Green,Red}  — filled triangles, drawn below the body
+//   mClosedBody {Green,Red}  — filled diamonds, drawn on top
+//   mActive…                 — same five-shape layout, reset every frame
+//
+// Closed-pool invalidation triggers — any of:
+//   (a) BuoyCandleQuotes::Reset() (data series rewound) — first-buoy-ts changed;
+//   (b) panel.SetSceneFloor() — floor coords shifted;
+//   (c) Logical-scene Y pixel size changed — diamond half-height and gray dash
+//       half-height are derived from it, so every closed body must be re-emitted.
+//
+// The candle data model itself (BuoyCandleQuotes) is single-writer (IngestTrades, called
+// from CalculateSize, which runs under panel.mDataMutex) and many-reader; concurrent
+// vector + atomic candle fields keep that safe modulo torn-snapshot reads of the active
+// candle, which are visually inconsequential.
 class QuoteScratcher : public Scratcher
 {
 protected:
     BuoyCandleQuotes mQuotes;
     uint64_t mLastPrice = 0;
-    tvg_ptr<tvg::Scene> mScene;  // self-owned subtree; attached to panel.LogicalScene() on first emit
+
+    tvg_ptr<tvg::Scene> mScene;
+
+    tvg_ptr<tvg::Shape> mClosedGrayShape;
+    tvg_ptr<tvg::Shape> mClosedWicksGreenShape;
+    tvg_ptr<tvg::Shape> mClosedWicksRedShape;
+    tvg_ptr<tvg::Shape> mClosedBodyGreenShape;
+    tvg_ptr<tvg::Shape> mClosedBodyRedShape;
+
+    tvg_ptr<tvg::Shape> mActiveGrayShape;
+    tvg_ptr<tvg::Shape> mActiveWicksGreenShape;
+    tvg_ptr<tvg::Shape> mActiveWicksRedShape;
+    tvg_ptr<tvg::Shape> mActiveBodyGreenShape;
+    tvg_ptr<tvg::Shape> mActiveBodyRedShape;
+
+    std::size_t mEmittedClosedCount = 0;
+    std::optional<uint64_t> mEmittedFirstBuoyTs;
+    uint64_t mEmittedFloorTimeMs = 0;
+    uint64_t mEmittedFloorPricePts = 0;
+    // Pixel-size-Y captured at the last closed-pool emission. The diamond body
+    // half-height and gray-dash half-height are (k * px.y), so any change here
+    // forces a full re-emit of every closed shape.
+    float mEmittedPxSizeY = 0.0f;
+
+    // Auto-scale memory: the current visible price window. We re-floor only when
+    // live data drifts outside this window so closed-buoy geometry (anchored at
+    // floor.price_points) does not get invalidated every frame.
+    uint64_t mScaleFloorPrice = 0;
+    uint64_t mScaleTopPrice = 0;
 
 public:
     explicit QuoteScratcher(milliseconds buoy_duration)
@@ -43,6 +105,7 @@ public:
     void IngestTrades(const Range& trades);
 
     void OnAttach(InstrumentPanel& panel) override;
+    void CalculateSize(InstrumentPanel& panel) override;
     void OnLayout(InstrumentPanel& panel) override;
     void OnDetach(InstrumentPanel& panel) override;
 };
@@ -63,10 +126,32 @@ void QuoteScratcher::IngestTrades(const Range& trades)
         begin = std::upper_bound(begin, end, last_seen,
             [](uint64_t v, const auto& t) { return v < get_timestamp(t.trade_time); });
     }
-    if (begin == end) return;
 
-    const uint64_t last_price = mQuotes.last_trade_timestamp() ? mLastPrice : begin->price_points;
-    const uint64_t now_ts = get_timestamp(std::chrono::utc_clock::now());
+    // Seed last_price for the AppendTrades fill-forward path. Three cases:
+    //   * Prior series exists → carry mLastPrice forward (used as the price of every
+    //     empty buoy the fill-forward loop pushes).
+    //   * No prior series AND new trades present → seed from the first new trade.
+    //   * No prior series AND no new trades → nothing to anchor; skip the call.
+    // Crucially we do NOT early-return when only the second clause fails: the
+    // fill-forward loop in AppendTrades runs UNCONDITIONALLY whenever a series
+    // exists, so calling it with an empty subrange is what keeps empty-buoy gray
+    // dashes materialising in real time between actual trade arrivals.
+    uint64_t last_price;
+    if (mQuotes.last_trade_timestamp()) {
+        last_price = mLastPrice;
+    } else if (begin != end) {
+        last_price = begin->price_points;
+    } else {
+        return;
+    }
+
+    // sys_clock (not utc_clock) so now_ts uses the same Unix-ms convention as
+    // wire trade timestamps. get_timestamp(utc_clock::now()) would carry leap
+    // seconds (~27 s offset in 2026) and create phantom empty buoys ahead of
+    // the real wire stream — every subsequent trade would then be rejected as
+    // "earlier than last processed".
+    const uint64_t now_ts = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count();
     mLastPrice = mQuotes.AppendTrades(std::ranges::subrange(begin, end), now_ts, last_price);
 }
 

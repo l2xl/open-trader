@@ -44,6 +44,16 @@ struct IDataController
 
     virtual const datahub::keyed_snapshot_data_feed<bybit::InstrumentInfo, &bybit::InstrumentInfo::symbol>& getInstrumentsFeed() const = 0;
 
+    // Per-symbol public-trade feed shared across all consumers. The feed is
+    // materialised by SubscribeInstrument(symbol, ...) — callers that only need
+    // read access (e.g. the cockpit handing the feed to a panel) still call
+    // SubscribeInstrument with empty weak_ptr subs to trigger creation, then read
+    // the live feed via this accessor. Returns nullptr for symbols that have not
+    // yet been subscribed. The returned shared_ptr keeps the feed alive at least
+    // as long as the caller retains it; the data manager retains its own copy.
+    using public_trades_feed_type = datahub::sorted_data_feed<bybit::PublicTrade, &bybit::PublicTrade::time, &bybit::PublicTrade::execId>;
+    virtual std::shared_ptr<const public_trades_feed_type> getPublicTradesFeed(const std::string& symbol) const = 0;
+
     virtual void PlaceOrder(bybit::OrderRequest request, std::function<void(std::string orderId)> callback) = 0;
     virtual void CancelOrder(const std::string& orderId, const std::string& symbol) = 0;
 };

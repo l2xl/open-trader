@@ -40,7 +40,9 @@ struct WsApiPayload {
     uint64_t ts{0};                    // Timestamp (ms) when system generates the data
     std::string type;                  // Data type ("snapshot" or "delta")
     T data;                            // Payload data (array or single object depending on T)
-    uint64_t cts{0};                   // Cross-server timestamp (ms), present in some payloads
+    std::optional<uint64_t> cts;       // Cross-server timestamp (ms), only present in some payloads
+                                       // (e.g. orderbook). publicTrade omits it; declaring this
+                                       // required would fail glz's error_on_missing_keys parse.
 };
 
 struct RetExtInfo

@@ -17,6 +17,7 @@
 
 #include "bybit/entities/instrument.hpp"
 #include "content_panel.hpp"
+#include "data_controller.hpp"
 #include "pixel_rect.hpp"
 #include "scratcher.hpp"
 #include "scratchers/quote_scratcher.hpp"
@@ -42,16 +43,24 @@ struct SceneFloor
     uint64_t price_points = 0;
 };
 
+// One canvas pixel measured in a scene's local coordinates, decomposed per axis.
+// For axis-aligned scene transforms (e12 = e21 = 0, which holds for both HudScene
+// and LogicalScene) this is simply the inverse of |e11| and |e22| of the composed
+// transform from local → canvas. Scratchers consult this when they need geometry
+// whose visible dimension is pixel-stable under a scene whose local units are not
+// pixels — for example a candle's diamond body whose height must remain N px even
+// as the price-axis scale changes.
+struct ScenePixelSize
+{
+    float x;
+    float y;
+};
+
 class InstrumentPanel : public ContentPanel
 {
 public:
     InstrumentPanel(PanelType type, seconds candle_period, uint32_t candle_width_pixels);
     ~InstrumentPanel() override;
-
-    // Bind the panel to its instrument. Called once by the cockpit at registration time;
-    // the instrument never mutates within a panel's lifetime — symbol re-selection is a
-    // panel-replace operation in MainWindow, not an in-place rebind.
-    void SetInstrumentInfo(bybit::InstrumentInfo info);
 
     const bybit::InstrumentInfo& Instrument() const { return mInstrument; }
     const std::string& Symbol() const { return mInstrument.symbol; }
@@ -90,6 +99,23 @@ public:
     void AddScratcher(std::shared_ptr<Scratcher> scratcher);
     std::shared_ptr<QuoteScratcher> QuoteScratcherInstance() const { return mQuoteScratcher; }
 
+    // Bind the panel to its instrument and live trades feed in one shot. Called once
+    // by the cockpit at registration time; the instrument never mutates within a
+    // panel's lifetime — symbol re-selection is a panel-replace in MainWindow, not
+    // an in-place rebind. mPriceDecimals / mSizeDecimals are derived here from
+    // InstrumentInfo so the per-tick string→points adapter does not re-parse
+    // tickSize on every read. The feed itself is owned by the data manager;
+    // scratchers read its snapshot during OnLayout via the standard Update() circuit.
+    void SetInstrumentFeed(bybit::InstrumentInfo info, std::shared_ptr<const IDataController::public_trades_feed_type> feed);
+    const std::shared_ptr<const IDataController::public_trades_feed_type>& PublicTradesFeed() const
+    { return mPublicTradesFeed; }
+
+    std::size_t PriceDecimals() const
+    { return mPriceDecimals; }
+
+    std::size_t SizeDecimals() const
+    { return mSizeDecimals; }
+
     // Damage tracking. Scratchers call this BEFORE mutating a paint; the panel captures
     // the paint's pre-mutation bounds (valid from the previous frame's sync) and adds
     // them to the damage union for the next Render(). If bounds() fails — e.g. on the
@@ -103,6 +129,13 @@ public:
     // used for hit-testing and reverse mouse-pick.
     float HudXOfTime(int64_t time_ms) const;
     int64_t TimeOfHudX(float hud_x) const;
+
+    // Returns the canvas-pixel size measured in `scene`'s local coordinates. Resolves
+    // mHudScene → (1, 1) (HUD applies only a Y-flip-about-canvas_h, no axis scaling)
+    // and mLogicalScene → (1/|e11|, 1/|e22|) from the live LogicalScene transform.
+    // Sub-scenes added directly under either as identity inherit the parent's value;
+    // any unknown scene falls back to (1, 1) so callers never silently scale by zero.
+    ScenePixelSize PixelSizeOf(const tvg::Scene& scene) const;
 
     // Allocate (or reallocate) the render buffer at the given dimensions and bind it
     // as the ThorVG canvas target as a single action. The new buffer replaces any
@@ -145,8 +178,6 @@ protected:
     // where deterministic single-frame rendering is required).
     void SetUpdateThrottle(std::chrono::nanoseconds dt) noexcept { mUpdateThrottleNs = dt.count(); }
 
-    virtual void OnInstrumentInfoChanged(const bybit::InstrumentInfo& /*info*/) {}
-
 private:
     struct ThorvgRuntimeRef
     {
@@ -180,6 +211,10 @@ private:
     SceneFloor mSceneFloor{};
     int  mRightPadPx = -1;                       // captured on first OnSize as 5% of inner width
     std::optional<int64_t> mPinnedViewLeftMs;    // set: pinned (tests / scrolling); unset: live wall clock
+
+    std::shared_ptr<const IDataController::public_trades_feed_type> mPublicTradesFeed;
+    std::size_t mPriceDecimals = 0;
+    std::size_t mSizeDecimals = 0;
 
     std::deque<std::shared_ptr<Scratcher>> mScratchers;
     std::shared_ptr<QuoteScratcher> mQuoteScratcher;

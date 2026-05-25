@@ -364,10 +364,15 @@ void TimeRuler::RebuildAll(InstrumentPanel& panel)
     const float font_size = panel.DefaultFontSize() * kLabelFontScale;
     const int   text_box_h = static_cast<int>(std::ceil(font_size * kLineHeightScale));
 
+    // One canvas pixel measured in HUD-local units; (1, 1) under the current Y-flip-only
+    // HUD transform but consulted via the panel API so a future zoom or device-pixel
+    // change on the HUD scene flows through automatically.
+    const ScenePixelSize hud_px = panel.PixelSizeOf(panel.HudScene());
+
     // Axis sits at the strip's top edge (= rect.bottom in canvas-Y-down) so the price
     // ruler's vertical line meets it cleanly at the inner-rect corner. The 0.5 nudge
     // centres the half-pixel-wide stroke on a pixel boundary.
-    const float axis_y_hud = canvas_h - static_cast<float>(rect.bottom) - 0.5f;
+    const float axis_y_hud = canvas_h - static_cast<float>(rect.bottom) - 0.5f * hud_px.y;
 
     // mAxisShape — single horizontal line, full inner-rect width. Rebuild path replaces
     // the stroke geometry; tvg::Shape::reset clears all sub-paths so the next moveTo/lineTo
@@ -376,7 +381,7 @@ void TimeRuler::RebuildAll(InstrumentPanel& panel)
     mAxisShape->moveTo(static_cast<float>(rect.left), axis_y_hud);
     mAxisShape->lineTo(static_cast<float>(rect.right), axis_y_hud);
     mAxisShape->strokeFill(180, 180, 180, 255);
-    mAxisShape->strokeWidth(0.5f);
+    mAxisShape->strokeWidth(0.5f * hud_px.y);
 
     const auto period = duration_cast<milliseconds>(panel.CandlePeriod());
     const uint32_t cwidth_px = panel.CandleWidth();
@@ -507,7 +512,7 @@ void TimeRuler::RebuildAll(InstrumentPanel& panel)
     }
 
     mTickLinesShape->strokeFill(180, 180, 180, 255);
-    mTickLinesShape->strokeWidth(0.5f);
+    mTickLinesShape->strokeWidth(0.5f * hud_px.x);
 }
 
 }
