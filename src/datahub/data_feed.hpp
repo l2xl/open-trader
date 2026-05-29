@@ -25,33 +25,47 @@
 
 namespace datahub {
 
-template<typename Entity, auto SortField, auto KeyField>
-class sorted_data_feed : public std::enable_shared_from_this<sorted_data_feed<Entity, SortField, KeyField>>
+// CacheContainer selects the feed's cache type. Default std::deque<Entity>
+// keeps existing call sites unchanged; pick a CacheContainer with stable
+// references (e.g. std::list, boost::container::stable_vector) when
+// subscribers will hold the const-ref handed to the callback past the
+// callback's return — std::deque references survive push_back only.
+template<typename Entity, auto SortField, auto KeyField, template<typename...> class CacheContainer = std::deque>
+class sorted_data_feed : public std::enable_shared_from_this<sorted_data_feed<Entity, SortField, KeyField, CacheContainer>>
 {
 public:
     using entity_type = Entity;
-    using cache_type = std::deque<entity_type>;
+    using cache_type = CacheContainer<Entity>;
     using condition_type = data_condition<entity_type>;
-    using subscription_type = data_subscription<cache_type>;
+    using const_iterator = std::ranges::iterator_t<const cache_type>;
+    // Incremental feed: subscribers see [first, last) of the new tail directly.
+    using subscription_type = data_subscription<cache_type, const_iterator, const_iterator>;
 private:
     cache_type m_cache;
     std::list<std::weak_ptr<subscription_type>> m_subscriptions;
     std::shared_ptr<condition_type> m_condition;
 
-    template<std::ranges::input_range Range>
-    requires std::convertible_to<std::ranges::range_value_t<Range>, entity_type>
-    void push_to_subscriptions(Range&& data, update_kind kind)
+    void push_snapshot()
     {
-        typename subscription_type::range_view_type view(std::ranges::begin(data), std::ranges::end(data));
         auto it = m_subscriptions.begin();
         while (it != m_subscriptions.end()) {
             if (auto sub = it->lock()) {
-                sub->handle_data(typename subscription_type::data_type(kind, view));
+                sub->handle_data(update_kind::snapshot, m_cache, m_cache.cbegin(), m_cache.cend());
                 ++it;
             }
-            else {
-                it = m_subscriptions.erase(it);
+            else { it = m_subscriptions.erase(it); }
+        }
+    }
+
+    void push_increment(const_iterator first, const_iterator last)
+    {
+        auto it = m_subscriptions.begin();
+        while (it != m_subscriptions.end()) {
+            if (auto sub = it->lock()) {
+                sub->handle_data(update_kind::increment, m_cache, first, last);
+                ++it;
             }
+            else { it = m_subscriptions.erase(it); }
         }
     }
 
@@ -69,24 +83,24 @@ public:
     {
         if (!m_cache.empty())
             if (auto locked = sub.lock())
-                locked->handle_data(typename subscription_type::data_type(update_kind::snapshot, typename subscription_type::range_view_type(m_cache.cbegin(), m_cache.cend())));
+                locked->handle_data(update_kind::snapshot, m_cache, m_cache.cbegin(), m_cache.cend());
         m_subscriptions.emplace_back(std::move(sub));
     }
 
     const cache_type& get_snapshot() const { return m_cache; }
 
-    template<std::ranges::input_range Range>
-    requires std::convertible_to<std::ranges::range_value_t<Range>, entity_type>
+    template<std::ranges::input_range InputRange>
+    requires std::convertible_to<std::ranges::range_value_t<InputRange>, entity_type>
     auto data_acceptor()
     {
         static auto sort_val = [](const entity_type& e) -> decltype(auto) { return e.*SortField; };
         static auto key_val = [](const entity_type& e) -> decltype(auto) { return e.*KeyField; };
         std::weak_ptr<sorted_data_feed> ref = this->weak_from_this();
-        return [ref](Range&& entities) {
+        return [ref](InputRange&& entities) {
             if (auto self = ref.lock()) {
 
                 // Phase 1: Filter incoming by condition
-                auto incoming = std::forward<Range>(entities)
+                auto incoming = std::forward<InputRange>(entities)
                     | std::views::filter([&](const entity_type& e) { return !self->m_condition || self->m_condition->matches(e); })
                     /*| std::ranges::to<cache_type>()*/;
                 if (incoming.empty()) return;
@@ -130,25 +144,24 @@ public:
                     }
                 }
                 if (inserted > 0) {
-                    if (update == update_kind::snapshot) {
-                        self->push_to_subscriptions(std::ranges::subrange(self->m_cache.begin(), self->m_cache.end()), update);
-                    }
-                    else {
-                        self->push_to_subscriptions(std::ranges::subrange(first_update_it, self->m_cache.end()), update);
-                    }
+                    if (update == update_kind::snapshot)
+                        self->push_snapshot();
+                    else
+                        self->push_increment(first_update_it, self->m_cache.cend());
                 }
             }
         };
     }
 };
 
-template<typename Entity, auto SortField, auto KeyField>
-class sorted_snapshot_data_feed : public std::enable_shared_from_this<sorted_snapshot_data_feed<Entity, SortField, KeyField>>
+template<typename Entity, auto SortField, auto KeyField, template<typename...> class CacheContainer = std::deque>
+class sorted_snapshot_data_feed : public std::enable_shared_from_this<sorted_snapshot_data_feed<Entity, SortField, KeyField, CacheContainer>>
 {
 public:
     using entity_type = Entity;
-    using cache_type = std::deque<entity_type>;
+    using cache_type = CacheContainer<Entity>;
     using condition_type = data_condition<entity_type>;
+    // Snapshot-only feed: every dispatch is a full-cache snapshot.
     using subscription_type = data_subscription<cache_type>;
 
 private:
@@ -156,12 +169,14 @@ private:
     std::list<std::weak_ptr<subscription_type>> m_subscriptions;
     std::shared_ptr<condition_type> m_condition;
 
-    void push_to_subscriptions(const cache_type& data, update_kind kind)
+    void push_to_subscriptions()
     {
-        typename subscription_type::range_view_type view(data.cbegin(), data.cend());
         auto it = m_subscriptions.begin();
         while (it != m_subscriptions.end()) {
-            if (auto sub = it->lock()) { sub->handle_data(typename subscription_type::data_type(kind, view)); ++it; }
+            if (auto sub = it->lock()) {
+                sub->handle_data(update_kind::snapshot, m_cache);
+                ++it;
+            }
             else { it = m_subscriptions.erase(it); }
         }
     }
@@ -180,22 +195,22 @@ public:
     {
         if (!m_cache.empty())
             if (auto locked = sub.lock())
-                locked->handle_data(typename subscription_type::data_type(update_kind::snapshot, typename subscription_type::range_view_type(m_cache.cbegin(), m_cache.cend())));
+                locked->handle_data(update_kind::snapshot, m_cache);
         m_subscriptions.emplace_back(std::move(sub));
     }
 
     const cache_type& get_snapshot() const { return m_cache; }
 
-    template<std::ranges::input_range Range>
-    requires std::convertible_to<std::ranges::range_value_t<Range>, entity_type>
+    template<std::ranges::input_range InputRange>
+    requires std::convertible_to<std::ranges::range_value_t<InputRange>, entity_type>
     auto data_acceptor()
     {
         static auto sort_val = [](const entity_type& e) -> decltype(auto) { return e.*SortField; };
         static auto key_val = [](const entity_type& e) -> decltype(auto) { return e.*KeyField; };
         std::weak_ptr ref = this->weak_from_this();
-        return [ref](Range&& entities) {
+        return [ref](InputRange&& entities) {
             if (auto self = ref.lock()) {
-                auto incoming = std::forward<Range>(entities)
+                auto incoming = std::forward<InputRange>(entities)
                     | std::views::filter([&](const entity_type& e) { return !self->m_condition || self->m_condition->matches(e); });
                 if (std::ranges::begin(incoming) == std::ranges::end(incoming)) return;
 
@@ -230,19 +245,21 @@ public:
                     }
                 }
                 if (inserted > 0)
-                    self->push_to_subscriptions(self->m_cache, update_kind::snapshot);
+                    self->push_to_subscriptions();
             }
         };
     }
 };
 
-template<typename Entity, auto KeyField>
-class keyed_snapshot_data_feed : public std::enable_shared_from_this<keyed_snapshot_data_feed<Entity, KeyField>>
+template<typename Entity, auto KeyField,
+         template<typename...> class CacheContainer = std::deque>
+class keyed_snapshot_data_feed : public std::enable_shared_from_this<keyed_snapshot_data_feed<Entity, KeyField, CacheContainer>>
 {
 public:
     using entity_type = Entity;
-    using cache_type = std::deque<entity_type>;
+    using cache_type = CacheContainer<Entity>;
     using condition_type = data_condition<entity_type>;
+    // Snapshot-only feed: every dispatch is a full-cache snapshot.
     using subscription_type = data_subscription<cache_type>;
 
 private:
@@ -252,10 +269,12 @@ private:
 
     void push_to_subscriptions()
     {
-        typename subscription_type::range_view_type view(m_cache.cbegin(), m_cache.cend());
         auto it = m_subscriptions.begin();
         while (it != m_subscriptions.end()) {
-            if (auto sub = it->lock()) { sub->handle_data(typename subscription_type::data_type(update_kind::snapshot, view)); ++it; }
+            if (auto sub = it->lock()) {
+                sub->handle_data(update_kind::snapshot, m_cache);
+                ++it;
+            }
             else { it = m_subscriptions.erase(it); }
         }
     }
@@ -274,19 +293,19 @@ public:
     {
         if (!m_cache.empty())
             if (auto locked = sub.lock())
-                locked->handle_data(typename subscription_type::data_type(update_kind::snapshot, typename subscription_type::range_view_type(m_cache.cbegin(), m_cache.cend())));
+                locked->handle_data(update_kind::snapshot, m_cache);
         m_subscriptions.emplace_back(std::move(sub));
     }
 
     const cache_type& get_snapshot() const { return m_cache; }
 
-    template<std::ranges::input_range Range>
-    requires std::convertible_to<std::ranges::range_value_t<Range>, entity_type>
+    template<std::ranges::input_range InputRange>
+    requires std::convertible_to<std::ranges::range_value_t<InputRange>, entity_type>
     auto data_acceptor()
     {
         static auto key_val = [](const entity_type& e) -> decltype(auto) { return e.*KeyField; };
         std::weak_ptr<keyed_snapshot_data_feed> ref = this->weak_from_this();
-        return [ref](Range&& entities) {
+        return [ref](InputRange&& entities) {
             if (auto self = ref.lock()) {
                 bool changed = false;
                 for (auto in_it = std::ranges::begin(entities); in_it != std::ranges::end(entities); ++in_it) {

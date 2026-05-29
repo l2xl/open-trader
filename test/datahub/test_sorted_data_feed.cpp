@@ -46,11 +46,12 @@ std::vector<int> snapshot_seqs(const TradeFeed& feed)
 // Subscribes to feed and appends each notification to log. Caller must keep the returned shared_ptr alive.
 auto subscribe_log(std::shared_ptr<TradeFeed> feed, std::vector<Update>& log)
 {
-    auto sub = make_data_subscription<std::deque<Trade>>([&log](auto&& d) {
-        Update u{d.first, {}};
-        for (const auto& t : d.second) u.seqs.push_back(t.seq);
-        log.push_back(std::move(u));
-    });
+    auto sub = make_subscription<std::deque<Trade>>(
+        [&log](update_kind kind, const std::deque<Trade>& /*full*/, auto first, auto last) {
+            Update u{kind, {}};
+            for (auto it = first; it != last; ++it) u.seqs.push_back(it->seq);
+            log.push_back(std::move(u));
+        });
     feed->subscribe(sub);
     return sub;
 }

@@ -50,7 +50,7 @@ public:
     using private_order_sink_type = datahub::data_sink<datahub::data_model<Order, &Order::orderId>>;
     using private_trade_sink_type = datahub::data_sink<datahub::data_model<Trade, &Trade::execId>>;
 
-    using instrument_feed_type = datahub::keyed_snapshot_data_feed<InstrumentInfo, &InstrumentInfo::symbol>;
+    using instrument_feed_type = IDataController::instruments_feed_type;
 
     using orderbook_feed_type      = datahub::sorted_snapshot_data_feed<OrderBookLevel, &OrderBookLevel::price, &OrderBookLevel::price>;
     using orderbook_feed_ptr       = std::shared_ptr<orderbook_feed_type>;
@@ -96,12 +96,14 @@ public:
 
     static void HandleError(std::weak_ptr<ByBitDataManager> ref, std::exception_ptr eptr);
 
-    void SubscribeInstrumentList(std::weak_ptr<datahub::data_subscription<std::deque<InstrumentInfo>>> sub) override;
-    void SubscribeInstrument(std::string symbol, std::weak_ptr<datahub::data_subscription<std::deque<OrderBookLevel>>> ob_sub, std::weak_ptr<datahub::data_subscription<std::deque<PublicTrade>>> pt_sub) override;
-    void SubscribeOrders(std::weak_ptr<datahub::data_subscription<std::deque<Order>>> sub) override;
-    void SubscribeTrades(std::weak_ptr<datahub::data_subscription<std::deque<Trade>>> sub) override;
+    void SubscribeInstrumentList(std::weak_ptr<IDataController::instruments_feed_type::subscription_type> sub) override;
+    void SubscribeInstrument(std::string symbol,
+                             std::weak_ptr<IDataController::orderbook_feed_type::subscription_type> ob_sub,
+                             std::weak_ptr<IDataController::public_trades_feed_type::subscription_type> pt_sub) override;
+    void SubscribeOrders(std::weak_ptr<IDataController::private_orders_feed_type::subscription_type> sub) override;
+    void SubscribeTrades(std::weak_ptr<IDataController::private_trades_feed_type::subscription_type> sub) override;
 
-    const datahub::keyed_snapshot_data_feed<InstrumentInfo, &InstrumentInfo::symbol>& getInstrumentsFeed() const override
+    const instruments_feed_type& getInstrumentsFeed() const override
     { return *m_instrument_feed; }
 
     std::shared_ptr<const public_trades_feed_type> getPublicTradesFeed(const std::string& symbol) const override

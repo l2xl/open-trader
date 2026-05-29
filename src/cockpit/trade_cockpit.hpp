@@ -40,26 +40,24 @@ namespace scratcher::cockpit {
 class TradeCockpit : public std::enable_shared_from_this<TradeCockpit>
 {
 public:
-    using InstrumentsCallback = std::function<void(const std::vector<std::string>&)>;
+    using InstrumentsCallback = std::function<void(const IDataController::instrument_container_type&)>;
     using subscription_id = uint64_t;
 
 private:
     std::shared_ptr<scheduler> mScheduler;
     CLI::App& mDefaultsConfig;
     std::shared_ptr<IDataController> mDataManager;
-    std::shared_ptr<datahub::data_subscription<std::deque<bybit::InstrumentInfo>>> mInstrumentSub;
+    std::shared_ptr<IDataController::instruments_feed_type::subscription_type> mInstrumentSub;
 
     mutable std::mutex mMutex;
-    std::vector<bybit::InstrumentInfo> mInstrumentsSnapshot;
     boost::container::flat_map<panel_id, std::weak_ptr<ContentPanel>> mPanels;
     boost::container::flat_map<subscription_id, InstrumentsCallback> mInstrumentSubscribers;
-    bool mInstrumentsReady = false;
     panel_id mNextPanelId = 1;
     subscription_id mNextSubId = 1;
 
     struct EnsurePrivate {};
 
-    void OnInstrumentsLoaded();
+    void OnInstrumentsLoaded(const IDataController::instrument_container_type& cache);
 
     static boost::asio::awaitable<void> coUpdate(std::weak_ptr<TradeCockpit> ref);
 

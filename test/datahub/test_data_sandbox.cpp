@@ -40,9 +40,10 @@ TEST_CASE("sorted_data_feed: load and dedup", "[datahub][feed]")
     std::deque<TestTrade> received;
     update_kind last_kind{};
 
-    auto sub = make_data_subscription<std::deque<TestTrade>>([&](auto data) {
-            last_kind = data.first;
-            received.assign(data.second.begin(), data.second.end());
+    auto sub = make_subscription<std::deque<TestTrade>>(
+        [&](update_kind kind, const std::deque<TestTrade>& /*full*/, auto first, auto last) {
+            last_kind = kind;
+            received.assign(first, last);
         });
     feed->subscribe(sub);
 
@@ -77,8 +78,8 @@ TEST_CASE("sorted_data_feed: filter at construction", "[datahub][feed]")
         acceptor(std::deque(source));
 
         std::deque<TestTrade> received;
-        auto sub = make_data_subscription<std::deque<TestTrade>>(
-            [&](auto data) { received.assign(data.second.begin(), data.second.end()); });
+        auto sub = make_subscription<std::deque<TestTrade>>(
+            [&](update_kind, const std::deque<TestTrade>& /*full*/, auto first, auto last) { received.assign(first, last); });
         feed->subscribe(sub);
 
         REQUIRE(received.size() == 20);
@@ -105,10 +106,10 @@ TEST_CASE("sorted_data_feed: incremental with filter", "[datahub][feed]")
     std::deque<TestTrade> received;
     update_kind last_kind{};
 
-    auto sub = make_data_subscription<std::deque<TestTrade>>(
-        [&](auto data) {
-            last_kind = data.first;
-            received.assign(data.second.begin(), data.second.end());
+    auto sub = make_data_subscription<std::deque<TestTrade>, by_value>(
+        [&](update_kind kind, std::deque<TestTrade> slice) {
+            last_kind = kind;
+            received = std::move(slice);
         });
     feed->subscribe(sub);
 
@@ -133,8 +134,8 @@ TEST_CASE("snapshot_data_feed: latest state replacement", "[datahub][feed]")
 
     std::deque<TestState> received;
 
-    auto sub = make_data_subscription<std::deque<TestState>>(
-        [&](auto data) { received.assign(data.second.begin(), data.second.end()); });
+    auto sub = make_subscription<std::deque<TestState>>(
+        [&](update_kind, const std::deque<TestState>& full) { received = full; });
     feed->subscribe(sub);
 
     acceptor(std::deque<TestState>{{"a1", "v1"}, {"a2", "v2"}});
@@ -154,8 +155,8 @@ TEST_CASE("subscription RAII: drop shared_ptr stops delivery", "[datahub][feed]"
     acceptor(std::deque<TestState>{{"init", "data"}});
 
     {
-        auto sub = make_data_subscription<std::deque<TestState>>(
-            [&](auto) { ++call_count; });
+        auto sub = make_subscription<std::deque<TestState>>(
+            [&](update_kind, const std::deque<TestState>&) { ++call_count; });
         feed->subscribe(sub);
         REQUIRE(call_count == 1);  // initial snapshot from pre-populated cache
 

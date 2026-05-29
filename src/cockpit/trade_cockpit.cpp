@@ -42,10 +42,10 @@ std::shared_ptr<TradeCockpit> TradeCockpit::Create(std::shared_ptr<scheduler> sc
 {
     auto self = std::make_shared<TradeCockpit>(std::move(sched), app, std::move(db), EnsurePrivate{});
 
-    self->mInstrumentSub = datahub::make_data_subscription<std::deque<bybit::InstrumentInfo>>(
-        [weak = std::weak_ptr(self)](auto /*update*/) {
+    self->mInstrumentSub = datahub::make_subscription<IDataController::instrument_container_type>(
+        [weak = std::weak_ptr(self)](datahub::update_kind /*kind*/, const IDataController::instrument_container_type& cache) {
             if (auto s = weak.lock())
-                s->OnInstrumentsLoaded();
+                s->OnInstrumentsLoaded(cache);
         });
 
     self->mDataManager->SubscribeInstrumentList(self->mInstrumentSub);
@@ -116,33 +116,23 @@ panel_id TradeCockpit::RegisterPanel(std::shared_ptr<ContentPanel> panel)
 {
     std::lock_guard lock(mMutex);
     panel_id pid = mNextPanelId++;
-    if (mInstrumentsReady) panel->Update();
+    if (!mDataManager->getInstrumentsFeed().get_snapshot().empty())
+        panel->Update();
     mPanels[pid] = panel;
     return pid;
 }
-
-namespace {
-
-std::vector<std::string> SymbolList(const std::vector<bybit::InstrumentInfo>& snapshot)
-{
-    std::vector<std::string> out;
-    out.reserve(snapshot.size());
-    for (const auto& i : snapshot) out.push_back(i.symbol);
-    return out;
-}
-
-} // anonymous namespace
 
 panel_id TradeCockpit::RegisterInstrumentPanel(const std::string& symbol, std::shared_ptr<InstrumentPanel> panel)
 {
     // If the snapshot has not arrived yet (early registration race) the panel is
     // bound to an empty info; OnInstrumentsLoaded re-binds via the regular Update().
+    // The feed cache is boost::container::stable_vector — references stay valid across the seldom updates
+    // the keyed_snapshot_data_feed performs, so this find_if needs no copy of the cache and no shadow snapshot.
     bybit::InstrumentInfo info;
     {
-        std::lock_guard lock(mMutex);
-        for (const auto& i : mInstrumentsSnapshot) {
-            if (i.symbol == symbol) { info = i; break; }
-        }
+        const auto& cache = mDataManager->getInstrumentsFeed().get_snapshot();
+        auto it = std::ranges::find_if(cache, [&](const bybit::InstrumentInfo& i) { return i.symbol == symbol; });
+        if (it != cache.end()) info = *it;
     }
 
     // Trigger feed creation + WS subscription via the data-controller's existing
@@ -160,17 +150,20 @@ panel_id TradeCockpit::RegisterInstrumentPanel(const std::string& symbol, std::s
 
 TradeCockpit::subscription_id TradeCockpit::SubscribeInstruments(InstrumentsCallback cb)
 {
-    std::vector<std::string> snapshot;
     subscription_id id;
-    bool ready;
     {
         std::lock_guard lock(mMutex);
         id = mNextSubId++;
         mInstrumentSubscribers[id] = cb;
-        ready = mInstrumentsReady;
-        if (ready) snapshot = SymbolList(mInstrumentsSnapshot);
     }
-    if (ready && cb) cb(snapshot);
+    // Late-subscriber synchronous delivery uses the live feed cache directly.
+    // by_const_ref is safe to hand through the callback for std::list — refs
+    // remain valid for as long as the data manager owns the feed.
+    if (cb) {
+
+        const auto& cache = mDataManager->getInstrumentsFeed().get_snapshot();
+        if (!cache.empty()) cb(cache);
+    }
     return id;
 }
 
@@ -180,18 +173,11 @@ void TradeCockpit::UnsubscribeInstruments(subscription_id id)
     mInstrumentSubscribers.erase(id);
 }
 
-void TradeCockpit::OnInstrumentsLoaded()
+void TradeCockpit::OnInstrumentsLoaded(const IDataController::instrument_container_type& cache)
 {
-    const auto& feed = mDataManager->getInstrumentsFeed().get_snapshot();
-
-    std::vector<bybit::InstrumentInfo> snapshot(feed.begin(), feed.end());
-    auto symbols = SymbolList(snapshot);
-
     std::vector<InstrumentsCallback> subs;
     {
         std::lock_guard lock(mMutex);
-        mInstrumentsSnapshot = std::move(snapshot);
-        mInstrumentsReady = true;
         subs.reserve(mInstrumentSubscribers.size());
         for (auto& [id, cb] : mInstrumentSubscribers) subs.push_back(cb);
 
@@ -200,7 +186,7 @@ void TradeCockpit::OnInstrumentsLoaded()
         }
     }
 
-    for (auto& cb : subs) if (cb) cb(symbols);
+    for (auto& cb : subs) if (cb) cb(cache);
 }
 
 } // namespace scratcher::cockpit

@@ -250,13 +250,15 @@ void ByBitDataManager::SetupPrivateDataSource()
 
 // ─── IDataController subscriptions ───────────────────────────────────────────
 
-void ByBitDataManager::SubscribeInstrumentList(std::weak_ptr<datahub::data_subscription<std::deque<InstrumentInfo>>> sub)
+void ByBitDataManager::SubscribeInstrumentList(std::weak_ptr<IDataController::instruments_feed_type::subscription_type> sub)
 {
     m_instrument_feed->subscribe(std::move(sub));
     (*m_instruments_query)();
 }
 
-void ByBitDataManager::SubscribeInstrument(std::string symbol, std::weak_ptr<datahub::data_subscription<std::deque<OrderBookLevel>>> ob_sub, std::weak_ptr<datahub::data_subscription<std::deque<PublicTrade>>> pt_sub)
+void ByBitDataManager::SubscribeInstrument(std::string symbol,
+                                           std::weak_ptr<IDataController::orderbook_feed_type::subscription_type> ob_sub,
+                                           std::weak_ptr<IDataController::public_trades_feed_type::subscription_type> pt_sub)
 {
     auto& [ob_sink, ob_feed, pt_sink, pt_feed] = m_pubdata_accept[symbol];
     auto ref = weak_from_this();
@@ -281,12 +283,12 @@ void ByBitDataManager::SubscribeInstrument(std::string symbol, std::weak_ptr<dat
     pt_feed->subscribe(std::move(pt_sub));
 }
 
-void ByBitDataManager::SubscribeOrders(std::weak_ptr<datahub::data_subscription<std::deque<Order>>> sub)
+void ByBitDataManager::SubscribeOrders(std::weak_ptr<IDataController::private_orders_feed_type::subscription_type> sub)
 {
     m_private_order_feed->subscribe(std::move(sub));
 }
 
-void ByBitDataManager::SubscribeTrades(std::weak_ptr<datahub::data_subscription<std::deque<Trade>>> sub)
+void ByBitDataManager::SubscribeTrades(std::weak_ptr<IDataController::private_trades_feed_type::subscription_type> sub)
 {
     m_private_trade_feed->subscribe(std::move(sub));
 }

@@ -46,11 +46,12 @@ std::vector<int> snapshot_seqs(const TradeFeed& feed)
 
 auto subscribe_log(std::shared_ptr<TradeFeed> feed, std::vector<Update>& log)
 {
-    auto sub = make_data_subscription<std::deque<Trade>>([&log](auto&& d) {
-        Update u{d.first, {}};
-        for (const auto& t : d.second) u.seqs.push_back(t.seq);
-        log.push_back(std::move(u));
-    });
+    auto sub = make_subscription<std::deque<Trade>>(
+        [&log](update_kind kind, const std::deque<Trade>& full) {
+            Update u{kind, {}};
+            for (const auto& t : full) u.seqs.push_back(t.seq);
+            log.push_back(std::move(u));
+        });
     feed->subscribe(sub);
     return sub;
 }

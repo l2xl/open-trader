@@ -25,10 +25,10 @@ data_sink<Model>                       — links persistence model to the feed l
     │
     │  handle_data(cache copy)         — fires feed acceptor (subscribers notified immediately)
     ▼
-data_feed (sorted_data_feed / snapshot_data_feed / etc.)
+data_feed (sorted_data_feed / sorted_snapshot_data_feed / keyed_snapshot_data_feed)
     │  optional data_condition filter
     ▼
-data_subscription<Range>               — leaf callbacks; snapshot delivered to new subscriber on attach
+data_subscription<Range, UpdateIt...>  — leaf callbacks; snapshot delivered to new subscriber on attach
 ```
 
 ## Reduced Pipelines
@@ -95,22 +95,29 @@ data_model::data_acceptor<Range, Container>()  — posts accept() on db_strand
 - Factory: `data_model<E, PK>::create(db, strand, table_suffix)`
 
 ### data_feed concept (`src/datahub/data_feed.hpp`)
-- Abstract data feed concept 
+- Abstract data feed concept. Every feed exposes:
+  - `cache_type` — concrete container holding the cache (`CacheContainer<Entity>`)
+  - `subscription_type` — the matching `datahub::subscription<cache_type, Extra...>` spec the feed dispatches into
+  - `subscribe(weak_ptr<subscription_type>)` — registers a subscriber; fires current cache as snapshot synchronously if non-empty
+  - `data_acceptor<InputRange>()` — returns a `(InputRange&&) -> void` callable that merges into the cache and notifies subscribers
+  - `get_snapshot() -> const cache_type&` — direct read access to the live cache
 
-#### sorted_data_feed<Entity, SortField, KeyField> 
+Each feed takes a template-template `CacheContainer` parameter (default `std::deque`). Pick a stable-reference container (`std::list`, `boost::container::stable_vector`) when subscribers will hold the const-ref past the callback's return — default `std::deque` only keeps refs valid across `push_back`.
+
+#### sorted_data_feed<Entity, SortField, KeyField, CacheContainer = std::deque>
+- **Incremental feed.** `subscription_type = subscription<cache_type, const_iterator, const_iterator>`
 - In-memory cache sorted ascending by `SortField`, deduplicated by `KeyField`
-- `data_acceptor<Range>()` — filters by optional condition, skips known keys, inserts sorted, notifies with `update_kind::increment` or `update_kind::snapshot`
-- `subscribe(weak_ptr<subscription_type>)` — fires current cache as snapshot to new subscriber if non-empty
+- `data_acceptor<InputRange>()` — filters by optional condition, skips known keys, inserts sorted, notifies subscribers via `push_snapshot()` (full reorder) or `push_increment(first, last)` (tail append). Subscribers see the new-tail window directly as `[first, last)` — no lookup.
 
-#### sorted_snapshot_data_feed<Entity, SortField, KeyField>
+#### sorted_snapshot_data_feed<Entity, SortField, KeyField, CacheContainer = std::deque>
+- **Snapshot-only feed.** `subscription_type = subscription<cache_type>`
 - In-memory sorted cache that always delivers full state as snapshot on each update
-- `data_acceptor<Range>()` — filters by optional condition, merge-inserts sorted by `SortField` deduplicated by `KeyField`, notifies with `update_kind::snapshot`
-- `subscribe(weak_ptr<subscription_type>)` — fires current cache as snapshot to new subscriber if non-empty
+- `data_acceptor<InputRange>()` — filters by optional condition, merge-inserts sorted by `SortField` deduplicated by `KeyField`, notifies with full-cache snapshot
 
-#### keyed_snapshot_data_feed<Entity, KeyField>
+#### keyed_snapshot_data_feed<Entity, KeyField, CacheContainer = std::deque>
+- **Snapshot-only feed.** `subscription_type = subscription<cache_type>`
 - In-memory keyed cache with upsert semantics: existing entries matched by `KeyField` are replaced, new entries are appended
-- `data_acceptor<Range>()` — filters by optional condition, upserts by `KeyField`, notifies with `update_kind::snapshot`
-- `subscribe(weak_ptr<subscription_type>)` — fires current cache as snapshot to new subscriber if non-empty
+- `data_acceptor<InputRange>()` — filters by optional condition, upserts by `KeyField`, notifies with full-cache snapshot
 
 #### db_data_feed<Entity>
 - DB feed which translates query with condition into resulting range with DB cursor
@@ -126,12 +133,16 @@ All feed types accept an optional `shared_ptr<data_condition<Entity>>` at creati
 - `to_query_condition()` — produces SQL WHERE clause
 - Static factory methods: `equal<Field>(v)`, `not_equal<Field>(v)`, `less<Field>(v)`, `less_or_equal<Field>(v)`, `greater<Field>(v)`, `greater_or_equal<Field>(v)`
 
-### data_subscription<Range> (`src/datahub/data_subscription.hpp`)
-- Parameterized on `std::ranges::input_range Range` (e.g. `std::deque<Entity>`)
-- `range_view_type = std::ranges::subrange<std::ranges::iterator_t<const Range>>`
-- `data_type = std::pair<update_kind, range_view_type>`
-- Abstract leaf: `handle_data(data_type&&) = 0`
-- Factory: `make_data_subscription<Range>(callable)` → `shared_ptr<data_subscription<Range>>`; callable: `(data_type&&) -> void`
+### data_subscription<Range, UpdateIt...> (`src/datahub/data_subscription.hpp`)
+- Single class template with two partial specialisations — one interface per feed shape; the feed picks the matching spec at compile time, so the dispatched call never carries arguments the feed didn't have.
+  - **`subscription<Range>`** — used by snapshot-only feeds. One pure virtual: `handle_data(update_kind, const Range&)`.
+  - **`subscription<Range, It>`** — used by incremental feeds. One pure virtual: `handle_data(update_kind, const Range&, It first, It last)` where `[first, last)` is the new tail.
+- Implementation lives in `detail::subscription_impl<Range, Callable, UptateIt...>` — holds the user's Callable as a direct member (no `std::function` wrap, no type-erasure container). Virtual dispatch is the sole runtime indirection and exists only so the feed can hold heterogeneous subscribers in one `std::list<std::weak_ptr<subscription_type>>`.
+- **Factory**: `make_subscription<Range>(callable)` — single entry point. Picks the matching spec by static `if constexpr` on the Callable's arity:
+  - Callable invocable as `(update_kind, const Range&)` → `shared_ptr<subscription<Range>>` (snapshot-only)
+  - Callable invocable as `(update_kind, const Range&, It, It)` → `shared_ptr<subscription<Range, It>>` (incremental)
+  - Neither match → `static_assert` with a readable diagnostic
+- A right-arity callable for the wrong feed kind fails at the feed's `subscribe()` call, where the `shared_ptr` conversion is rejected.
 
 ### update_kind (`src/datahub/data_update.hpp`)
 - `enum class update_kind { snapshot, increment }`
@@ -141,4 +152,6 @@ All feed types accept an optional `shared_ptr<data_condition<Entity>>` at creati
 - **Weak ptr safety**: all async callbacks capture `weak_ptr` to avoid circular refs and handle object lifetime
 - **One strand per DB**: all `data_model` instances backed by the same database share one `strand_type`
 - **Thread safety boundary**: `data_dispatcher` serializes JSON dispatch; `data_model` serializes DB access via strand; feed mutation happens on whichever thread calls the acceptor (usually data_dispatcher)
-- **Subscriptions are held by weak_prt**: allowing automatic lazy subscription management (no explicit unsubscribe) – destroyed subscription detected by weak_pts probe.   
+- **Subscriptions are held by weak_ptr**: allowing automatic lazy subscription management (no explicit unsubscribe) — feeds prune expired weak_ptrs on the next push, so dropping the subscriber's `shared_ptr` is the only unsubscribe action needed.
+- **Subscriber callback shape is dictated by the feed kind, statically**: snapshot-only feeds never pass iterators to subscribers; incremental feeds always do. There is no runtime branching inside the subscription layer to decide which signature applies — the partial specialisation of `subscription<Range, Extra...>` picked by the feed makes the call shape unambiguous at compile time.
+- **Callable held as-is**: the user's lambda or function object is stored as a direct member of `detail::subscription_impl` — no `std::function` wrap, no per-call SBO/allocation overhead.

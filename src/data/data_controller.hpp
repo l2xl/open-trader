@@ -19,6 +19,8 @@
 #include <string>
 #include <memory>
 
+#include <boost/container/stable_vector.hpp>
+
 #include "datahub/data_subscription.hpp"
 #include "datahub/data_feed.hpp"
 #include "orderbook.hpp"
@@ -30,19 +32,33 @@
 
 namespace scratcher {
 
-// Caller creates subscription with make_data_subscription(handler), then passes weak_ptr to the controller.
-// Dropping the shared_ptr = unsubscribe (RAII).
+// Callers build a subscription with datahub::make_subscription<Range>(callable) — the
+// factory statically picks the matching subscription<Range, Extra...> spec from the
+// callable's arity. The controller takes weak_ptr<...subscription_type>; dropping the
+// shared_ptr = unsubscribe (RAII). The instrument feed uses
+// boost::container::stable_vector so const-refs handed to the callback survive the
+// feed's later in-place updates and appends — safe to hold past the callback.
 struct IDataController
 {
+    using instruments_feed_type = datahub::keyed_snapshot_data_feed<bybit::InstrumentInfo, &bybit::InstrumentInfo::symbol, boost::container::stable_vector>;
+    using instrument_container_type = instruments_feed_type::cache_type;
+
+    using orderbook_feed_type    = datahub::sorted_snapshot_data_feed<OrderBookLevel, &OrderBookLevel::price, &OrderBookLevel::price>;
+    using public_trades_feed_type = datahub::sorted_data_feed<bybit::PublicTrade, &bybit::PublicTrade::time, &bybit::PublicTrade::execId>;
+    using private_orders_feed_type = datahub::sorted_data_feed<bybit::Order, &bybit::Order::updatedTime, &bybit::Order::orderId>;
+    using private_trades_feed_type = datahub::sorted_data_feed<bybit::Trade, &bybit::Trade::execTime, &bybit::Trade::execId>;
+
     virtual ~IDataController() = default;
     virtual const std::string& Name() const = 0;
 
-    virtual void SubscribeInstrumentList(std::weak_ptr<datahub::data_subscription<std::deque<bybit::InstrumentInfo>>> sub) = 0;
-    virtual void SubscribeInstrument(std::string symbol, std::weak_ptr<datahub::data_subscription<std::deque<OrderBookLevel>>> ob_sub, std::weak_ptr<datahub::data_subscription<std::deque<bybit::PublicTrade>>> pt_sub) = 0;
-    virtual void SubscribeOrders(std::weak_ptr<datahub::data_subscription<std::deque<bybit::Order>>> sub) = 0;
-    virtual void SubscribeTrades(std::weak_ptr<datahub::data_subscription<std::deque<bybit::Trade>>> sub) = 0;
+    virtual void SubscribeInstrumentList(std::weak_ptr<instruments_feed_type::subscription_type> sub) = 0;
+    virtual void SubscribeInstrument(std::string symbol,
+                                     std::weak_ptr<orderbook_feed_type::subscription_type> ob_sub,
+                                     std::weak_ptr<public_trades_feed_type::subscription_type> pt_sub) = 0;
+    virtual void SubscribeOrders(std::weak_ptr<private_orders_feed_type::subscription_type> sub) = 0;
+    virtual void SubscribeTrades(std::weak_ptr<private_trades_feed_type::subscription_type> sub) = 0;
 
-    virtual const datahub::keyed_snapshot_data_feed<bybit::InstrumentInfo, &bybit::InstrumentInfo::symbol>& getInstrumentsFeed() const = 0;
+    virtual const instruments_feed_type& getInstrumentsFeed() const = 0;
 
     // Per-symbol public-trade feed shared across all consumers. The feed is
     // materialised by SubscribeInstrument(symbol, ...) — callers that only need
@@ -51,7 +67,6 @@ struct IDataController
     // the live feed via this accessor. Returns nullptr for symbols that have not
     // yet been subscribed. The returned shared_ptr keeps the feed alive at least
     // as long as the caller retains it; the data manager retains its own copy.
-    using public_trades_feed_type = datahub::sorted_data_feed<bybit::PublicTrade, &bybit::PublicTrade::time, &bybit::PublicTrade::execId>;
     virtual std::shared_ptr<const public_trades_feed_type> getPublicTradesFeed(const std::string& symbol) const = 0;
 
     virtual void PlaceOrder(bybit::OrderRequest request, std::function<void(std::string orderId)> callback) = 0;

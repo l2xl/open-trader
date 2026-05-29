@@ -76,14 +76,13 @@ TEST_CASE("ByBitDataManager receives instrument list", "[bybit][integration]")
     std::promise<size_t> promise;
     auto future = promise.get_future();
 
-    auto sub = datahub::make_data_subscription<std::deque<InstrumentInfo>>(
-        [&promise](auto data) {
+    auto sub = datahub::make_subscription<scratcher::IDataController::instrument_container_type>(
+        [&promise](datahub::update_kind, const auto& cache) {
             static bool fired = false;
             if (!fired) {
                 fired = true;
-                const auto count = std::ranges::distance(data.second);
-                std::clog << "Received " << count << " instruments" << std::endl;
-                promise.set_value(static_cast<size_t>(count));
+                std::clog << "Received " << cache.size() << " instruments" << std::endl;
+                promise.set_value(cache.size());
             }
         });
 
