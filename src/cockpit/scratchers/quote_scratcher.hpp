@@ -108,6 +108,18 @@ public:
     void CalculateSize(InstrumentPanel& panel) override;
     void OnLayout(InstrumentPanel& panel) override;
     void OnDetach(InstrumentPanel& panel) override;
+
+protected:
+    // Clock-injected core of IngestTrades: the public overload reads the wall clock and
+    // forwards here; tests inject a deterministic now_ts. now_ts drives BuoyCandleQuotes'
+    // fill-forward of empty buoys up to the present moment.
+    template <std::ranges::forward_range Range>
+    requires requires(std::ranges::range_value_t<Range> trade) {
+        trade.trade_time;
+        trade.price_points;
+        trade.volume_points;
+    }
+    void IngestTradesAt(const Range& trades, uint64_t now_ts);
 };
 
 template <std::ranges::forward_range Range>
@@ -117,6 +129,24 @@ requires requires(std::ranges::range_value_t<Range> trade) {
     trade.volume_points;
 }
 void QuoteScratcher::IngestTrades(const Range& trades)
+{
+    // sys_clock (not utc_clock) so now_ts uses the same Unix-ms convention as
+    // wire trade timestamps. get_timestamp(utc_clock::now()) would carry leap
+    // seconds (~27 s offset in 2026) and create phantom empty buoys ahead of
+    // the real wire stream — every subsequent trade would then be rejected as
+    // "earlier than last processed".
+    const uint64_t now_ts = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count();
+    IngestTradesAt(trades, now_ts);
+}
+
+template <std::ranges::forward_range Range>
+requires requires(std::ranges::range_value_t<Range> trade) {
+    trade.trade_time;
+    trade.price_points;
+    trade.volume_points;
+}
+void QuoteScratcher::IngestTradesAt(const Range& trades, uint64_t now_ts)
 {
     auto begin = std::ranges::begin(trades);
     const auto end = std::ranges::end(trades);
@@ -145,13 +175,6 @@ void QuoteScratcher::IngestTrades(const Range& trades)
         return;
     }
 
-    // sys_clock (not utc_clock) so now_ts uses the same Unix-ms convention as
-    // wire trade timestamps. get_timestamp(utc_clock::now()) would carry leap
-    // seconds (~27 s offset in 2026) and create phantom empty buoys ahead of
-    // the real wire stream — every subsequent trade would then be rejected as
-    // "earlier than last processed".
-    const uint64_t now_ts = std::chrono::duration_cast<std::chrono::milliseconds>(
-        std::chrono::system_clock::now().time_since_epoch()).count();
     mLastPrice = mQuotes.AppendTrades(std::ranges::subrange(begin, end), now_ts, last_price);
 }
 

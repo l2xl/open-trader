@@ -52,19 +52,22 @@ TEST_CASE("SingleBuoyAppend")
     CHECK(quotes.quotes().size() == 2);
 
     CHECK(quotes.quotes().front().volume == 10);
-    CHECK(quotes.quotes().front().min == 50);
+    CHECK(quotes.quotes().front().min == 100);  // opening trade sets min=max=mean=price; the seeded prev close (50) is not memorised
     CHECK(quotes.quotes().front().max == 100);
     CHECK(quotes.quotes().front().mean == 100);
+    CHECK(quotes.quotes().front().close == 100);
 
     CHECK(quotes.quotes().back().volume == 10);
     CHECK(quotes.quotes().back().min == 100);
     CHECK(quotes.quotes().back().max == 100);
     CHECK(quotes.quotes().back().mean == 100);
+    CHECK(quotes.quotes().back().close == 100);
 
     CHECK(quotes.active_candle().volume == 100);
-    CHECK(quotes.active_candle().min == 100);
+    CHECK(quotes.active_candle().min == 1000);  // lone trade in this period: zero-extent diamond at its own price
     CHECK(quotes.active_candle().max == 1000);
     CHECK(quotes.active_candle().mean == 1000);
+    CHECK(quotes.active_candle().close == 1000);
 }
 
 TEST_CASE("TwoTradesAppend")
@@ -85,14 +88,16 @@ TEST_CASE("TwoTradesAppend")
     CHECK(quotes.quotes().size() == 1);
 
     CHECK(quotes.quotes().back().volume == 110);
-    CHECK(quotes.quotes().back().min == 100);
+    CHECK(quotes.quotes().back().min == 200);  // opens at the first trade (200); the carried prev close (100) no longer pulls min down
     CHECK(quotes.quotes().back().max == 300);
     CHECK(quotes.quotes().back().mean == 290);
+    CHECK(quotes.quotes().back().close == 300);
 
     CHECK(quotes.active_candle().volume == 0);
     CHECK(quotes.active_candle().min == 300);
     CHECK(quotes.active_candle().max == 300);
     CHECK(quotes.active_candle().mean == 300);
+    CHECK(quotes.active_candle().close == 300);  // empty buoy carries the previous close
 }
 
 TEST_CASE("SimpleActiveCandle")
@@ -120,15 +125,18 @@ TEST_CASE("SimpleActiveCandle")
     CHECK(quotes.quotes().front().min == 100);
     CHECK(quotes.quotes().front().max == 100);
     CHECK(quotes.quotes().front().mean == 100);
+    CHECK(quotes.quotes().front().close == 100);
 
     CHECK(quotes.quotes().back().volume == 20);
-    CHECK(quotes.quotes().back().min == 100);
+    CHECK(quotes.quotes().back().min == 200);  // opening trade (200) sets the floor; carried prev close (100) is not memorised
     CHECK(quotes.quotes().back().max == 200);
     CHECK(quotes.quotes().back().mean == 200);
+    CHECK(quotes.quotes().back().close == 200);
 
     CHECK(quotes.active_candle().volume == 30);
-    CHECK(quotes.active_candle().min == 200);
+    CHECK(quotes.active_candle().min == 300);  // lone trade in this period: zero-extent diamond at its own price
     CHECK(quotes.active_candle().max == 300);
     CHECK(quotes.active_candle().mean == 300);
+    CHECK(quotes.active_candle().close == 300);
 }
 

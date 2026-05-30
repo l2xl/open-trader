@@ -37,15 +37,17 @@ struct BuoyCandleData
     P min;
     P max;
     P mean;
+    P close;  // last trade price of the period; for an empty buoy the carried previous close
     V volume;
 
     BuoyCandleData() = default;
 
-    BuoyCandleData(auto min, auto max, auto mean, auto vol)
+    BuoyCandleData(auto min, auto max, auto mean, auto close, auto vol)
     {
         this->min = min;
         this->max = max;
         this->mean = mean;
+        this->close = close;
         this->volume = vol;
     }
 
@@ -55,6 +57,7 @@ struct BuoyCandleData
         min = other.min;
         max = other.max;
         mean = other.mean;
+        close = other.close;
         volume = other.volume;
     }
 
@@ -66,6 +69,7 @@ struct BuoyCandleData
         min = other.min;
         max = other.max;
         mean = other.mean;
+        close = other.close;
         volume = other.volume;
         return *this;
     }
@@ -125,7 +129,7 @@ public:
             uint64_t first_ts = get_timestamp(std::ranges::begin(trades)->trade_time);
 
             if (!m_first_buoy_timestamp) { // indicates that Reset() was called
-                mCurCandle = candle_t(last_price, last_price, last_price, 0);
+                mCurCandle = candle_t(last_price, last_price, last_price, last_price, 0);
                 m_buoy_data.clear();
                 m_first_trade_timestamp.emplace(first_ts);
                 m_first_buoy_timestamp.emplace(first_ts - first_ts % buoy_duration());
@@ -146,7 +150,7 @@ public:
                 while (trade_ts >= next_buoy_ts) {
                     if (mCurCandle.volume > 0 || !m_buoy_data.empty()) {
                         candle_t buoy = mCurCandle;
-                        mCurCandle = candle_t(last_price, last_price, last_price, 0);
+                        mCurCandle = candle_t(last_price, last_price, last_price, last_price, 0);
                         m_buoy_data.emplace_back(buoy);
                     }
                     next_buoy_ts += buoy_duration();
@@ -155,12 +159,23 @@ public:
                 uint64_t last_volume = mCurCandle.volume.load();
                 uint64_t sum_volume = last_volume + it->volume_points;
 
-                uint64_t max = std::max(it->price_points, mCurCandle.max.load());
-                uint64_t min = std::min(it->price_points, mCurCandle.min.load());
-
-                mCurCandle.max = max;
-                mCurCandle.min = min;
-                mCurCandle.mean = (mCurCandle.mean.load() * last_volume + it->price_points * it->volume_points) / sum_volume;
+                if (last_volume == 0) {
+                    // First trade of the period: the buoy opens AT the trade price, not at
+                    // the carried-forward previous close. A lone-trade buoy is therefore a
+                    // zero-extent diamond (min == max == mean == price); the move from the
+                    // previous close is indicated separately by the scratcher, not by
+                    // widening this candle. The carried close still seeds empty buoys for
+                    // the gray dash (see the reset above) but is overwritten the instant a
+                    // trade lands.
+                    mCurCandle.max = it->price_points;
+                    mCurCandle.min = it->price_points;
+                    mCurCandle.mean = it->price_points;
+                } else {
+                    mCurCandle.max = std::max(it->price_points, mCurCandle.max.load());
+                    mCurCandle.min = std::min(it->price_points, mCurCandle.min.load());
+                    mCurCandle.mean = (mCurCandle.mean.load() * last_volume + it->price_points * it->volume_points) / sum_volume;
+                }
+                mCurCandle.close = it->price_points;
                 mCurCandle.volume = sum_volume;
 
                 last_price = it->price_points;
@@ -173,7 +188,7 @@ public:
             uint64_t next_buoy_ts = *m_first_buoy_timestamp + m_buoy_data.size() * buoy_duration();
             while (active_buoy_ts > next_buoy_ts) {
                 candle_t buoy = mCurCandle;
-                mCurCandle = candle_t(last_price, last_price, last_price, 0);
+                mCurCandle = candle_t(last_price, last_price, last_price, last_price, 0);
                 m_buoy_data.push_back(buoy);
                 next_buoy_ts += buoy_duration();
             }

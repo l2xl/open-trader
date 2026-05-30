@@ -107,6 +107,23 @@ void AppendBuoy(tvg::Shape& wicks_green, tvg::Shape& wicks_red,
     body_shape.lineTo(right_x, mean_y);
     body_shape.lineTo(mid_x,   mean_y - half_diamond_h);
     body_shape.close();
+
+    // Gray "move" connector: a thin vertical line bridging the previous close to this
+    // buoy's nearest tip, drawn only when the previous close sits outside [min, max] — i.e.
+    // the price jumped into a new band between periods. The candle no longer encodes that
+    // move (min/max reflect only this period's own trades), so the connector is what makes
+    // a gap between consecutive buoys visible. It lives entirely outside [min, max], so it
+    // never overlaps the wicks or body regardless of Z-order.
+    if (prev.close > curr.max || prev.close < curr.min) {
+        const float prev_close_y = SubToFloat(prev.close, floor.price_points);
+        const float tip_y   = SubToFloat(prev.close > curr.max ? curr.max : curr.min, floor.price_points);
+        const float half_w  = 0.25f * px.x;  // 0.5 px wide, pixel-stable through the scene matrix
+        gray.moveTo(mid_x - half_w, prev_close_y);
+        gray.lineTo(mid_x + half_w, prev_close_y);
+        gray.lineTo(mid_x + half_w, tip_y);
+        gray.lineTo(mid_x - half_w, tip_y);
+        gray.close();
+    }
 }
 
 }
@@ -139,10 +156,10 @@ void QuoteScratcher::OnAttach(InstrumentPanel& panel)
     ApplyFill(*mActiveBodyRedShape,     kRed);
 
     // Z-order (add() order): wicks first so the diamond bodies sit on top and cap the
-    // triangle bases meeting at mean. Gray rects (only ever drawn for empty buoys, which
-    // by definition have no wicks/body for the same buoy) are inserted between the wick
-    // and body layers — placement doesn't affect any visible overlap, but it groups all
-    // "closed-pool" shapes contiguously ahead of all "active-pool" shapes.
+    // triangle bases meeting at mean. Gray shapes (empty-buoy dashes and the thin "move"
+    // connectors, both of which lie outside any buoy's [min, max]) are inserted between the
+    // wick and body layers — placement doesn't affect any visible overlap, but it groups
+    // all "closed-pool" shapes contiguously ahead of all "active-pool" shapes.
     mScene->add(mClosedWicksGreenShape.get());
     mScene->add(mClosedWicksRedShape.get());
     mScene->add(mClosedGrayShape.get());

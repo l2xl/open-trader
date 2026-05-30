@@ -300,6 +300,7 @@ if(NOT ANDROID)
     add_test(test_data_manager test/bybit/test_data_manager.cpp)
     add_test(test_orderbook test/data/test_orderbook.cpp)
     add_test(test_bybit_orderbook test/bybit/test_orderbook.cpp)
+    add_test(test_quote_scratcher test/cockpit/scratchers/test_quote_scratcher.cpp)
 
     # ThorVG render test — links only Catch2 + ThorVG (+ cairo for the bridge test)
     if(THORVG_AVAILABLE AND CAIRO_FOUND)
