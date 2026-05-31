@@ -1,6 +1,15 @@
 // Scratcher project
 // Copyright (c) 2025-2026 l2xl (l2xl/at/proton.me)
 // Distributed under the Intellectual Property Reserve License (IPRL)
+// -----BEGIN PGP PUBLIC KEY BLOCK-----
+//
+// mDMEYdxcVRYJKwYBBAHaRw8BAQdAfacBVThCP5QDPEgSbSIudtpJS4Y4Imm5dzaN
+// lM1HTem0IkwyIFhsIChsMnhsKSA8bDJ4bEBwcm90b25tYWlsLmNvbT6IkAQTFggA
+// OBYhBKRCfUyWnduCkisNl+WRcOaCK79JBQJh3FxVAhsDBQsJCAcCBhUKCQgLAgQW
+// AgMBAh4BAheAAAoJEOWRcOaCK79JDl8A/0/AjYVbAURZJXP3tHRgZyYyN9txT6mW
+// 0bYCcOf0rZ4NAQDoFX4dytPDvcjV7ovSQJ6dzvIoaRbKWGbHRCufrm5QBA==
+// =KKu7
+// -----END PGP PUBLIC KEY BLOCK-----
 
 #include "quote_scratcher.hpp"
 
@@ -24,9 +33,15 @@ namespace {
 
 struct Color { uint8_t r, g, b, a; };
 
-constexpr Color kGreen{40, 200, 80, 255};
-constexpr Color kRed{220, 50, 50, 255};
-constexpr Color kGray{140, 140, 140, 255};
+// Pure dark green/red sampled from the reference swatch, used for the wick triangles
+// (the high/low reach). The mean-price diamond uses ~65 %-luminance derivatives so the
+// body grounds as a darker anchor while staying the same hue — triangles read brighter
+// than the body, keeping the high/low pop above the mean.
+constexpr Color kWickGreen{0, 95, 0, 255};     // #005f00
+constexpr Color kWickRed{95, 0, 0, 255};       // #5f0000
+constexpr Color kBodyGreen{0, 62, 0, 255};     // #003e00
+constexpr Color kBodyRed{62, 0, 0, 255};       // #3e0000
+constexpr Color kGray{110, 110, 110, 255};
 
 inline float SubToFloat(uint64_t value, uint64_t floor)
 {
@@ -36,6 +51,26 @@ inline float SubToFloat(uint64_t value, uint64_t floor)
 void ApplyFill(tvg::Shape& shape, Color c)
 {
     shape.fill(c.r, c.g, c.b, c.a);
+}
+
+// Coloring baseline: the most recent FILLED buoy strictly before `idx` in `closed`.
+// Empty buoys carry the previous close forward as min == max == mean == close, so an
+// empty predecessor's extents collapse onto that flat carried level. Comparing against
+// it would measure growth against the carried close rather than the prior real candle —
+// e.g. the top wick paints green whenever curr.max merely exceeds the carried close,
+// even when the last traded high was higher. Walking back to the last traded buoy
+// restores the intended "did the high/low/mean grow vs the previous real candle"
+// semantics. Returns nullptr when no filled predecessor exists (series anchor — the
+// caller then paints neutral by comparing the buoy against itself). prev.close is
+// unaffected by this choice: empty buoys carry close forward unchanged, so the last
+// filled buoy's close equals any intervening empty buoy's close.
+const BuoyCandleQuotes::candle_t* PrevFilledBuoy(const BuoyCandleQuotes::quotes_t& closed,
+                                                 std::size_t idx)
+{
+    for (std::size_t j = idx; j-- > 0; ) {
+        if (closed[j].volume > 0) return &closed[j];
+    }
+    return nullptr;
 }
 
 // Emit one buoy into its color-grouped Shape pools. Filled geometry only (no strokes),
@@ -79,21 +114,29 @@ void AppendBuoy(tvg::Shape& wicks_green, tvg::Shape& wicks_red,
     const float min_y = SubToFloat(curr.min, floor.price_points);
     const float max_y = SubToFloat(curr.max, floor.price_points);
 
-    // Top wick: apex at (mid, max), base from (left, mean) → (right, mean). Color by
-    // comparison of curr.max against prev.max.
+    // Flatten each wick apex into a 0.5 px-wide horizontal edge so the tip reads as a
+    // crisp short cap rather than a needle-thin point that the rasterizer thins to
+    // near-invisibility. Pixel-stable through the scene matrix (period_ms → candle_width
+    // px via e11), so the cap stays 0.5 px regardless of zoom.
+    const float tip_half_w = 0.25f * px.x;
+
+    // Top wick: trapezium with the long base from (left, mean) → (right, mean) and a
+    // short top edge spanning (mid ± tip_half_w, max). Color by curr.max vs prev.max.
     auto& top_shape = (curr.max >= prev.max) ? wicks_green : wicks_red;
     top_shape.moveTo(left_x, mean_y);
-    top_shape.lineTo(mid_x,  max_y);
+    top_shape.lineTo(mid_x - tip_half_w, max_y);
+    top_shape.lineTo(mid_x + tip_half_w, max_y);
     top_shape.lineTo(right_x, mean_y);
     top_shape.close();
 
-    // Bottom wick: apex at (mid, min), base from (left, mean) → (right, mean). Color
-    // by comparison of curr.min against prev.min. Wound the opposite way so both
-    // triangles use a consistent fill rule under any future winding-sensitive setting.
+    // Bottom wick: trapezium mirroring the top — short bottom edge spanning
+    // (mid ± tip_half_w, min). Color by curr.min vs prev.min. Wound the opposite way so
+    // both shapes use a consistent fill rule under any future winding-sensitive setting.
     auto& bot_shape = (curr.min >= prev.min) ? wicks_green : wicks_red;
     bot_shape.moveTo(left_x, mean_y);
     bot_shape.lineTo(right_x, mean_y);
-    bot_shape.lineTo(mid_x,  min_y);
+    bot_shape.lineTo(mid_x + tip_half_w, min_y);
+    bot_shape.lineTo(mid_x - tip_half_w, min_y);
     bot_shape.close();
 
     // Mean body diamond. Vertices: left tip at (left, mean), top at (mid, mean+halfH),
@@ -109,19 +152,25 @@ void AppendBuoy(tvg::Shape& wicks_green, tvg::Shape& wicks_red,
     body_shape.close();
 
     // Gray "move" connector: a thin vertical line bridging the previous close to this
-    // buoy's nearest tip, drawn only when the previous close sits outside [min, max] — i.e.
+    // buoy's mean level, drawn only when the previous close sits outside [min, max] — i.e.
     // the price jumped into a new band between periods. The candle no longer encodes that
     // move (min/max reflect only this period's own trades), so the connector is what makes
-    // a gap between consecutive buoys visible. It lives entirely outside [min, max], so it
-    // never overlaps the wicks or body regardless of Z-order.
+    // a gap between consecutive buoys visible. The rect spans down to mean so it meets the
+    // candle with no gap, but the gray pool is drawn UNDER the wicks and body (see OnAttach
+    // Z-order), so the inner segment is hidden and only the part outside [min, max]
+    // (previous close → nearest tip) shows — a stem from the prior close to the candle edge.
     if (prev.close > curr.max || prev.close < curr.min) {
         const float prev_close_y = SubToFloat(prev.close, floor.price_points);
-        const float tip_y   = SubToFloat(prev.close > curr.max ? curr.max : curr.min, floor.price_points);
-        const float half_w  = 0.25f * px.x;  // 0.5 px wide, pixel-stable through the scene matrix
+        // 1 px wide (not 0.5 px). A sub-pixel-width filled rect distributes its
+        // anti-aliased coverage differently as its screen-x sweeps sub-pixel positions
+        // under scroll — one ~50% column vs two ~25% columns — which the eye reads as a
+        // flickering change in thickness/brightness. At a full pixel the covered ink is
+        // constant across sub-pixel offsets, so the connector stays visually steady.
+        const float half_w  = 0.5f * px.x;
         gray.moveTo(mid_x - half_w, prev_close_y);
         gray.lineTo(mid_x + half_w, prev_close_y);
-        gray.lineTo(mid_x + half_w, tip_y);
-        gray.lineTo(mid_x - half_w, tip_y);
+        gray.lineTo(mid_x + half_w, mean_y);
+        gray.lineTo(mid_x - half_w, mean_y);
         gray.close();
     }
 }
@@ -145,30 +194,32 @@ void QuoteScratcher::OnAttach(InstrumentPanel& panel)
     mActiveBodyRedShape.reset(tvg::Shape::gen());
 
     ApplyFill(*mClosedGrayShape,        kGray);
-    ApplyFill(*mClosedWicksGreenShape,  kGreen);
-    ApplyFill(*mClosedWicksRedShape,    kRed);
-    ApplyFill(*mClosedBodyGreenShape,   kGreen);
-    ApplyFill(*mClosedBodyRedShape,     kRed);
+    ApplyFill(*mClosedWicksGreenShape,  kWickGreen);
+    ApplyFill(*mClosedWicksRedShape,    kWickRed);
+    ApplyFill(*mClosedBodyGreenShape,   kBodyGreen);
+    ApplyFill(*mClosedBodyRedShape,     kBodyRed);
     ApplyFill(*mActiveGrayShape,        kGray);
-    ApplyFill(*mActiveWicksGreenShape,  kGreen);
-    ApplyFill(*mActiveWicksRedShape,    kRed);
-    ApplyFill(*mActiveBodyGreenShape,   kGreen);
-    ApplyFill(*mActiveBodyRedShape,     kRed);
+    ApplyFill(*mActiveWicksGreenShape,  kWickGreen);
+    ApplyFill(*mActiveWicksRedShape,    kWickRed);
+    ApplyFill(*mActiveBodyGreenShape,   kBodyGreen);
+    ApplyFill(*mActiveBodyRedShape,     kBodyRed);
 
-    // Z-order (add() order): wicks first so the diamond bodies sit on top and cap the
-    // triangle bases meeting at mean. Gray shapes (empty-buoy dashes and the thin "move"
-    // connectors, both of which lie outside any buoy's [min, max]) are inserted between the
-    // wick and body layers — placement doesn't affect any visible overlap, but it groups
-    // all "closed-pool" shapes contiguously ahead of all "active-pool" shapes.
+    // Z-order (add() order): gray first so the "move" connector renders UNDER the buoy —
+    // it runs all the way to mean but the wicks and body cover its inner segment, leaving
+    // only the part outside [min, max] (previous close → nearest tip) visible as a stem
+    // with no gap. Wicks next, then the diamond bodies on top so they cap the triangle
+    // bases meeting at mean. Empty-buoy dashes also live in the gray pool but sit where no
+    // buoy is drawn, so their layer placement is immaterial. Closed-pool shapes are grouped
+    // contiguously ahead of all active-pool shapes.
+    mScene->add(mClosedGrayShape.get());
     mScene->add(mClosedWicksGreenShape.get());
     mScene->add(mClosedWicksRedShape.get());
-    mScene->add(mClosedGrayShape.get());
     mScene->add(mClosedBodyGreenShape.get());
     mScene->add(mClosedBodyRedShape.get());
 
+    mScene->add(mActiveGrayShape.get());
     mScene->add(mActiveWicksGreenShape.get());
     mScene->add(mActiveWicksRedShape.get());
-    mScene->add(mActiveGrayShape.get());
     mScene->add(mActiveBodyGreenShape.get());
     mScene->add(mActiveBodyRedShape.get());
 
@@ -410,10 +461,10 @@ void QuoteScratcher::OnLayout(InstrumentPanel& panel)
         mClosedBodyGreenShape->reset();
         mClosedBodyRedShape->reset();
         ApplyFill(*mClosedGrayShape,       kGray);
-        ApplyFill(*mClosedWicksGreenShape, kGreen);
-        ApplyFill(*mClosedWicksRedShape,   kRed);
-        ApplyFill(*mClosedBodyGreenShape,  kGreen);
-        ApplyFill(*mClosedBodyRedShape,    kRed);
+        ApplyFill(*mClosedWicksGreenShape, kWickGreen);
+        ApplyFill(*mClosedWicksRedShape,   kWickRed);
+        ApplyFill(*mClosedBodyGreenShape,  kBodyGreen);
+        ApplyFill(*mClosedBodyRedShape,    kBodyRed);
         mEmittedClosedCount = 0;
         mEmittedFirstBuoyTs = first_ts;
         mEmittedFloorTimeMs = floor.time_ms;
@@ -429,10 +480,10 @@ void QuoteScratcher::OnLayout(InstrumentPanel& panel)
     mActiveBodyGreenShape->reset();
     mActiveBodyRedShape->reset();
     ApplyFill(*mActiveGrayShape,       kGray);
-    ApplyFill(*mActiveWicksGreenShape, kGreen);
-    ApplyFill(*mActiveWicksRedShape,   kRed);
-    ApplyFill(*mActiveBodyGreenShape,  kGreen);
-    ApplyFill(*mActiveBodyRedShape,    kRed);
+    ApplyFill(*mActiveWicksGreenShape, kWickGreen);
+    ApplyFill(*mActiveWicksRedShape,   kWickRed);
+    ApplyFill(*mActiveBodyGreenShape,  kBodyGreen);
+    ApplyFill(*mActiveBodyRedShape,    kBodyRed);
 
     if (!first_ts) return;
 
@@ -443,9 +494,11 @@ void QuoteScratcher::OnLayout(InstrumentPanel& panel)
     for (std::size_t i = mEmittedClosedCount; i < n; ++i) {
         const uint64_t ts = *first_ts + i * duration;
         const auto& curr = closed[i];
-        // First buoy in the series has no predecessor — comparing against itself
-        // paints it neutral (green via the `>=` tie-break). Intentional anchor.
-        const auto& prev = (i == 0) ? curr : closed[i - 1];
+        // Color against the last FILLED buoy, skipping carried-forward empty buoys
+        // whose extents collapse onto the previous close. With no filled predecessor
+        // (series anchor) compare against itself — paints neutral (green via `>=`).
+        const auto* prev_filled = PrevFilledBuoy(closed, i);
+        const auto& prev = prev_filled ? *prev_filled : curr;
         AppendBuoy(*mClosedWicksGreenShape, *mClosedWicksRedShape,
                    *mClosedBodyGreenShape,  *mClosedBodyRedShape,
                    *mClosedGrayShape,
@@ -455,7 +508,8 @@ void QuoteScratcher::OnLayout(InstrumentPanel& panel)
 
     const auto active = mQuotes.active_candle();
     const uint64_t active_ts = *first_ts + n * duration;
-    BuoyCandleQuotes::candle_t prev = closed.empty() ? active : closed.back();
+    const auto* prev_filled = PrevFilledBuoy(closed, n);
+    BuoyCandleQuotes::candle_t prev = prev_filled ? *prev_filled : active;
     AppendBuoy(*mActiveWicksGreenShape, *mActiveWicksRedShape,
                *mActiveBodyGreenShape,  *mActiveBodyRedShape,
                *mActiveGrayShape,
