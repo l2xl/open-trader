@@ -22,6 +22,7 @@
 #include <mutex>
 #include <ranges>
 
+#include "scratchers/price_indicator.hpp"
 #include "scratchers/price_ruler.hpp"
 #include "scratchers/time_ruler.hpp"
 #include "timedef.hpp"
@@ -139,6 +140,9 @@ InstrumentPanel::InstrumentPanel(PanelType type, seconds candle_period, uint32_t
         AddScratcher(std::make_shared<PriceRuler>());
         mQuoteScratcher = std::make_shared<QuoteScratcher>(milliseconds(mCandlePeriod));
         AddScratcher(mQuoteScratcher);
+        // Last after the quote scratcher: its HUD overlay (last-price line + label box) draws
+        // on top of the candles and the rulers, and its OnLayout reads mQuoteScratcher live.
+        AddScratcher(std::make_shared<PriceIndicator>());
     }
 
     using namespace std::chrono;
@@ -233,6 +237,27 @@ int64_t InstrumentPanel::TimeOfHudX(float hud_x) const
     return ViewLeftTimeMs() + static_cast<int64_t>(std::llround(dx / static_cast<double>(m.e11)));
 }
 
+float InstrumentPanel::HudYOfPrice(uint64_t price_points) const
+{
+    // LogicalScene maps (price - floor) → HUD-y via e22*(price-floor) + e23, with e22 the
+    // pixels-per-point price scale and e23 = canvas_h - inner_bottom anchoring the floor price at
+    // the inner-rect bottom. The floor tracks the visible bottom price, so (price - floor) is a
+    // small in-window offset with no catastrophic-cancel term — the int64 delta is applied in
+    // double purely for parity with HudXOfTime.
+    const tvg::Matrix m = mLogicalScene->transform();
+    const int64_t dp = static_cast<int64_t>(price_points) - static_cast<int64_t>(mSceneFloor.price_points);
+    return static_cast<float>(static_cast<double>(m.e22) * static_cast<double>(dp)) + m.e23;
+}
+
+uint64_t InstrumentPanel::PriceOfHudY(float hud_y) const
+{
+    const tvg::Matrix m = mLogicalScene->transform();
+    if (std::abs(m.e22) < 1e-9f) return mSceneFloor.price_points;
+    const double dp = (static_cast<double>(hud_y) - static_cast<double>(m.e23)) / static_cast<double>(m.e22);
+    const int64_t pts = static_cast<int64_t>(mSceneFloor.price_points) + std::llround(dp);
+    return pts > 0 ? static_cast<uint64_t>(pts) : 0;
+}
+
 ScenePixelSize InstrumentPanel::PixelSizeOf(const tvg::Scene& scene) const
 {
     // LogicalScene: composed local → canvas scale is |e11| on X (HUD parent is identity
@@ -274,8 +299,18 @@ int64_t InstrumentPanel::ViewLeftTimeMs() const
 
 void InstrumentPanel::EnsureViewAnchor()
 {
-    if (mRightPadPx >= 0) return;
-    mRightPadPx = std::max(0, mInnerDataRect.width() * 5 / 100);
+    // Live-edge right inset, recomputed every DoUpdate from the FINAL inner rect: by this phase
+    // every ruler has reserved its strip in CalculateSize, so mInnerDataRect.width() is the true
+    // data width. The previous code latched this once; a worker Update() landing before the first
+    // real layout() captured a zero pad against a 0×0 canvas and never refreshed it, pinning the
+    // live edge onto the price-ruler boundary.
+    //
+    // The inset is at least one candle width because the active buoy spans the current period and
+    // reaches a full candle into the FUTURE (right of "now"); a smaller inset pushes its right half
+    // behind the price ruler. The 5%-of-width term adds breathing room at the live edge on wider
+    // panels, where it dominates the candle-width floor.
+    const int inner_w = std::max(0, mInnerDataRect.width());
+    mRightPadPx = std::max<int>(static_cast<int>(mCandleWidthPixels), inner_w * 5 / 100);
 }
 
 void InstrumentPanel::ApplyOuterSceneTransforms()

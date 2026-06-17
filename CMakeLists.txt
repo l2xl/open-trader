@@ -159,6 +159,8 @@ set(core_SOURCES
         src/cockpit/scratchers/time_ruler.cpp
         src/cockpit/scratchers/price_ruler.hpp
         src/cockpit/scratchers/price_ruler.cpp
+        src/cockpit/scratchers/price_indicator.hpp
+        src/cockpit/scratchers/price_indicator.cpp
         src/cockpit/scratchers/quote_scratcher.hpp
         src/cockpit/scratchers/quote_scratcher.cpp
         src/cockpit/content_panel.hpp

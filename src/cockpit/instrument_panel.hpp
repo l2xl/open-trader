@@ -127,6 +127,15 @@ public:
     float HudXOfTime(int64_t time_ms) const;
     int64_t TimeOfHudX(float hud_x) const;
 
+    // HUD-Y projection of a model price (in scene-grid points) under the current view
+    // transform — the price-axis twin of HudXOfTime. Reads mLogicalScene's matrix (e22 =
+    // px_per_point, e23 = HUD-y of the floor price) so callers get the live price→pixel mapping
+    // without duplicating the autoscale state. Returns the HUD-local (Y-up) coordinate, ready to
+    // draw into HudScene. PriceOfHudY is the inverse, used by the price ruler to recover the
+    // visible price band at the inner-rect edges.
+    float HudYOfPrice(uint64_t price_points) const;
+    uint64_t PriceOfHudY(float hud_y) const;
+
     // Returns the canvas-pixel size measured in `scene`'s local coordinates. Resolves
     // mHudScene → (1, 1) (HUD applies only a Y-flip-about-canvas_h, no axis scaling)
     // and mLogicalScene → (1/|e11|, 1/|e22|) from the live LogicalScene transform.
@@ -206,7 +215,7 @@ private:
     int mCanvasHeight = 0;
 
     SceneFloor mSceneFloor{};
-    int  mRightPadPx = -1;                       // captured on first OnSize as 5% of inner width
+    int  mRightPadPx = 0;                        // live-edge right inset; recomputed each DoUpdate in EnsureViewAnchor
     std::optional<int64_t> mPinnedViewLeftMs;    // set: pinned (tests / scrolling); unset: live wall clock
 
     std::size_t mPriceDecimals = 0;
