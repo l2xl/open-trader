@@ -38,7 +38,7 @@ def test_leaf_test_logs_render_as_collapsible_details():
         ]),
     }
     summary = render_summary(report)
-    assert "<details><summary>\U0001F534 **A** leaf</summary>" in summary
+    assert "<details><summary><small>\U0001F534</small> **A** leaf</summary>" in summary
     assert "<code>test/datahub/test_dao.cpp</code>" in summary
     assert "FAILED: REQUIRE( rows == 1 )" in summary
     assert "All tests passed" in summary
@@ -48,7 +48,7 @@ def test_leaf_test_logs_render_as_collapsible_details():
 def test_leaf_without_logs_stays_a_plain_list_item():
     report = {"A": _entry("test_passed", header="leaf")}
     summary = render_summary(report)
-    assert "- \U0001F7E2 **A** leaf" in summary
+    assert "- <small>\U0001F7E2</small> **A** leaf" in summary
     assert "<details>" not in summary
 
 

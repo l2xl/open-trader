@@ -48,9 +48,23 @@ def _roots(report):
     return sorted(uid for uid in report if uid not in all_children)
 
 
-def _render_test(test):
-    ball = BALL["test_passed"] if test["passed"] else BALL["test_failed"]
-    label = f"{ball} <code>{test['name']}</code>"
+# Nested <details> blocks get no default left padding in rendered Markdown, so
+# depth is made visible with literal non-breaking spaces (plain ASCII spaces
+# collapse outside <pre>) prefixed onto each node's own label.
+INDENT_UNIT = " " * 4
+
+
+def _indent(depth):
+    return INDENT_UNIT * depth
+
+
+def _bullet(status):
+    return f"<small>{BALL[status]}</small>"
+
+
+def _render_test(test, depth):
+    ball = _bullet("test_passed" if test["passed"] else "test_failed")
+    label = f"{_indent(depth)}{ball} <code>{test['name']}</code>"
     lines = test["log"].strip().splitlines()
     if len(lines) > MAX_LOG_LINES:
         lines = ["...(truncated)"] + lines[-MAX_LOG_LINES:]
@@ -60,20 +74,20 @@ def _render_test(test):
     return f"<details><summary>{label}</summary>\n\n```\n{log}\n```\n\n</details>\n"
 
 
-def _render_node(uid, report, path):
+def _render_node(uid, report, path, depth=0):
     entry = report[uid]
-    ball = BALL[entry["status"]]
-    label = f"{ball} **{uid}** {_title(entry)}"
+    ball = _bullet(entry["status"])
+    label = f"{_indent(depth)}{ball} **{uid}** {_title(entry)}"
     kids = entry["children"]
     tests = entry.get("tests") or []
     if not kids:
         if not tests:
             return f"- {label}\n"
-        body = "".join(_render_test(t) for t in tests)
+        body = "".join(_render_test(t, depth + 1) for t in tests)
         return f"<details><summary>{label}</summary>\n\n{body}\n</details>\n"
     if uid in path:
         return f"- {label} _(cycle)_\n"
-    body = "".join(_render_node(child, report, path | {uid}) for child in kids)
+    body = "".join(_render_node(child, report, path | {uid}, depth + 1) for child in kids)
     return f"<details><summary>{label}</summary>\n\n{body}\n</details>\n"
 
 
@@ -85,7 +99,7 @@ def render_summary(report):
     lines = ["| Status | Count |", "|---|---|"]
     for status in ("test_passed", "test_failed", "partially_implemented", "not_implemented"):
         if status in counts:
-            lines.append(f"| {BALL[status]} {status} | {counts[status]} |")
+            lines.append(f"| {_bullet(status)} {status} | {counts[status]} |")
     lines.append("")
     for uid in _roots(report):
         lines.append(_render_node(uid, report, frozenset()))
