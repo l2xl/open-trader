@@ -83,6 +83,22 @@ def test_edit_and_restamp_in_one_commit_is_rejected(tree_builder):
     assert approval_run("HEAD^..HEAD", cwd=base) == 1
 
 
+def test_unreviewed_item_edit_with_its_test_in_one_commit_passes(tree_builder):
+    base, make_document, make_item = tree_builder
+    make_document(base, "req/infra", "INFRA", extensions={"item_sha_required": True})
+    (base / "test_thing.py").write_text("def test_x(): pass\n")
+    make_item(base / "req/infra", "INFRA-049", "1.4.0", "leaf", normative=True, verify="test")
+    _git(base, "init", "-q")
+    _commit_all(base, "draft item")
+    (base / "test_thing.py").write_text("def test_x(): pass  # evolved with the draft\n")
+    make_item(
+        base / "req/infra", "INFRA-049", "1.4.0", "leaf reworded", normative=True, verify="test",
+        references=[{"path": "test_thing.py", "type": "file", "keyword": "INFRA-049"}],
+    )
+    _commit_all(base, "rework unreviewed item and its test together")
+    assert approval_run("HEAD^..HEAD", cwd=base) == 0
+
+
 def test_edit_and_restamp_split_into_two_commits_passes(tree_builder):
     base = _history_fixture(tree_builder)
     (base / "test_thing.py").write_text("def test_x(): pass  # edited\n")

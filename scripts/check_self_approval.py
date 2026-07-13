@@ -33,7 +33,7 @@ def show_yaml(commit, path, cwd):
 
 def approval_of(item):
     references = item.get("references") or []
-    return item.get("reviewed"), [ref.get("sha") for ref in references]
+    return item.get("reviewed") or None, [ref.get("sha") for ref in references if ref.get("sha")]
 
 
 def substance_of(item):
@@ -51,7 +51,8 @@ def check_commit(commit, cwd):
         new = show_yaml(commit, path, cwd)
         if old is None or new is None or not isinstance(old, dict) or not isinstance(new, dict):
             continue
-        if approval_of(old) == approval_of(new):
+        stamp, shas = approval_of(new)
+        if approval_of(old) == (stamp, shas) or (not stamp and not shas):
             continue
         if substance_of(old) != substance_of(new):
             problems.append(f"{commit[:12]}: {path}: re-approval and item change in one commit")
