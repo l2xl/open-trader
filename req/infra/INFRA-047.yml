@@ -1,0 +1,13 @@
+active: true
+derived: false
+header: ''
+level: 1.3.0
+links:
+- INFRA-041: bJ_QCcmVEwlqU5DAp9eZmKhuXUiSannw2A7pkvD1y8Q=
+normative: true
+ref: ''
+reviewed: qkZo5oC158motDWiZ1kF1ZZ07EVWfG8QYJtz85D1NL0=
+test: organizational heading -- verified via its children's rolled-up status.
+text: |
+  Test coverage gate
+verify: inspection

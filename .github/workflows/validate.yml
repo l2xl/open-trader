@@ -1,0 +1,192 @@
+name: Validate
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  license:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check IPRL v2 license headers
+        run: python3 scripts/check_license.py --check
+
+  # Two-step re-approval discipline is checked on working branches and PRs only:
+  # main is protected (PR merge only), so its merge commits are out of scope.
+  approval:
+    runs-on: ubuntu-latest
+    if: ${{ github.event_name == 'pull_request' || github.ref != 'refs/heads/main' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check two-step requirement re-approval
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE: ${{ github.event.pull_request.base.sha }}
+          BEFORE: ${{ github.event.before }}
+        run: |
+          if [ "$EVENT" = pull_request ]; then
+            RANGE="$BASE..HEAD"
+          elif [ -n "$BEFORE" ] && ! echo "$BEFORE" | grep -q '^0*$' && git cat-file -e "$BEFORE" 2>/dev/null; then
+            RANGE="$BEFORE..HEAD"
+          else
+            RANGE="$(git merge-base origin/main HEAD)..HEAD"
+          fi
+          python3 scripts/check_self_approval.py "$RANGE"
+
+  build:
+    runs-on: ubuntu-latest
+    needs: [license, approval]
+    # approval is skipped on main (PR-merge-only branch): skipped must not block,
+    # but any failure of the entry checks stops the whole build-test-requirements chain.
+    if: ${{ !cancelled() && needs.license.result == 'success' && contains(fromJSON('["success", "skipped"]'), needs.approval.result) }}
+    permissions:
+      contents: read
+      checks: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            clang-19 libboost-dev libboost-context-dev libboost-system-dev libboost-url-dev \
+            libssl-dev libfontconfig-dev ninja-build pkg-config
+      - name: Restore build cache
+        uses: actions/cache@v4
+        with:
+          path: build-ci
+          key: build-ci-clang19-${{ hashFiles('CMakeLists.txt', 'cmake/**') }}
+          restore-keys: build-ci-clang19-
+
+      - name: Configure (CMake)
+        run: >
+          cmake -B build-ci -DCMAKE_BUILD_TYPE=Debug
+          -DCMAKE_C_COMPILER=clang-19 -DCMAKE_CXX_COMPILER=clang++-19
+
+      - name: Build unit tests
+        run: |
+          set -o pipefail
+          cmake --build build-ci --target unit_tests --parallel 2>&1 | tee build-ci/build.log
+      - name: Report build failure as a Check Run
+        if: ${{ failure() }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python3 ci/report_build_failure.py build-ci/build.log
+
+      # Jobs run on fresh runners: the built tree travels between jobs as a tarball
+      # artifact (tar preserves the executable bits that upload-artifact strips).
+      - name: Pack built tree
+        run: >
+          tar --zstd -cf build-tree.tar.zst
+          --exclude=CMakeFiles --exclude='*-src' --exclude='*-subbuild' build-ci
+
+      - name: Upload built tree
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-tree
+          path: build-tree.tar.zst
+          retention-days: 1
+
+  test:
+    runs-on: ubuntu-latest
+    needs: build
+    permissions:
+      contents: read
+      checks: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download built tree
+        uses: actions/download-artifact@v4
+        with:
+          name: build-tree
+
+      - name: Unpack built tree
+        run: tar --zstd -xf build-tree.tar.zst
+
+      # Fresh runner: only the shared libs the test binaries link against at
+      # runtime are needed here, not the toolchain used to build them.
+      - name: Install runtime dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libboost-context-dev libboost-system-dev libboost-url-dev libssl-dev
+
+      - name: Run unit tests (ctest, offline)
+        run: |
+          set -o pipefail
+          ctest --test-dir build-ci -LE live --output-on-failure --output-junit ctest-results.xml 2>&1 | tee build-ci/ctest.log
+      - name: Report test failure as a Check Run
+        if: ${{ failure() }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python3 ci/report_build_failure.py build-ci/ctest.log
+
+      - name: Upload test results
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ctest-results
+          path: build-ci/ctest-results.xml
+
+  requirements:
+    runs-on: ubuntu-latest
+    needs: [build, test]
+    # Runs even when the test job failed so failed requirements are published red;
+    # skipped only when there is nothing to roll up (build failed or run cancelled).
+    if: ${{ !cancelled() && needs.build.result == 'success' }}
+    permissions:
+      contents: read
+      checks: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      # Single source of truth for requirements validation: ci/gate.sh bootstraps
+      # .venv-req and runs doorstop validation + the frozen-test and coverage checks.
+      - name: Validate requirements
+        id: validate
+        run: bash ci/gate.sh
+
+      - name: Install actionlint
+        run: |
+          bash <(curl -s https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash)
+          sudo mv ./actionlint /usr/local/bin/
+      - name: Run requirements tooling tests (pytest)
+        run: .venv-req/bin/python -m pytest scripts/tests --junitxml=pytest-results.xml
+
+      - name: Download test results
+        if: ${{ !cancelled() && steps.validate.outcome == 'success' }}
+        uses: actions/download-artifact@v4
+        with:
+          name: ctest-results
+          path: build-ci
+
+      - name: Compute recursive requirement status
+        if: ${{ !cancelled() && steps.validate.outcome == 'success' }}
+        run: >
+          .venv-req/bin/python scripts/req_status.py
+          --junit pytest-results.xml
+          --junit build-ci/ctest-results.xml
+          --out req_status.json
+
+      - name: Write requirements report to the job summary
+        if: ${{ !cancelled() && steps.validate.outcome == 'success' }}
+        run: .venv-req/bin/python ci/write_status_summary.py
+
+      - name: Publish requirements tree as a Check Run
+        if: ${{ !cancelled() && steps.validate.outcome == 'success' }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: .venv-req/bin/python scripts/publish_check_run.py --status req_status.json

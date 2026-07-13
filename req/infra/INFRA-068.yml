@@ -1,0 +1,21 @@
+accept: ''
+active: true
+derived: false
+header: |
+  Requirements status report
+level: 3.1.3
+links:
+- INFRA-065: 4GfAPY_SNsIKSP4xzmxM8pXqMXZoG5Xkm5goMuo4HzY=
+normative: true
+ref: ''
+references:
+- keyword: INFRA-068
+  path: scripts/tests/test_infra_068_ci_status_report.py
+  sha: 2c870c2fdb8f18d9b0a0a49963ad2ed77c20b9966651792ce71404140f24d8e5
+  type: file
+reviewed: 0OUN5EmXj4By-8RuXH_oWfFqo9I6T-BqneNsqbQ4ufw=
+test: |
+  workflow-lint test asserting the status rollup consumes both test reports and the rendered tree reaches the job summary and the commit's check run.
+text: |
+  The CI pipeline shall report the per-requirement implementation status computed recursively ([INFRA-044]) from the test run's results. The report is delivered as the rendered requirements tree ([INFRA-045]) with each bound test's result and log, directly on the run's report page and on the commit's checks -- not as a downloadable artifact.
+verify: test

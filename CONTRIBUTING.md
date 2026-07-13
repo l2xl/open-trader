@@ -71,6 +71,16 @@ The upper tier is **application-layer code** (e.g. `src/cockpit/`, `src/app/`) ‚
 - Any source addition, rename, removal, or directory restructuring must be reflected immediately in the corresponding CMake target. Build-system changes are part of the same changeset, not a follow-up.
 - See [BUILD.md](BUILD.md) for build invocation details.
 
+# Requirements & the TDD gate
+
+Project requirements are tracked formally in a [Doorstop](https://github.com/doorstop-dev/doorstop) tree under `req/` (documents `PRODUCT ‚Üê CORE/DATA_MODEL/TRADER_HUD/APP/INFRA`), decomposed from the reviewable narrative in [requirements_plan.md](requirements_plan.md). See [req/README.md](req/README.md) for the operating guide.
+
+Binding process rules:
+- **Test-first, then freeze.** For a requirement leaf, the covering Catch2 `TEST_CASE` is tagged with the leaf UID (`[DATA_MODEL-042]`) and bound via the leaf's `references:` before implementation. The user approves by running `doorstop review <UID>`, which fingerprints the item and its test files' SHAs.
+- **`doorstop review` / `doorstop clear` are user-only.** Review state is the record of the user's approval; no contributor or agent stamps or clears a review. The whole tree currently stands unreviewed (drafted, pending review).
+- **Frozen tests are immutable.** Editing a reviewed item's referenced test reddens the gate until the user runs a sanctioned `doorstop clear` + re-review.
+- **The gate must pass.** `ci/gate.sh` (and `.github/workflows/validate.yml`) run `doorstop --error-all` plus the frozen-test and coverage checks; they bite only on reviewed items.
+
 # The Exchange Scratchpad Components
 
 ## Data Pipeline

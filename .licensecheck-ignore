@@ -8,3 +8,6 @@ cmake/CPM.cmake
 
 # Vendored single-header libraries
 contrib/
+
+# Local tooling virtualenv (third-party packages)
+.venv-req/

@@ -1,0 +1,22 @@
+accept: |
+  after review the item YAML shows the stamp and per-reference fingerprints and the gate is green; editing a referenced test afterwards fails the gate naming item and file; one commit carrying both an edit and a re-stamp fails the self-approval check while the same change split into two commits passes.
+active: true
+derived: false
+header: |
+  Review stamping on approval
+level: 1.4.0
+links:
+- INFRA-041: bJ_QCcmVEwlqU5DAp9eZmKhuXUiSannw2A7pkvD1y8Q=
+normative: true
+ref: ''
+references:
+- keyword: INFRA-049
+  path: scripts/tests/test_infra_049_freeze_workflow.py
+  sha: fb40cb8d1f808652cd2103051682f6a13bd3af4f0c24031e795c4720a0b6c057
+  type: file
+reviewed: mOYShJtproqXdvjAxk2-7YJ8bd4tj9wXe3iiSaVyuSU=
+test: |
+  single pytest file: review round-trip stamping in a tmp fixture tree, frozen-test change detection, self-approval rejection on a fixture git history, and a workflow-lint assertion that CI runs the self-approval check on non-main pushes and pull requests.
+text: |
+  On explicit user approval a requirement shall be frozen, recording fingerprints of the item and its bound test files; the gate shall fail when a frozen item's bound test changes after review, and a single commit may not both modify a frozen item or its bound test and re-approve it
+verify: test

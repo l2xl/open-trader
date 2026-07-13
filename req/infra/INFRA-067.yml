@@ -1,0 +1,21 @@
+accept: ''
+active: true
+derived: false
+header: |
+  CI test run
+level: 3.1.2
+links:
+- INFRA-065: 4GfAPY_SNsIKSP4xzmxM8pXqMXZoG5Xkm5goMuo4HzY=
+normative: true
+ref: ''
+references:
+- keyword: INFRA-067
+  path: scripts/tests/test_infra_067_ci_tests.py
+  sha: 35923709d5cf4147e751d5285824cc0c5f12797f2540b8d8b32643cc216036e7
+  type: file
+reviewed: 9BqeTwYBVEq0WFlhjYiMYR03H24Gd3QGxC6IR8jPVAw=
+test: |
+  workflow-lint test asserting the test job runs ctest against the build job's artifacts with live-labeled tests excluded.
+text: |
+  The CI pipeline shall run the project's automated test suite against the built artifacts after a successful build. Tests labeled `live` require live exchange connectivity and are excluded from the CI run.
+verify: test

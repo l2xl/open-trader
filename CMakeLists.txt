@@ -225,8 +225,17 @@ if(NOT ANDROID)
 
     CPMAddPackage("gh:catchorg/Catch2@3.5.4")
 
-    # Function to create test executable for each test file
-    function(add_test TEST_NAME TEST_FILE)
+    enable_testing()
+    add_custom_target(unit_tests)
+
+    # LIVE tests hit external services: they run unfiltered and carry the `live`
+    # CTest label so offline runs exclude them with `ctest -LE live`. Offline
+    # executables skip individually live Catch2 cases via the ~[integration] filter.
+    # CTest test names are the test source paths: requirement items reference tests
+    # by source path, and the JUnit output of `ctest --output-junit` carries the
+    # test name, which lets scripts/req_status.py bind results to requirements exactly.
+    function(add_unit_test TEST_NAME TEST_FILE)
+        cmake_parse_arguments(UNIT "LIVE" "" "" ${ARGN})
         add_executable(${TEST_NAME} ${TEST_FILE})
         target_link_libraries(${TEST_NAME} PRIVATE core)
         target_link_libraries(${TEST_NAME} PRIVATE Catch2::Catch2WithMain)
@@ -235,29 +244,38 @@ if(NOT ANDROID)
         target_link_libraries(${TEST_NAME} PRIVATE TBB::tbb)
         target_link_libraries(${TEST_NAME} PRIVATE glaze::glaze)
         target_link_libraries(${TEST_NAME} PRIVATE SQLiteCpp)
+        add_dependencies(unit_tests ${TEST_NAME})
+        if(UNIT_LIVE)
+            add_test(NAME ${TEST_FILE} COMMAND ${TEST_NAME})
+            set_tests_properties(${TEST_FILE} PROPERTIES LABELS live)
+        else()
+            add_test(NAME ${TEST_FILE} COMMAND ${TEST_NAME} "~[integration]")
+        endif()
     endfunction()
 
     # Add each test file as a separate executable
-    add_test(test_currency test/data/test_currency.cpp)
-    add_test(test_buoy_candle test/core/test_buoy_candle.cpp)
-    add_test(test_dao test/datahub/test_dao.cpp)
-    add_test(test_http_query test/connect/test_http_query.cpp)
-    add_test(test_websocket test/connect/test_websocket.cpp)
-    add_test(test_data_sink test/datahub/test_data_sink.cpp)
-    add_test(test_data_model test/bybit/test_data_model.cpp)
-    add_test(test_sorted_data_feed test/datahub/test_sorted_data_feed.cpp)
-    add_test(test_sorted_snapshot_data_feed test/datahub/test_sorted_snapshot_data_feed.cpp)
-    add_test(test_keyed_snapshot_data_feed test/datahub/test_keyed_snapshot_data_feed.cpp)
-    add_test(test_data_manager test/bybit/test_data_manager.cpp)
-    add_test(test_orderbook test/data/test_orderbook.cpp)
-    add_test(test_bybit_orderbook test/bybit/test_orderbook.cpp)
-    add_test(test_quote_scratcher test/cockpit/scratchers/test_quote_scratcher.cpp)
+    add_unit_test(test_currency test/data/test_currency.cpp)
+    add_unit_test(test_buoy_candle test/core/test_buoy_candle.cpp)
+    add_unit_test(test_dao test/datahub/test_dao.cpp)
+    add_unit_test(test_http_query test/connect/test_http_query.cpp LIVE)
+    add_unit_test(test_websocket test/connect/test_websocket.cpp LIVE)
+    add_unit_test(test_data_sink test/datahub/test_data_sink.cpp)
+    add_unit_test(test_data_model test/bybit/test_data_model.cpp)
+    add_unit_test(test_sorted_data_feed test/datahub/test_sorted_data_feed.cpp)
+    add_unit_test(test_sorted_snapshot_data_feed test/datahub/test_sorted_snapshot_data_feed.cpp)
+    add_unit_test(test_keyed_snapshot_data_feed test/datahub/test_keyed_snapshot_data_feed.cpp)
+    add_unit_test(test_data_manager test/bybit/test_data_manager.cpp LIVE)
+    add_unit_test(test_orderbook test/data/test_orderbook.cpp)
+    add_unit_test(test_bybit_orderbook test/bybit/test_orderbook.cpp)
+    add_unit_test(test_quote_scratcher test/cockpit/scratchers/test_quote_scratcher.cpp)
 
     # ThorVG render test — links only Catch2 + ThorVG (+ cairo for the bridge test)
     if(THORVG_AVAILABLE AND CAIRO_FOUND)
         add_executable(test_thorvg test/render/test_thorvg.cpp)
         target_link_libraries(test_thorvg PRIVATE Catch2::Catch2WithMain Thorvg::thorvg ${CAIRO_LIBRARIES})
         target_include_directories(test_thorvg PRIVATE ${CAIRO_INCLUDE_DIRS})
+        add_dependencies(unit_tests test_thorvg)
+        add_test(NAME test/render/test_thorvg.cpp COMMAND test_thorvg)
 
         # TimeRuler image-series test — emits PNGs of the rendered time axis at multiple zoom
         # levels into ${CMAKE_BINARY_DIR}/test_output/time_ruler/ for visual analysis.

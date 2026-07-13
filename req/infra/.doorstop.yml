@@ -1,0 +1,13 @@
+settings:
+  digits: '3'
+  itemformat: yaml
+  parent: PRODUCT
+  prefix: INFRA
+  sep: '-'
+attributes:
+  reviewed:
+    - accept
+    - test
+    - verify
+extensions:
+  item_sha_required: true

@@ -1,0 +1,20 @@
+accept: |
+  validation passes; deleting the bound UID marker from the test file makes validation fail.
+active: true
+derived: false
+header: ''
+level: 1.2.2
+links:
+- INFRA-046: 0nQ45NxGefpl900p4mvoppGaAXHOIiS8YsUc-DL03xc=
+normative: true
+ref: ''
+references:
+- keyword: INFRA-031
+  path: scripts/tests/test_doorstop_tree_shape.py
+  sha: 577d852361bb8929539e546fc2a2f713364e75026f0ae65cbd4ca652c629ea28
+  type: file
+reviewed: bwqu9TDXlnCpDCuWcT_T5S8sTFyrJZK2w-Xvpauzssg=
+test: tree-shape tests + one seeded-violation check.
+text: |
+  Every normative leaf item shall be bound to ≥1 test source file through a reference carrying the item's UID, and validation shall fail when the UID marker is absent from the bound file
+verify: test

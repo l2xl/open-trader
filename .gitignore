@@ -75,3 +75,9 @@ CMakeLists.txt.user*
 build/**
 cmake-build-*/**
 .idea/**
+.venv-req/**
+req_status.json
+req_status_junit.xml
+pytest-results.xml
+/site/**
+scripts/tests/__pycache__/**
