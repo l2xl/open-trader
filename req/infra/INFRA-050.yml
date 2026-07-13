@@ -6,14 +6,15 @@ header: |
   Suspect items block the gate
 level: 1.5.0
 links:
-- INFRA-041: 6ncgFTGZwsItqkl8X3DMn9_K1IJ5qLUxRsIZd7G0dQg=
+- INFRA-041: bJ_QCcmVEwlqU5DAp9eZmKhuXUiSannw2A7pkvD1y8Q=
 normative: true
 ref: ''
 references:
 - keyword: INFRA-050
   path: scripts/tests/test_infra_050_suspect_block.py
+  sha: 27ed95b153b6103f462b6fdc240f9b049ae30468bd5894c2818428cabf9eca0b
   type: file
-reviewed: null
+reviewed: vrwf7kmza7RY3-njD7N6ABPNrUPFtEjw8Zi6dfZ06UY=
 test: |
   fixture-tree state-transition test -- editing a reviewed item or a linked parent raises unreviewed/suspect issues cleared only by user-approved re-approval; gate lint asserting strict mode enables both checks.
 text: |

@@ -5,14 +5,15 @@ derived: false
 header: ''
 level: 1.2.1
 links:
-- INFRA-046: ql_mGl5s1uDw7f8kBa8RzKs1ZlTkTnG67qoeHYjN4V0=
+- INFRA-046: 0nQ45NxGefpl900p4mvoppGaAXHOIiS8YsUc-DL03xc=
 normative: true
 ref: ''
 references:
 - keyword: INFRA-030
   path: scripts/tests/test_doorstop_tree_shape.py
+  sha: 577d852361bb8929539e546fc2a2f713364e75026f0ae65cbd4ca652c629ea28
   type: file
-reviewed: null
+reviewed: XRwNkuxJ8m7Mrvlwm29Ai9Vnfdgnw92ceqW0cdbl2HA=
 test: tree-shape tests in the requirements tooling suite.
 text: |
   The repo shall contain a machine-validatable requirements tree: a single root PRODUCT document and one child document per requirements branch as that branch is scheduled (currently: INFRA only), items holding the normative leaf texts of the plan
