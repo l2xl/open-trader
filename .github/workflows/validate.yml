@@ -16,11 +16,14 @@ jobs:
       - name: Check IPRL v2 license headers
         run: python3 scripts/check_license.py --check
 
-  # Two-step re-approval discipline is checked on working branches and PRs only:
-  # main is protected (PR merge only), so its merge commits are out of scope.
+  # Two-step re-approval discipline. Runs on every event: merge commits are
+  # exempt by construction (a merge carries the change and the review stamp
+  # together), and check_self_approval.py enumerates the range with
+  # `git rev-list --no-merges`, so merges to main — or to any branch — pass
+  # without a job-level skip. Skipping the job here would poison the chain:
+  # GitHub propagates a skipped job through `needs` transitively.
   approval:
     runs-on: ubuntu-latest
-    if: ${{ github.event_name == 'pull_request' || github.ref != 'refs/heads/main' }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -44,8 +47,10 @@ jobs:
   build:
     runs-on: ubuntu-latest
     needs: [license, approval]
-    # approval is skipped on main (PR-merge-only branch): skipped must not block,
-    # but any failure of the entry checks stops the whole build-test-requirements chain.
+    # Every downstream job states its own condition on the actual results of
+    # its needs instead of relying on implicit skip propagation. Tolerating
+    # 'skipped' keeps the chain alive if an entry check ever becomes
+    # conditional again; any failure still stops build-test-requirements.
     if: ${{ !cancelled() && needs.license.result == 'success' && contains(fromJSON('["success", "skipped"]'), needs.approval.result) }}
     permissions:
       contents: read
@@ -98,6 +103,11 @@ jobs:
   test:
     runs-on: ubuntu-latest
     needs: build
+    # Explicit condition on build's result: without it a skipped job anywhere
+    # up the chain (e.g. a conditional entry check) skips this job too, and
+    # requirements then dies downloading the ctest-results artifact that was
+    # never uploaded.
+    if: ${{ !cancelled() && needs.build.result == 'success' }}
     permissions:
       contents: read
       checks: write

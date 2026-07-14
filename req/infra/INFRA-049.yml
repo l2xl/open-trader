@@ -16,7 +16,7 @@ references:
   type: file
 reviewed: mOYShJtproqXdvjAxk2-7YJ8bd4tj9wXe3iiSaVyuSU=
 test: |
-  single pytest file: review round-trip stamping in a tmp fixture tree, frozen-test change detection, self-approval rejection on a fixture git history, and a workflow-lint assertion that CI runs the self-approval check on non-main pushes and pull requests.
+  single pytest file: review round-trip stamping in a tmp fixture tree, frozen-test change detection, self-approval rejection on a fixture git history (including acceptance of a no-ff merge of a compliant two-commit history), and a workflow-lint assertion that CI runs the self-approval check unconditionally on every push and pull request.
 text: |
   On explicit user approval a requirement shall be frozen, recording fingerprints of the item and its bound test files; the gate shall fail when a frozen item's bound test changes after review, and a single commit may not both modify a frozen item or its bound test and re-approve it
 verify: test

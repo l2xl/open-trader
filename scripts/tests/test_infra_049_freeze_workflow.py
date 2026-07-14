@@ -108,9 +108,24 @@ def test_edit_and_restamp_split_into_two_commits_passes(tree_builder):
     assert approval_run("HEAD~2..HEAD", cwd=base) == 0
 
 
-def test_ci_runs_the_self_approval_check_on_pull_requests_and_non_main_pushes():
+def test_ci_runs_the_self_approval_check_on_every_push_and_pull_request():
+    # No job-level condition: merge commits are exempt inside the script
+    # (rev-list --no-merges), and a skipped job would propagate through
+    # `needs` and knock out the build-test-requirements chain.
     job = load()["jobs"]["approval"]
-    assert "pull_request" in job["if"] and "refs/heads/main" in job["if"]
+    assert "if" not in job
     joined = " | ".join(steps("approval"))
     assert "fetch-depth: 0" in yaml.safe_dump(job)
     assert "check_self_approval.py" in joined
+
+
+def test_merge_commit_joining_edit_and_restamp_histories_passes(tree_builder):
+    base = _history_fixture(tree_builder)
+    _git(base, "checkout", "-q", "-b", "topic")
+    (base / "test_thing.py").write_text("def test_x(): pass  # edited\n")
+    _commit_all(base, "edit under review")
+    _restamp(base)
+    _commit_all(base, "user-approved re-stamp")
+    _git(base, "checkout", "-q", "-")
+    _git(base, "-c", "user.email=t@t", "-c", "user.name=t", "merge", "-q", "--no-ff", "--no-edit", "topic")
+    assert approval_run("HEAD^1..HEAD", cwd=base) == 0
