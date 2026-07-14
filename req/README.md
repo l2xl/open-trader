@@ -19,6 +19,18 @@ PRODUCT  req/product      PRODUCT-169 (root) -> 5 branches (4 deferred, 1 = Infr
  └─ INFRA       req/infra       requirements-tooling itself: 1.0 tracking, 2.0 auto tests (defer), 3.0 CI/CD
 ```
 
+## Anatomy of a requirement
+
+Every item records **mandated functionality** — a property of the product or its infrastructure that must hold and stay verifiable — never a ticket, a task, or a one-off "remove/avoid X" work item. A requirement states the **goal, not the way to reach it**:
+
+- `header` — the goal in a few words; the item's primary human-readable label, used as its name in status reports. Every item carries one.
+- `text` — a concise normative statement using exactly one **"shall"**; it may add a preferred delivery detail only where that choice is itself deliberate. One consistent "shall" per leaf is what keeps import parsing and human scanning both reliable.
+- `accept` / `test` — carry the "how": the acceptance condition and the shape of the bound test.
+
+Every requirement must be verifiable in terms observable by its bound test; wording that cannot be checked (or holds only outside the verification environment) disqualifies the item as a requirement. Test binding is ideally **one-to-one** — each leaf references its own dedicated test. A single test covering several leaves is tolerable only in rare cases, and a many-to-many requirement↔test relation always signals wrong decomposition: binding is file-granular, so a shared test file is exactly that smell.
+
+A requirement is satisfied in exactly two ways, with no exemptions — a **leaf** (no children) when an automated test bound to its UID passes, a **branch** (has children) when all of its children are (see the two sections below). There is no manual-inspection escape.
+
 ## One explicit parent chain, no mesh
 
 Every item on the path from a leaf up to `PRODUCT-169` carries a real `links:` entry to its immediate parent
@@ -26,8 +38,9 @@ Every item on the path from a leaf up to `PRODUCT-169` carries a real `links:` e
 readable cross-reference, not a structural link; see "Cross-cutting requirements" below). Concretely:
 `INFRA-043` links to `INFRA-042`, `INFRA-042` links to `INFRA-041`, `INFRA-041` links to `PRODUCT-168`.
 This makes every branch/section heading a real (if non-testable) node in the traceability graph, which
-Doorstop requires to be `normative: true` with `verify: inspection` (a non-normative item cannot appear in
-`links:` at all, in either direction — a hard validator error, not a convention). `PRODUCT-168`'s own relation
+Doorstop requires to be `normative: true` (a non-normative item cannot appear in
+`links:` at all, in either direction — a hard validator error, not a convention). A branch carries no
+`verify` attribute and no test binding of its own: it is satisfied precisely when all of its children are. `PRODUCT-168`'s own relation
 to the `PRODUCT-169` root stays level-only, matching how the rest of `PRODUCT`'s hierarchy has always worked.
 
 The result is a single tree with one root and no multi-parent nodes in this reduced tree — verified by
@@ -47,7 +60,7 @@ references:
     keyword: DATA_MODEL-042
 ```
 
-and the covering Catch2 `TEST_CASE` carries the tag `[DATA_MODEL-042]`. The tag doubles as the per-requirement test filter: `<test-exe> "[DATA_MODEL-042]"`. Leaves that genuinely cannot be automated set `verify: inspection` instead of a reference.
+and the covering Catch2 `TEST_CASE` carries the tag `[DATA_MODEL-042]`. The tag doubles as the per-requirement test filter: `<test-exe> "[DATA_MODEL-042]"`. There is no manual-inspection alternative: a leaf that cannot be covered by an automated test is not a valid requirement and must be reformulated or dropped — the coverage gate rejects `verify: inspection` outright.
 
 ## Deferred requirements
 
@@ -74,7 +87,7 @@ A requirement lives under exactly one document for decomposition purposes — it
 
 1. `doorstop -W -S --error-all` — tree validation, all warnings as errors; review/suspect checks stay off while the tree is adopted item by item (freeze semantics live in the scripts below). `GATE_STRICT=1 ci/gate.sh` runs the full `--error-all` once the whole tree is reviewed.
 2. `scripts/check_frozen_tests.py` — re-hashes reviewed references; Doorstop stamps SHAs at review but never re-verifies them itself.
-3. `scripts/check_req_coverage.py` — every reviewed normative leaf has a valid test binding (or `verify: inspection`); unreviewed leaves are pending, non-fatal.
+3. `scripts/check_req_coverage.py` — every reviewed normative leaf has a valid test binding; unreviewed leaves are pending, non-fatal.
 
 CI additionally builds the C++ unit tests (`cmake --build <build-dir> --target unit_tests`) and runs the offline profile (`ctest -LE live --output-junit ...`); `scripts/req_status.py` folds the pytest and ctest JUnit reports into a recursive per-requirement status (with per-test logs), published as a native Check Run on the commit by `scripts/publish_check_run.py`. `scripts/render_req_report.py` renders the same status JSON as a local static HTML site for offline browsing.
 

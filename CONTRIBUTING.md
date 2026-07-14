@@ -73,7 +73,7 @@ The upper tier is **application-layer code** (e.g. `src/cockpit/`, `src/app/`) �
 
 # Requirements & the TDD gate
 
-Project requirements are tracked formally in a [Doorstop](https://github.com/doorstop-dev/doorstop) tree under `req/` (documents `PRODUCT ← CORE/DATA_MODEL/TRADER_HUD/APP/INFRA`), decomposed from the reviewable narrative in [requirements_plan.md](requirements_plan.md). See [req/README.md](req/README.md) for the operating guide.
+Project requirements are tracked formally in a [Doorstop](https://github.com/doorstop-dev/doorstop) tree under `req/` (documents `PRODUCT ← CORE/DATA_MODEL/TRADER_HUD/APP/INFRA`); the item files are the single source of truth, decomposed branch by branch as each is scheduled. See [req/README.md](req/README.md) for the requirements-system design and operating guide.
 
 Binding process rules:
 - **Test-first, then freeze.** For a requirement leaf, the covering Catch2 `TEST_CASE` is tagged with the leaf UID (`[DATA_MODEL-042]`) and bound via the leaf's `references:` before implementation. The user approves by running `doorstop review <UID>`, which fingerprints the item and its test files' SHAs.

@@ -9,7 +9,7 @@ Four states: not_implemented, partially_implemented, test_passed, test_failed.
 A leaf is test_passed/test_failed only if bound to a test result from one of
 the JUnit reports (pytest --junitxml for the tooling suite, ctest
 --output-junit for the C++ suite, where the CTest test name is the test's
-source path); every other leaf (unbound, deferred, inspection) is
+source path); every other leaf (unbound or deferred) is
 not_implemented. Each bound leaf also carries the per-test logs so reports can
 show the evidence behind the status. A parent's status aggregates every child
 reachable through same-document level containment (heading -> feature -> case)
@@ -124,8 +124,8 @@ TEST_FAILED = "test_failed"
 
 
 def leaf_tests(item, results):
-    """Test results bound to a leaf; empty for unbound, deferred, and inspection
-    leaves -- there is no automated evidence to derive from."""
+    """Test results bound to a leaf; empty for unbound and deferred leaves --
+    there is no automated evidence to derive from."""
     refs = item.references or [] if item.normative else []
     tests = []
     for ref in refs:

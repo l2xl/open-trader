@@ -21,6 +21,12 @@ def test_workflow_entry_checks_gate_the_sequential_pipeline_jobs():
     assert "needs.license.result == 'success'" in doc["jobs"]["build"]["if"]
     assert doc["jobs"]["test"]["needs"] == "build"
     assert doc["jobs"]["requirements"]["needs"] == ["build", "test"]
+    # Downstream jobs condition on their needs' actual results: the implicit
+    # success() also demands every transitive ancestor succeeded, so a skipped
+    # ancestor would silently skip the job (and requirements then fails
+    # downloading the never-uploaded ctest-results artifact).
+    assert "needs.build.result == 'success'" in doc["jobs"]["test"]["if"]
+    assert "needs.build.result == 'success'" in doc["jobs"]["requirements"]["if"]
 
 
 def test_workflow_installs_runtime_libs_before_running_tests():
