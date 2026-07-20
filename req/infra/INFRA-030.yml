@@ -3,4 +3,5 @@ description: |
   The repo shall contain a machine-validatable requirements tree under req/: every `*.yml` file under any subfolder is one requirement item, its UID is the file stem, folders carry no semantic meaning, and the tree shape is defined entirely inside item files via `parents` links forming a DAG with exactly one root item
 parents: [INFRA-046]
 order: 10
-tests: ~
+tests: 41692f046051f23815f907da5d14333bd247bb8add1df642553ed67cb8f1de5f
+reviewed: 6f5bd0909e9fd7daedb007c5e5068a2ab9bed02eada1c6ff37914e682d4e872e

@@ -3,4 +3,5 @@ description: |
   Status shall be recursively computed for every node in the requirements tree from its leaves upward through the `parents` DAG, so a node's status is the aggregate of its children's status.
 parents: [INFRA-042]
 order: 20
-tests: ~
+tests: 435327ed219e9e4839dc5672481c1f2818eb7d4fe2d65f75ebf541e987fb94db
+reviewed: 9c426e945a729b27cd9dcdc607d9aef4274859dbbe8b8faa465da7192e6b0fc5

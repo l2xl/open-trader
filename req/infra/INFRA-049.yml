@@ -3,4 +3,5 @@ description: |
   On explicit user approval a requirement shall be frozen by recording a transparent fingerprint of the item's content and a per-binding hash of each bound test routine's source span, with the gate failing when a frozen routine changes after review and a single commit never both modifying a frozen item or its bound routine and re-approving it
 parents: [INFRA-041]
 order: 40
-tests: ~
+tests: 3eaa2a4ff367656ec48bd12c060331706978dea80b89d60fec318bc21c34b6f8
+reviewed: 14dcc94897241053ebc13d535cfe04704ffe3bd437669c057864245f92f6ba20

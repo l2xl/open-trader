@@ -3,4 +3,5 @@ description: |
   The gate shall fail when a reviewed item's content or frozen test routine changed without a user-approved re-review, and in strict mode while any item in the tree is unreviewed
 parents: [INFRA-041]
 order: 50
-tests: ~
+tests: a3a75924737e7f946cb7a5c6e3a9ca37c34bbe6377c932132ce5f56d032107f9
+reviewed: 0f661b228081cdac7db4df27452d6cc88488aa8da548b8aa5dee096e705a9c63

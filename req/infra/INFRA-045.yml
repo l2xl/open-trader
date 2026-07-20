@@ -3,4 +3,5 @@ description: |
   The requirements tree shall be rendered with each node's computed recursive status visible, so a reviewer can see feature completion top-down without inspecting individual leaves.
 parents: [INFRA-042]
 order: 30
-tests: ~
+tests: ca3ff3c25ada960389261aa6d70e51b31ddde747cb7f7774d1e27fe80e27976c
+reviewed: f0944ef1fbd44ac3da91cb09473be1f625a40510419397ed367b512da2c72828

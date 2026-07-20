@@ -3,4 +3,5 @@ description: |
   The CI pipeline shall build the project on every push and pull request.
 parents: [INFRA-065]
 order: 10
-tests: ~
+tests: aeacec1c7abf9c8045443a6c3cd200beb3218304d8347ba982885426b15a127e
+reviewed: 79d049c2dbd7e7de9d00edb28c7d883ec08ad3b01e8b1bc2cdfbb93c6b38e9c4

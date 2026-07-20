@@ -3,4 +3,5 @@ description: |
   An automated coverage check shall verify the executed-test reports against the requirements tree in both directions: every reviewed leaf binding has at least one executed coverage record, and every coverage record's UID tag matches a known requirement
 parents: [INFRA-047]
 order: 10
-tests: ~
+tests: 40f648805b7dd72b48756652bfb9cdb514ecc142d8e1548bd483c663d8703a62
+reviewed: 055b7f72aa8008060947f1fec5ff8335c8debf88c83fb8182885b5cc255ec8fe

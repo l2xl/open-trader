@@ -3,4 +3,5 @@ description: |
   Every test-bearing leaf item shall be bound to its covering test routines purely by structural tags -- the default binding by the `[UID]` tag alone, named bindings by the `[UID][binding_name]` tag pair -- with the routine's source location discovered from the tags at check time and never declared in the requirement file
 parents: [INFRA-046]
 order: 20
-tests: ~
+tests: 228f88ab782bba5f76f9b32aa2d64e6b866bf14fb39f503a6650f3483e910f49
+reviewed: 1a6155c4beb126aca7118d55c8bf3852ad0482b9c35d5a12a42163c68e8c27de

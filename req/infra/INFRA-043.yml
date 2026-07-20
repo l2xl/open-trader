@@ -3,4 +3,5 @@ description: |
   A leaf requirement's fulfillment status shall be computed, not manually set: derived from whether the automated tests bound to it currently pass in the offline test run.
 parents: [INFRA-042]
 order: 10
-tests: ~
+tests: 5ffd170f67cd07f716244bde60cffb075d7b1c7b77e8baa38746f26af56d96d0
+reviewed: 427eeaad0fda09060a770442e69fb556a67b7e1d5c693a9d558abd8307c00c4a

@@ -3,4 +3,5 @@ description: |
   The CI pipeline shall report the per-requirement implementation status computed recursively ([INFRA-044]) from the test run's results. The report is delivered as the rendered requirements tree ([INFRA-045]) with each bound test's result and log, directly on the run's report page and on the commit's checks -- not as a downloadable artifact.
 parents: [INFRA-065]
 order: 30
-tests: ~
+tests: d6c013b105569c3e919324695af31b44b12592cb2c1df95aad71d33a85459b68
+reviewed: 50038682215d408c67257b0c1844ce8b9de8e0593be26671b8a744fd93221e9a

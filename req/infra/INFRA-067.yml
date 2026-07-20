@@ -3,4 +3,5 @@ description: |
   The CI pipeline shall run the project's automated test suite against the built artifacts after a successful build. Tests labeled `live` require live exchange connectivity and are excluded from the CI run.
 parents: [INFRA-065]
 order: 20
-tests: ~
+tests: aae4c8680410fd86c0792e9bffede158b92d55aadcdbcc106df9249e3b886620
+reviewed: 163d35041f3f705309caf1991a5d262af6819a4b6d06afdde3732bbabc418907
