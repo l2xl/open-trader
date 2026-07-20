@@ -1,0 +1,6 @@
+header: Duplicate suppression
+description: |
+  Re-sent records matching a cached (sort key, id) pair shall be dropped so only genuinely new records reach the cache and subscribers.
+parents: [DATAHUB-030]
+order: 30
+tests: ~

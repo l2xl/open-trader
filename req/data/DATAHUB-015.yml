@@ -1,0 +1,6 @@
+header: Multi-record insert
+description: |
+  Sequentially inserted records shall all be persisted and observable through both query and count.
+parents: [DATAHUB-010]
+order: 50
+tests: ~

@@ -1,0 +1,6 @@
+header: Empty batch is a no-op
+description: |
+  An empty incoming batch shall cause no cache change and no subscriber notification.
+parents: [DATAHUB-050]
+order: 50
+tests: ~

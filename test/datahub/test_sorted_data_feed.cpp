@@ -53,7 +53,7 @@ auto subscribe_log(std::shared_ptr<TradeFeed> feed, std::vector<Update>& log)
 // Reproduces the bug: incoming [3, 7, 12] merged into cache [5, 10, 20].
 // Only element 3 is inserted; 7 and 12 are silently dropped because cache_it
 // advances past them without re-examining the same incoming element.
-TEST_CASE("sorted_data_feed: merge drops elements between cache entries", "[datahub][feed][merge]")
+TEST_CASE("sorted_data_feed: merge drops elements between cache entries", "[datahub][feed][merge][DATAHUB-031]")
 {
     auto feed = TradeFeed::create();
     auto acceptor = feed->data_acceptor<std::deque<Trade>>();
@@ -80,7 +80,7 @@ TEST_CASE("sorted_data_feed: merge drops elements between cache entries", "[data
 }
 
 // Appending elements beyond the last cache entry must still work.
-TEST_CASE("sorted_data_feed: merge appends elements past cache tail", "[datahub][feed][merge]")
+TEST_CASE("sorted_data_feed: merge appends elements past cache tail", "[datahub][feed][merge][DATAHUB-032]")
 {
     auto feed = TradeFeed::create();
     auto acceptor = feed->data_acceptor<std::deque<Trade>>();
@@ -104,7 +104,7 @@ TEST_CASE("sorted_data_feed: merge appends elements past cache tail", "[datahub]
 }
 
 // Duplicates (same seq + same id) must be deduplicated.
-TEST_CASE("sorted_data_feed: merge deduplicates by key", "[datahub][feed][merge]")
+TEST_CASE("sorted_data_feed: merge deduplicates by key", "[datahub][feed][merge][DATAHUB-033]")
 {
     auto feed = TradeFeed::create();
     auto acceptor = feed->data_acceptor<std::deque<Trade>>();
@@ -128,7 +128,7 @@ TEST_CASE("sorted_data_feed: merge deduplicates by key", "[datahub][feed][merge]
 }
 
 // Two trades with the same seq value but different ids must both be kept.
-TEST_CASE("sorted_data_feed: same sort key different id both inserted", "[datahub][feed][merge]")
+TEST_CASE("sorted_data_feed: same sort key different id both inserted", "[datahub][feed][merge][DATAHUB-034]")
 {
     auto feed = TradeFeed::create();
     auto acceptor = feed->data_acceptor<std::deque<Trade>>();
@@ -151,7 +151,7 @@ TEST_CASE("sorted_data_feed: same sort key different id both inserted", "[datahu
 }
 
 // A subscriber added after data is already present receives an immediate snapshot.
-TEST_CASE("sorted_data_feed: late subscriber receives current snapshot", "[datahub][feed][subscribe]")
+TEST_CASE("sorted_data_feed: late subscriber receives current snapshot", "[datahub][feed][subscribe][DATAHUB-035]")
 {
     auto feed = TradeFeed::create();
     auto acceptor = feed->data_acceptor<std::deque<Trade>>();

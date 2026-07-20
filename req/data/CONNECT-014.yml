@@ -1,0 +1,6 @@
+header: Parameterized market-data query
+description: |
+  http_query shall deliver a non-empty exchange payload for a parameterized market-data endpoint URL with a query string.
+parents: [CONNECT-010]
+order: 40
+tests: ~

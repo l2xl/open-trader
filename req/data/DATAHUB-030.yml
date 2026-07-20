@@ -1,0 +1,5 @@
+header: Incremental sorted feed (sorted_data_feed)
+description: |
+  sorted_data_feed keeps a sort-field-ordered, key-deduplicated cache and distinguishes pure tail appends (pushed to subscribers as increments) from mid-cache merges (pushed as full snapshots) (src/datahub/data_feed.hpp).
+parents: [DATAHUB-001]
+order: 30

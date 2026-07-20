@@ -16,7 +16,7 @@
 using namespace scratcher;
 using namespace scratcher::connect;
 
-TEST_CASE("subscribepublic trades", "[connect][websocket]")
+TEST_CASE("subscribepublic trades", "[connect][websocket][CONNECT-021]")
 {
     // Create scheduler
     auto scheduler = scheduler::create(1);

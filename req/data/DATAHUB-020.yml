@@ -1,0 +1,5 @@
+header: Ingestion pipeline (data_dispatcher / data_adapter / data_sink)
+description: |
+  The wire-to-storage pipeline: data_dispatcher queues raw JSON onto a strand, data_adapter parses it into typed entities, data_sink deduplicates against the data_model and forwards only new records (src/datahub/data_sink.hpp).
+parents: [DATAHUB-001]
+order: 20

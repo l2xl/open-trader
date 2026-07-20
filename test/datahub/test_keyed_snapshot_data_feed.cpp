@@ -42,7 +42,7 @@ auto subscribe_log(std::shared_ptr<ItemFeed> feed, std::vector<Update>& log)
 
 } // namespace
 
-TEST_CASE("keyed_snapshot_data_feed: first accept inserts all and fires snapshot", "[datahub][feed][keyed]")
+TEST_CASE("keyed_snapshot_data_feed: first accept inserts all and fires snapshot", "[datahub][feed][keyed][DATAHUB-051]")
 {
     auto feed = ItemFeed::create();
     auto acceptor = feed->data_acceptor<std::deque<Item>>();
@@ -59,7 +59,7 @@ TEST_CASE("keyed_snapshot_data_feed: first accept inserts all and fires snapshot
     REQUIRE(log[0].values == std::vector<int>{1, 2, 3});
 }
 
-TEST_CASE("keyed_snapshot_data_feed: new keys append to cache and fire snapshot", "[datahub][feed][keyed]")
+TEST_CASE("keyed_snapshot_data_feed: new keys append to cache and fire snapshot", "[datahub][feed][keyed][DATAHUB-052]")
 {
     auto feed = ItemFeed::create();
     auto acceptor = feed->data_acceptor<std::deque<Item>>();
@@ -79,7 +79,7 @@ TEST_CASE("keyed_snapshot_data_feed: new keys append to cache and fire snapshot"
     REQUIRE(log[1].ids == std::vector<std::string>{"a", "b"});
 }
 
-TEST_CASE("keyed_snapshot_data_feed: existing key updates value in place", "[datahub][feed][keyed]")
+TEST_CASE("keyed_snapshot_data_feed: existing key updates value in place", "[datahub][feed][keyed][DATAHUB-053]")
 {
     auto feed = ItemFeed::create();
     auto acceptor = feed->data_acceptor<std::deque<Item>>();
@@ -103,7 +103,7 @@ TEST_CASE("keyed_snapshot_data_feed: existing key updates value in place", "[dat
     REQUIRE(log[1].values == std::vector<int>{99, 2});
 }
 
-TEST_CASE("keyed_snapshot_data_feed: mixed new and existing keys in one batch", "[datahub][feed][keyed]")
+TEST_CASE("keyed_snapshot_data_feed: mixed new and existing keys in one batch", "[datahub][feed][keyed][DATAHUB-054]")
 {
     auto feed = ItemFeed::create();
     auto acceptor = feed->data_acceptor<std::deque<Item>>();
@@ -123,7 +123,7 @@ TEST_CASE("keyed_snapshot_data_feed: mixed new and existing keys in one batch", 
     REQUIRE(log[1].values == std::vector<int>{1, 20, 3});
 }
 
-TEST_CASE("keyed_snapshot_data_feed: no update fired when incoming is empty", "[datahub][feed][keyed]")
+TEST_CASE("keyed_snapshot_data_feed: no update fired when incoming is empty", "[datahub][feed][keyed][DATAHUB-055]")
 {
     auto feed = ItemFeed::create();
     auto acceptor = feed->data_acceptor<std::deque<Item>>();
@@ -140,7 +140,7 @@ TEST_CASE("keyed_snapshot_data_feed: no update fired when incoming is empty", "[
     REQUIRE(log.size() == 1);
 }
 
-TEST_CASE("keyed_snapshot_data_feed: late subscriber receives current snapshot", "[datahub][feed][subscribe]")
+TEST_CASE("keyed_snapshot_data_feed: late subscriber receives current snapshot", "[datahub][feed][subscribe][DATAHUB-056]")
 {
     auto feed = ItemFeed::create();
     auto acceptor = feed->data_acceptor<std::deque<Item>>();

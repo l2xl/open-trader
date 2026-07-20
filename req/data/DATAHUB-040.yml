@@ -1,0 +1,5 @@
+header: Snapshot-only sorted feed (sorted_snapshot_data_feed)
+description: |
+  sorted_snapshot_data_feed maintains the same sorted, key-deduplicated cache as sorted_data_feed but notifies subscribers exclusively with full-cache snapshots, never increments (src/datahub/data_feed.hpp).
+parents: [DATAHUB-001]
+order: 40

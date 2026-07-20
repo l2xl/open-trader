@@ -1,0 +1,6 @@
+header: Duplicate suppression with snapshot
+description: |
+  Re-sent records matching a cached (sort key, id) pair shall be dropped while new tail records are appended and announced via a full-cache snapshot.
+parents: [DATAHUB-040]
+order: 30
+tests: ~

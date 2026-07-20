@@ -1,0 +1,5 @@
+header: Persistent data model (data_model DAO)
+description: |
+  data_model<Entity, PrimaryKey> maps a glaze-reflected entity onto an SQLite table created on construction and exposes synchronous CRUD, conditional queries and change-detecting upserts (src/datahub/data_model.hpp, operations.hpp, query_builder.hpp).
+parents: [DATAHUB-001]
+order: 10

@@ -1,0 +1,6 @@
+header: Standalone operation objects
+description: |
+  Each CRUD action shall be invocable as a standalone operation object (Insert, InsertOrReplace, Query, Update, Delete, Count) constructed over a data_model and an optional query condition.
+parents: [DATAHUB-010]
+order: 70
+tests: ~

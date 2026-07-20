@@ -1,0 +1,6 @@
+header: New key append
+description: |
+  Records with previously unseen keys shall be appended to the cache and announced via a full-cache snapshot.
+parents: [DATAHUB-050]
+order: 20
+tests: ~

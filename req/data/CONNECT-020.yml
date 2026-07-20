@@ -1,0 +1,5 @@
+header: Websocket streaming (websock_connection)
+description: |
+  websock_connection maintains a TLS websocket session to an exchange stream endpoint, sends subscription messages and pushes every received message to the data handler (src/connect/websocket.hpp).
+parents: [CONNECT-001]
+order: 20

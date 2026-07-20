@@ -1,0 +1,6 @@
+header: Mixed batch merge
+description: |
+  A batch mixing new and existing keys shall update the matching entries in place and append the new ones, all announced in a single snapshot notification.
+parents: [DATAHUB-050]
+order: 40
+tests: ~

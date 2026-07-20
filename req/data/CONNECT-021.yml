@@ -1,0 +1,6 @@
+header: Stream subscription delivery
+description: |
+  websock_connection shall establish a TLS websocket session, send a subscription request and deliver received stream messages to the data handler.
+parents: [CONNECT-020]
+order: 10
+tests: ~

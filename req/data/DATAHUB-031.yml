@@ -1,0 +1,6 @@
+header: Mid-cache merge
+description: |
+  Incoming records sorting between existing cache entries shall every one be inserted at its sorted position and announced to subscribers as a snapshot of the full reordered cache.
+parents: [DATAHUB-030]
+order: 10
+tests: ~

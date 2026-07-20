@@ -35,7 +35,7 @@ public:
     std::shared_ptr<scratcher::scheduler> sched;
 };
 
-TEST_CASE("Empty database", "[dao]") {
+TEST_CASE("Empty database", "[dao][DATAHUB-011]") {
     TestDatabase test_db;
     
     SECTION("Feerate") {
@@ -66,7 +66,7 @@ TEST_CASE("Empty database", "[dao]") {
     }
 }
 
-TEST_CASE("Insert", "[dao][fee_rate]") {
+TEST_CASE("Insert", "[dao][fee_rate][DATAHUB-012]") {
     TestDatabase test_db;
     
     // Create DAO with symbol as primary key - table created automatically in constructor
@@ -109,7 +109,7 @@ TEST_CASE("Insert", "[dao][fee_rate]") {
     CHECK_FALSE(retrieved_record.baseCoin.has_value());
 }
 
-TEST_CASE("Query methods", "[dao][fee_rate]") {
+TEST_CASE("Query methods", "[dao][fee_rate][DATAHUB-013]") {
     TestDatabase test_db;
     
     // Create DAO with symbol as primary key - table created automatically in constructor
@@ -214,7 +214,7 @@ TEST_CASE("Query methods", "[dao][fee_rate]") {
     }
 }
 
-TEST_CASE("Optional fields", "[dao][fee_rate]") {
+TEST_CASE("Optional fields", "[dao][fee_rate][DATAHUB-014]") {
     TestDatabase test_db;
     
     // Create DAO with symbol as primary key - table created automatically in constructor
@@ -252,7 +252,7 @@ TEST_CASE("Optional fields", "[dao][fee_rate]") {
     CHECK(retrieved.baseCoin.value() == "BTC");
 }
 
-TEST_CASE("Batch insert", "[dao][fee_rate]") {
+TEST_CASE("Batch insert", "[dao][fee_rate][DATAHUB-015]") {
     TestDatabase test_db;
     
     // Create DAO with symbol as primary key - table created automatically in constructor
@@ -362,7 +362,7 @@ TEST_CASE("Batch insert", "[dao][fee_rate]") {
 //     }
 // }
 
-TEST_CASE("InsertOrReplace with change detection", "[dao][fee_rate][insert_or_replace]") {
+TEST_CASE("InsertOrReplace with change detection", "[dao][fee_rate][insert_or_replace][DATAHUB-016]") {
     TestDatabase test_db;
 
     // Create DAO with symbol as primary key - table created automatically in constructor
@@ -439,7 +439,7 @@ TEST_CASE("InsertOrReplace with change detection", "[dao][fee_rate][insert_or_re
     }
 }
 
-TEST_CASE("Direct operations", "[dao][fee_rate][operations]") {
+TEST_CASE("Direct operations", "[dao][fee_rate][operations][DATAHUB-017]") {
     TestDatabase test_db;
 
     // Create DAO with symbol as primary key - table created automatically in constructor

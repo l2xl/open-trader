@@ -1,0 +1,6 @@
+header: In-place value update
+description: |
+  A record whose key is already cached shall replace the stored value in place, preserving the entry's cache position.
+parents: [DATAHUB-050]
+order: 30
+tests: ~

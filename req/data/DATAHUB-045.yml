@@ -1,0 +1,6 @@
+header: Late subscriber snapshot
+description: |
+  A subscriber attaching to a non-empty feed shall immediately receive a snapshot of the current cache.
+parents: [DATAHUB-040]
+order: 50
+tests: ~

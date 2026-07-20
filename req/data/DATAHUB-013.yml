@@ -1,0 +1,6 @@
+header: Conditional query, update and removal
+description: |
+  The data_model shall select records by a field condition, count them with or without a condition, update a record by its primary key and remove records matched by a condition.
+parents: [DATAHUB-010]
+order: 30
+tests: ~

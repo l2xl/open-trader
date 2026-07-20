@@ -1,0 +1,6 @@
+header: Change-detecting upsert
+description: |
+  insert_or_replace shall report whether stored data actually changed: true on first insert or on a modified record, false when the incoming record equals the stored one, keeping a single row per primary key throughout.
+parents: [DATAHUB-010]
+order: 60
+tests: ~

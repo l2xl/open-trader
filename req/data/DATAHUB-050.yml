@@ -1,0 +1,5 @@
+header: Keyed snapshot feed (keyed_snapshot_data_feed)
+description: |
+  keyed_snapshot_data_feed keeps one cache entry per key in arrival order, updating existing keys in place and appending new ones, and notifies subscribers with full-cache snapshots (src/datahub/data_feed.hpp).
+parents: [DATAHUB-001]
+order: 50

@@ -19,7 +19,7 @@ using namespace scratcher;
 using namespace scratcher::connect;
 using namespace scratcher::bybit;
 
-TEST_CASE("http_query")
+TEST_CASE("http_query", "[connect][http][CONNECT-011]")
 {
     // Create scheduler
     auto scheduler = scheduler::create(1);
@@ -58,7 +58,7 @@ TEST_CASE("http_query")
     REQUIRE_FALSE(response_body.empty());
 }
 
-TEST_CASE("http_query bad host")
+TEST_CASE("http_query bad host", "[connect][http][CONNECT-012]")
 {
     // Create scheduler
     auto scheduler = scheduler::create(1);
@@ -95,7 +95,7 @@ TEST_CASE("http_query bad host")
 
 }
 
-TEST_CASE("http_query_404")
+TEST_CASE("http_query_404", "[connect][http][CONNECT-013]")
 {
     // Create scheduler
     auto scheduler = scheduler::create(1);
@@ -137,7 +137,7 @@ TEST_CASE("http_query_404")
     REQUIRE_THROWS_AS(response_future.get(), http_client_error);
 }
 
-TEST_CASE("http_query_bybit_trades")
+TEST_CASE("http_query_bybit_trades", "[connect][http][CONNECT-014]")
 {
     // Create scheduler
     auto scheduler = scheduler::create(1);

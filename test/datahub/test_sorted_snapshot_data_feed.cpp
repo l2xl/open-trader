@@ -50,7 +50,7 @@ auto subscribe_log(std::shared_ptr<TradeFeed> feed, std::vector<Update>& log)
 
 } // namespace
 
-TEST_CASE("sorted_snapshot_data_feed: middle insert fires full snapshot", "[datahub][feed][snapshot]")
+TEST_CASE("sorted_snapshot_data_feed: middle insert fires full snapshot", "[datahub][feed][snapshot][DATAHUB-041]")
 {
     auto feed = TradeFeed::create();
     auto acceptor = feed->data_acceptor<std::deque<Trade>>();
@@ -73,7 +73,7 @@ TEST_CASE("sorted_snapshot_data_feed: middle insert fires full snapshot", "[data
     REQUIRE(log[1].seqs == std::vector<int>{3, 5, 7, 10, 12, 20});
 }
 
-TEST_CASE("sorted_snapshot_data_feed: tail append fires full snapshot", "[datahub][feed][snapshot]")
+TEST_CASE("sorted_snapshot_data_feed: tail append fires full snapshot", "[datahub][feed][snapshot][DATAHUB-042]")
 {
     auto feed = TradeFeed::create();
     auto acceptor = feed->data_acceptor<std::deque<Trade>>();
@@ -95,7 +95,7 @@ TEST_CASE("sorted_snapshot_data_feed: tail append fires full snapshot", "[datahu
     REQUIRE(log[1].seqs == std::vector<int>{5, 10, 15, 20});
 }
 
-TEST_CASE("sorted_snapshot_data_feed: deduplicates by key, fires snapshot with new tail", "[datahub][feed][snapshot]")
+TEST_CASE("sorted_snapshot_data_feed: deduplicates by key, fires snapshot with new tail", "[datahub][feed][snapshot][DATAHUB-043]")
 {
     auto feed = TradeFeed::create();
     auto acceptor = feed->data_acceptor<std::deque<Trade>>();
@@ -117,7 +117,7 @@ TEST_CASE("sorted_snapshot_data_feed: deduplicates by key, fires snapshot with n
     REQUIRE(log[1].seqs == std::vector<int>{5, 10, 20, 30});
 }
 
-TEST_CASE("sorted_snapshot_data_feed: same sort key different id both inserted", "[datahub][feed][snapshot]")
+TEST_CASE("sorted_snapshot_data_feed: same sort key different id both inserted", "[datahub][feed][snapshot][DATAHUB-044]")
 {
     auto feed = TradeFeed::create();
     auto acceptor = feed->data_acceptor<std::deque<Trade>>();
@@ -137,7 +137,7 @@ TEST_CASE("sorted_snapshot_data_feed: same sort key different id both inserted",
     REQUIRE(log[1].seqs == std::vector<int>{10, 10, 20});
 }
 
-TEST_CASE("sorted_snapshot_data_feed: late subscriber receives current snapshot", "[datahub][feed][subscribe]")
+TEST_CASE("sorted_snapshot_data_feed: late subscriber receives current snapshot", "[datahub][feed][subscribe][DATAHUB-045]")
 {
     auto feed = TradeFeed::create();
     auto acceptor = feed->data_acceptor<std::deque<Trade>>();

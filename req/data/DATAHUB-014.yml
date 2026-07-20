@@ -1,0 +1,6 @@
+header: Optional field round-trip
+description: |
+  Optional entity fields shall round-trip through storage, with a present value preserved and an absent value staying absent after re-query.
+parents: [DATAHUB-010]
+order: 40
+tests: ~

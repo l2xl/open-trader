@@ -1,0 +1,6 @@
+header: HTTP client error propagation
+description: |
+  An HTTP 4xx status response shall be delivered to the error handler as an http_client_error exception.
+parents: [CONNECT-010]
+order: 30
+tests: ~

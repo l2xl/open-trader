@@ -63,7 +63,7 @@ struct DataSinkTestFixture {
 
 static DataSinkTestFixture fixture;
 
-TEST_CASE("data_sink deduplication pipeline", "[datahub][http][websocket]")
+TEST_CASE("data_sink deduplication pipeline", "[datahub][http][websocket][DATAHUB-021]")
 {
     size_t added = 0;
     auto sink = make_data_sink(fixture.dao,
@@ -108,7 +108,7 @@ TEST_CASE("data_sink deduplication pipeline", "[datahub][http][websocket]")
     }
 }
 
-TEST_CASE("currency codec maps empty wire strings to zero", "[datahub][currency]")
+TEST_CASE("currency codec maps empty wire strings to zero", "[datahub][currency][DATAHUB-022]")
 {
     // ByBit emits "" for unset optional decimals; the codec must yield a zero
     // currency rather than throwing, so one empty field never fails the parse.

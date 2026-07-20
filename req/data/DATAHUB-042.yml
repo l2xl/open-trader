@@ -1,0 +1,6 @@
+header: Tail append snapshot
+description: |
+  Incoming records appended past the cache tail shall be announced with a full-cache snapshot rather than an increment.
+parents: [DATAHUB-040]
+order: 20
+tests: ~

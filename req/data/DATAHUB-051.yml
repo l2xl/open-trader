@@ -1,0 +1,6 @@
+header: Initial batch snapshot
+description: |
+  The first accepted batch shall populate the cache in arrival order and be announced to subscribers as a snapshot.
+parents: [DATAHUB-050]
+order: 10
+tests: ~

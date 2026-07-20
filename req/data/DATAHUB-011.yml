@@ -1,0 +1,6 @@
+header: Empty model queries
+description: |
+  A freshly constructed data_model shall create its backing table automatically and report an empty result set and a zero count before any record is inserted.
+parents: [DATAHUB-010]
+order: 10
+tests: ~

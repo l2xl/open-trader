@@ -1,0 +1,6 @@
+header: Insert of a wire-parsed entity
+description: |
+  The data_model shall persist an entity parsed from exchange JSON and return it unchanged on a subsequent query, including fixed-point currency fields and absent optional fields.
+parents: [DATAHUB-010]
+order: 20
+tests: ~

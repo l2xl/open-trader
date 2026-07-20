@@ -1,0 +1,6 @@
+header: Tail append increment
+description: |
+  Incoming records sorting past the cache tail shall be appended and delivered to subscribers as an increment containing only the new records.
+parents: [DATAHUB-030]
+order: 20
+tests: ~

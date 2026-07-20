@@ -41,19 +41,14 @@ public:
         const char* coverage_file = std::getenv("REQ_COVERAGE_FILE");
         if (!coverage_file) return;
 
+        // Catch2 sorts and dedupes tags, so the source adjacency that names a
+        // binding is unrecoverable here: emit default-binding records only.
         static const std::regex uid_re{"[A-Z][A-Z_]*-[0-9]+"};
-        static const std::regex binding_re{"[a-z0-9_]+"};
 
-        const auto& tags = stats.testInfo->tags;
-        for (std::size_t i = 0; i < tags.size(); ++i) {
-            std::string uid{tags[i].original};
+        for (const auto& tag : stats.testInfo->tags) {
+            std::string uid{tag.original};
             if (!std::regex_match(uid, uid_re)) continue;
             std::string line = "{\"tags\":[\"" + uid + "\"";
-            if (i + 1 < tags.size()) {
-                std::string name{tags[i + 1].original};
-                if (std::regex_match(name, binding_re) && !std::regex_match(name, uid_re))
-                    line += ",\"" + name + "\"";
-            }
             line += "],\"passed\":";
             line += stats.totals.assertions.allOk() ? "true" : "false";
             line += ",\"name\":\"" + json_escaped(stats.testInfo->name) + "\"}";

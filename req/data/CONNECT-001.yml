@@ -1,0 +1,5 @@
+header: Connect component
+description: |
+  The connect transport layer: shared TLS connection context, asynchronous HTTPS request (http_query) and websocket streaming (websock_connection) with typed error propagation (src/connect/).
+parents: [PRODUCT-001]
+order: 20

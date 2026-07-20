@@ -1,0 +1,6 @@
+header: Host resolution failure
+description: |
+  A failure to resolve the target host shall be delivered to the error handler as a domain_error exception instead of throwing at the call site.
+parents: [CONNECT-010]
+order: 20
+tests: ~

@@ -1,0 +1,6 @@
+header: Cross-source deduplicating ingestion
+description: |
+  The dispatcher-adapter-sink pipeline shall parse raw exchange JSON into entities, persist them through the data_model and forward only records not already stored, so HTTP and websocket sources deduplicate against the same storage.
+parents: [DATAHUB-020]
+order: 10
+tests: ~

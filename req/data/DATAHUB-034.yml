@@ -1,0 +1,6 @@
+header: Same sort key, distinct ids
+description: |
+  Records sharing a sort key value but differing in id shall all be kept in the cache.
+parents: [DATAHUB-030]
+order: 40
+tests: ~

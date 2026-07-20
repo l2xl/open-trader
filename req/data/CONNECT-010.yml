@@ -1,0 +1,5 @@
+header: Asynchronous HTTPS query (http_query)
+description: |
+  http_query resolves, connects over TLS, sends one HTTPS GET for a full URL and hands the response body or a typed connection error to caller-supplied handlers (src/connect/http_query.hpp).
+parents: [CONNECT-001]
+order: 10

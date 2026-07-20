@@ -1,0 +1,6 @@
+header: Mid-cache merge snapshot
+description: |
+  Incoming records merged into the middle of the cache shall be announced to subscribers as a snapshot of the full sorted cache.
+parents: [DATAHUB-040]
+order: 10
+tests: ~

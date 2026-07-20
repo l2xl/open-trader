@@ -1,0 +1,6 @@
+header: Empty decimal wire fields
+description: |
+  The currency wire codec shall map an empty decimal string to a zero value so a single unset field never fails parsing of the whole entity.
+parents: [DATAHUB-020]
+order: 20
+tests: ~

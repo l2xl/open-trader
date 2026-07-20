@@ -1,0 +1,5 @@
+header: Datahub component
+description: |
+  The datahub library: persistent entity storage (data_model DAO), the JSON ingestion pipeline (data_dispatcher / data_adapter / data_sink) and the in-memory subscription feeds that fan incoming records out to consumers.
+parents: [PRODUCT-001]
+order: 10
