@@ -3,7 +3,6 @@
 // Distributed under the Intellectual Property Reserve License, v2 (IPRL)
 
 #include <catch2/catch_test_macros.hpp>
-#include <iostream>
 #include <string>
 #include <future>
 #include <chrono>
@@ -11,50 +10,42 @@
 #include "scheduler.hpp"
 #include "connect/websocket.hpp"
 #include "connect/connection_context.hpp"
-#include <glaze/glaze.hpp>
+#include "tls_test_server.hpp"
 
 using namespace scratcher;
 using namespace scratcher::connect;
+using scratcher::test::tls_test_server;
+
+namespace {
+
+constexpr char trade_message[] = R"({"topic":"publicTrade.BTCUSDT","data":[{"p":"100.5","v":"0.1"}]})";
+
+} // namespace
 
 TEST_CASE("subscribepublic trades", "[connect][websocket][CONNECT-021]")
 {
-    // Create scheduler
+    tls_test_server server({}, [](const std::string& message) {
+        return message.find("subscribe") != std::string::npos ? std::string{trade_message} : std::string{};
+    });
+
     auto scheduler = scheduler::create(1);
-    
-    // Create connection context
     auto context = context::create(scheduler->io());
-    
-    // Create promise/future for synchronization
+
     std::promise<std::string> response_promise;
     auto response_future = response_promise.get_future();
-    
-    // Create response handlers
-    auto data_handler = [&response_promise](std::string message) {
-        std::cout << "Received WebSocket message: " << message << std::endl;
-        response_promise.set_value(message);
-    };
 
+    auto data_handler = [&response_promise](std::string message) {
+        response_promise.set_value(std::move(message));
+    };
     auto error_handler = [&response_promise](std::exception_ptr e) {
         response_promise.set_exception(e);
     };
 
-    // Create WebSocket connection to ByBit public stream
-    auto connection = websock_connection::create(context, "wss://stream.bybit.com/v5/public/spot", data_handler, error_handler);
+    auto connection = websock_connection::create(context, server.ws_url("/stream"), data_handler, error_handler);
 
-    // Subscribe to BTCUSDT public trades
-    // ByBit WebSocket subscription message format
-    std::string subscription_message = R"({"op":"subscribe","args":["publicTrade.BTCUSDT"]})";
+    REQUIRE_NOTHROW((*connection)(R"({"op":"subscribe","args":["publicTrade.BTCUSDT"]})"));
 
-    // Setup subscription
-    REQUIRE_NOTHROW((*connection)(subscription_message));
-    
-    // Wait for first message with timeout
-    auto status = response_future.wait_for(std::chrono::seconds(25));
+    auto status = response_future.wait_for(std::chrono::seconds(5));
     REQUIRE(status == std::future_status::ready);
-
-    // Get the response
-    std::string response_body = response_future.get();
-
-    // Verify we got a response
-    REQUIRE_FALSE(response_body.empty());
+    REQUIRE(response_future.get() == trade_message);
 }
