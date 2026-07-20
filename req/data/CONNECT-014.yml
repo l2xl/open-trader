@@ -3,5 +3,5 @@ description: |
   http_query shall deliver a non-empty exchange payload for a parameterized market-data endpoint URL with a query string.
 parents: [CONNECT-010]
 order: 40
-tests: 18c9d926c011b7312dcb304291a48cfd957a6f676940f5ce6da199a6cc527cd6
-reviewed: 092cbce564dd53585c1b30e59492334eafdf4b788c1025c6985aef323d729255
+tests: a8f135106759fa6dddeb0aa2fc31ba9b234c3ffc79aebdc231f9b96178845502
+reviewed: 58a539cf972132f6ca1d2ea65942c04cf737b79ec90ea4c145ad55ec8e4bbd2d

@@ -3,5 +3,5 @@ description: |
   An HTTP 4xx status response shall be delivered to the error handler as an http_client_error exception.
 parents: [CONNECT-010]
 order: 30
-tests: 26a9a39b70aecee12e9534e4d82958a62c67e1f4e30ccc2988df915fc60e3493
-reviewed: 73a7185fe3c18036fa42019efb382d6dfc40bdb3aa4b695504c3f68114a69f60
+tests: 714523a8bf1cc687dd5d716fc36e431ec28365f18520a48711040e3ddd86429e
+reviewed: d110770ff45186b090d0f4ecb1fa1e383b25521d696dc4366280faa2d28b8836
