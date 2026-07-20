@@ -70,13 +70,12 @@ INDEX_TEMPLATE = """<!doctype html><meta charset="utf-8"><title>Requirements Sta
 <h1>Requirements Status</h1>
 <p>{{ items|length }} items -- {% for k, v in counts.items() %}{{ v }} {{ k }} {% endfor %}</p>
 <table>
-<tr><th>UID</th><th>Level</th><th>Document</th><th>Requirement</th><th>Status</th></tr>
+<tr><th>UID</th><th>Folder</th><th>Requirement</th><th>Status</th></tr>
 {% for it in items %}
 <tr>
 <td><a href="items/{{ it.uid }}.html">{{ it.uid }}</a></td>
-<td>{{ it.level }}</td>
-<td>{{ it.document }}</td>
-<td>{{ it.header or (it.text[:70] ~ ('...' if it.text|length > 70 else '')) }}</td>
+<td>{{ it.folder }}</td>
+<td>{{ it.header or (it.description[:70] ~ ('...' if it.description|length > 70 else '')) }}</td>
 <td><span class="status status-{{ it.status_class }}"><span class="ball"></span>{{ it.status_label }}</span></td>
 </tr>
 {% endfor %}
@@ -88,12 +87,12 @@ ITEM_TEMPLATE = """<!doctype html><meta charset="utf-8"><title>{{ uid }}</title>
 <nav class="views"><a href="../index.html">List</a><a href="../tree.html">Tree</a></nav>
 <div class="card">
 <h1>{{ uid }} <span class="status status-{{ status_class }}"><span class="ball"></span>{{ status_label }}</span></h1>
-<div class="field"><div class="label">Document / Level</div>{{ document }} / {{ level }}</div>
+<div class="field"><div class="label">Folder</div>{{ folder }}</div>
 {% if header %}<div class="field"><div class="label">Header</div>{{ header }}</div>{% endif %}
-<div class="field"><div class="label">Text</div><div>{{ text }}</div></div>
-<div class="field"><div class="label">Normative / Verify / Reviewed</div>{{ normative }} / {{ verify or '-' }} / {{ reviewed }}</div>
-<div class="field"><div class="label">Links to (parents)</div>
-<ul class="links">{% for l in links %}<li><a href="{{ l }}.html">{{ l }}</a></li>{% else %}<li>(none)</li>{% endfor %}</ul>
+<div class="field"><div class="label">Description</div><div>{{ description }}</div></div>
+<div class="field"><div class="label">Reviewed / Deferred</div>{{ reviewed }} / {{ deferred }}</div>
+<div class="field"><div class="label">Parents</div>
+<ul class="links">{% for l in parents %}<li><a href="{{ l }}.html">{{ l }}</a></li>{% else %}<li>(none)</li>{% endfor %}</ul>
 </div>
 <div class="field"><div class="label">Linked from (children)</div>
 <ul class="links">{% for c in children %}<li><a href="{{ c }}.html">{{ c }}</a></li>{% else %}<li>(none)</li>{% endfor %}</ul>
@@ -115,7 +114,7 @@ place they're referenced, marked <span class="tree-dup">(also under ...)</span>.
 
 
 def _label(uid, entry):
-    title = entry["header"] or (entry["text"][:60] + ("..." if len(entry["text"]) > 60 else ""))
+    title = entry["header"] or (entry["description"][:60] + ("..." if len(entry["description"]) > 60 else ""))
     status = entry["status"]
     cls = STATUS_CLASS[status]
     return (
@@ -173,31 +172,29 @@ def run(status_path, out_dir):
         counts[entry["status"]] = counts.get(entry["status"], 0) + 1
         items.append({
             "uid": uid,
-            "level": entry["level"],
-            "document": entry["document"],
+            "folder": entry["folder"],
+            "order": entry["order"],
             "header": entry["header"],
-            "text": entry["text"],
+            "description": entry["description"],
             "status_class": STATUS_CLASS[entry["status"]],
             "status_label": STATUS_LABEL[entry["status"]],
         })
         (out_dir / "items" / f"{uid}.html").write_text(item_tpl.render(
             css=BASE_CSS,
             uid=uid,
-            document=entry["document"],
-            level=entry["level"],
+            folder=entry["folder"],
             header=entry["header"],
-            text=entry["text"],
-            normative=entry["normative"],
-            verify=entry["verify"],
+            description=entry["description"],
             reviewed=entry["reviewed"],
+            deferred=entry["deferred"],
             status_class=STATUS_CLASS[entry["status"]],
             status_label=STATUS_LABEL[entry["status"]],
-            links=entry["links"],
+            parents=entry["parents"],
             children=entry["children"],
             tests=entry.get("tests") or [],
         ))
 
-    items.sort(key=lambda it: (it["document"], [int(p) for p in it["level"].split(".")]))
+    items.sort(key=lambda it: (it["folder"], it["order"], it["uid"]))
     (out_dir / "index.html").write_text(index_tpl.render(css=BASE_CSS, nav=NAV, items=items, counts=counts))
 
     roots = sorted(uid for uid in report if uid not in all_children)

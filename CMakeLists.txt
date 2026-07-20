@@ -231,12 +231,11 @@ if(NOT ANDROID)
     # LIVE tests hit external services: they run unfiltered and carry the `live`
     # CTest label so offline runs exclude them with `ctest -LE live`. Offline
     # executables skip individually live Catch2 cases via the ~[integration] filter.
-    # CTest test names are the test source paths: requirement items reference tests
-    # by source path, and the JUnit output of `ctest --output-junit` carries the
-    # test name, which lets scripts/req_status.py bind results to requirements exactly.
+    # The req_coverage_listener TU emits requirement-tagged coverage records to
+    # $REQ_COVERAGE_FILE (JSONL) which scripts/req.py joins against the tree.
     function(add_unit_test TEST_NAME TEST_FILE)
         cmake_parse_arguments(UNIT "LIVE" "" "" ${ARGN})
-        add_executable(${TEST_NAME} ${TEST_FILE})
+        add_executable(${TEST_NAME} ${TEST_FILE} test/req_coverage_listener.cpp)
         target_link_libraries(${TEST_NAME} PRIVATE core)
         target_link_libraries(${TEST_NAME} PRIVATE Catch2::Catch2WithMain)
         target_link_libraries(${TEST_NAME} PRIVATE ${Boost_LIBRARIES})

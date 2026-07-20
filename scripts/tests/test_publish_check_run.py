@@ -9,11 +9,10 @@ from unittest.mock import patch, MagicMock
 from publish_check_run import build_check_run_body, publish, render_summary
 
 
-def _entry(status, header="Node", text="Node text", children=None, tests=None):
+def _entry(status, header="Node", description="Node text", children=None, tests=None):
     return {
-        "status": status, "document": "INFRA", "level": "1.0", "header": header,
-        "text": text, "normative": True, "verify": "test", "links": [], "children": children or [],
-        "reviewed": False, "tests": tests or [],
+        "status": status, "header": header, "description": description,
+        "children": children or [], "tests": tests or [],
     }
 
 
@@ -33,8 +32,8 @@ def test_render_summary_includes_counts_table_and_ball_per_status():
 def test_leaf_test_logs_render_as_collapsible_details():
     report = {
         "A": _entry("test_failed", header="leaf", tests=[
-            {"name": "test/datahub/test_dao.cpp", "passed": False, "log": "FAILED: REQUIRE( rows == 1 )"},
-            {"name": "test/data/test_currency.cpp", "passed": True, "log": "All tests passed"},
+            {"binding": "", "name": "test/datahub/test_dao.cpp", "passed": False, "log": "FAILED: REQUIRE( rows == 1 )"},
+            {"binding": "alt", "name": "test/data/test_currency.cpp", "passed": True, "log": "All tests passed"},
         ]),
     }
     summary = render_summary(report)

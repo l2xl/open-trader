@@ -38,7 +38,8 @@ MAX_LOG_LINES = 60
 
 
 def _title(entry):
-    return entry["header"] or (entry["text"][:70] + ("..." if len(entry["text"]) > 70 else ""))
+    text = entry.get("description", entry.get("text", ""))
+    return entry["header"] or (text[:70] + ("..." if len(text) > 70 else ""))
 
 
 def _roots(report):

@@ -1,11 +1,5 @@
-active: true
-derived: false
-header: |
-  XCockpit
-level: 1.0
-links: []
-normative: false
-ref: ''
-reviewed: 4WAQM8gEl8URjJgodnY6U8xy6yHbju2tWjII6XumthE=
-text: |
+header: XCockpit
+description: |
   XCockpit -- the trading terminal product itself. Root of the requirements tree; every top-level feature branch is a child of this item.
+parents: []
+order: 10

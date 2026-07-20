@@ -1,21 +1,6 @@
-accept: ''
-active: true
-derived: false
-header: |
-  Recursive status rollup
-level: 1.1.2
-links:
-- INFRA-042: BkvmxFIG2Dk3_E64phimsvHvT_CAqg6oUryz9eFhocw=
-normative: true
-ref: ''
-references:
-- keyword: INFRA-044
-  path: scripts/tests/test_req_status.py
-  sha: e25586243811dee05815d482a447b4f29977a1cb2ea7423f05e27e094be0513c
-  type: file
-reviewed: SVwdYSM5-ukl76tDFJT5E1X-2Z3Iu0npBH4aD6IEAU0=
-test: |
-  status-script unit tests over fixture trees exercising rollup, links, and containment.
-text: |
-  Status shall be recursively computed for every node in the requirements tree from its leaves upward, propagating through the cross-document parent links (component leaf -> PRODUCT case) and level-based containment (case -> feature -> branch), so a node's status is the aggregate of its children's status.
-verify: test
+header: Recursive status rollup
+description: |
+  Status shall be recursively computed for every node in the requirements tree from its leaves upward through the `parents` DAG, so a node's status is the aggregate of its children's status.
+parents: [INFRA-042]
+order: 20
+tests: ~

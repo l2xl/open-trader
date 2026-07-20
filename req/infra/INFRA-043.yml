@@ -1,21 +1,6 @@
-accept: ''
-active: true
-derived: false
-header: |
-  Computed leaf status
-level: 1.1.1
-links:
-- INFRA-042: BkvmxFIG2Dk3_E64phimsvHvT_CAqg6oUryz9eFhocw=
-normative: true
-ref: ''
-references:
-- keyword: INFRA-043
-  path: scripts/tests/test_req_status.py
-  sha: e25586243811dee05815d482a447b4f29977a1cb2ea7423f05e27e094be0513c
-  type: file
-reviewed: 7_5rMR7x6-K-dXTsZi1hK1x-1vGuxxoHIaqdOUTuE6o=
-test: |
-  status-script unit tests binding fixture leaves to synthetic test reports.
-text: |
+header: Computed leaf status
+description: |
   A leaf requirement's fulfillment status shall be computed, not manually set: derived from whether the automated tests bound to it currently pass in the offline test run.
-verify: test
+parents: [INFRA-042]
+order: 10
+tests: ~

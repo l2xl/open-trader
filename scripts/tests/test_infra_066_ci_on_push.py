@@ -4,9 +4,12 @@
 
 """The CI pipeline builds the project on every push and pull request -- [INFRA-066]."""
 
+import pytest
+
 from workflow_doc import load, steps
 
 
+@pytest.mark.req("INFRA-066")
 def test_ci_builds_the_project_on_every_push_and_pull_request():
     doc = load()
     assert "push" in doc[True] and "pull_request" in doc[True]

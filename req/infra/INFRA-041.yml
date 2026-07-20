@@ -1,13 +1,5 @@
-active: true
-derived: false
-header: |
+header: Requirements tracking
+description: |
   Requirements tracking
-level: 1.0
-links:
-- PRODUCT-168: 6BDMaFa75SdcrC5RD9MXz-aEsk2laoyJal-ccpvbrCg=
-normative: true
-ref: ''
-reviewed: LwIki0_wnV0SKQ77wKdqrwZZMSfex-QDdIThDyKk5nY=
-test: organizational heading -- verified via its children's rolled-up status.
-text: |
-  Requirements tracking
+parents: [PRODUCT-168]
+order: 10

@@ -17,4 +17,9 @@ def load():
 
 
 def steps(job):
-    return [f"{s.get('name', '')} {s.get('uses', '')} {s.get('run', '')}" for s in load()["jobs"][job]["steps"]]
+    result = []
+    for s in load()["jobs"][job]["steps"]:
+        env = " ".join(f"{k}={v}" for k, v in (s.get("env") or {}).items())
+        with_args = " ".join(f"{k}={v}" for k, v in (s.get("with") or {}).items())
+        result.append(f"{s.get('name', '')} {s.get('uses', '')} {env} {with_args} {s.get('run', '')}")
+    return result

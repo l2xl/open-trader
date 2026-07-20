@@ -1,13 +1,5 @@
-active: true
-derived: false
-header: |
+header: CI/CD running at GitHub
+description: |
   CI/CD running at GitHub
-level: 3.1.0
-links:
-- PRODUCT-168: 6BDMaFa75SdcrC5RD9MXz-aEsk2laoyJal-ccpvbrCg=
-normative: true
-ref: ''
-reviewed: zHfqLXN_9htoicAE0xjAjYKNlu4D87rraMY3m7OXgko=
-test: organizational heading -- verified via its children's rolled-up status.
-text: |
-  CI/CD running at GitHub
+parents: [PRODUCT-168]
+order: 20

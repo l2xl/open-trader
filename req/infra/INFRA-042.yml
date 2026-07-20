@@ -1,13 +1,5 @@
-active: true
-derived: false
-header: |
+header: Recursive requirements status
+description: |
   Recursive requirements status
-level: 1.1.0
-links:
-- INFRA-041: S_eYhh2L-J41hsiMDbhBwsNFhAKq1xahlfNEmx_xddg=
-normative: true
-ref: ''
-reviewed: tqr17v7I5_mt3ldPk4TNXMKtYToHtIaXuJ5TboNce4g=
-test: organizational heading -- verified via its children's rolled-up status.
-text: |
-  Recursive requirements status
+parents: [INFRA-041]
+order: 10

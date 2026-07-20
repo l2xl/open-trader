@@ -6,10 +6,15 @@
 """Requirements gate: re-approval of a frozen item must be a separate commit.
 
 A commit is self-approving when it changes an item's approval (the reviewed
-stamp or a stamped reference sha) and in the same commit changes the item's
-substance (text or reference paths) or the content of a referenced test file.
-The correct flow is two commits: the edit (item goes suspect), then the
-user-approved 'doorstop clear' + 'doorstop review'.
+stamp or a stamped routine sha in `tests`) and in the same commit changes the
+item's substance (description, parents, or binding names). The correct flow is
+two commits: the edit (stamp goes stale), then the user-approved
+'req clear' + 'req review'.
+
+Binding locations are discovered from tags, not recorded in items, so the
+exact frozen routine's file is unknown per commit; instead, an approval-changing
+commit may not touch any file under the test trees at all — re-stamping a
+routine edited in the same commit would otherwise pass the frozen check.
 """
 
 import subprocess
@@ -18,6 +23,7 @@ import sys
 import yaml
 
 REQ_GLOB = "req/"
+TEST_TREES = ("scripts/tests/", "test/")
 
 
 def git(args, cwd):
@@ -31,14 +37,24 @@ def show_yaml(commit, path, cwd):
     return yaml.safe_load(result.stdout)
 
 
+def _test_shas(item):
+    tests = item.get("tests")
+    if isinstance(tests, dict):
+        return sorted(sha for sha in tests.values() if isinstance(sha, str))
+    return [tests] if isinstance(tests, str) else []
+
+
+def _binding_names(item):
+    tests = item.get("tests", None)
+    return sorted(tests) if isinstance(tests, dict) else []
+
+
 def approval_of(item):
-    references = item.get("references") or []
-    return item.get("reviewed") or None, [ref.get("sha") for ref in references if ref.get("sha")]
+    return item.get("reviewed") or None, _test_shas(item)
 
 
 def substance_of(item):
-    references = item.get("references") or []
-    return item.get("text"), [ref.get("path") for ref in references]
+    return item.get("description") or item.get("text"), item.get("parents"), _binding_names(item)
 
 
 def check_commit(commit, cwd):
@@ -56,9 +72,9 @@ def check_commit(commit, cwd):
             continue
         if substance_of(old) != substance_of(new):
             problems.append(f"{commit[:12]}: {path}: re-approval and item change in one commit")
-        touched_tests = [ref.get("path") for ref in new.get("references") or [] if ref.get("path") in changed]
-        for test_path in touched_tests:
-            problems.append(f"{commit[:12]}: {path}: re-approval and change of referenced {test_path} in one commit")
+        for touched in changed:
+            if touched.startswith(TEST_TREES):
+                problems.append(f"{commit[:12]}: {path}: re-approval and test-tree change ({touched}) in one commit")
     return problems
 
 

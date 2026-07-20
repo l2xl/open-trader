@@ -1,13 +1,7 @@
-active: true
-derived: false
-header: |
-  Infrastructure
-level: 1.5.0
-links: []
-normative: true
-ref: ''
-reviewed: 6BDMaFa75SdcrC5RD9MXz-aEsk2laoyJal-ccpvbrCg=
-text: |
+header: Infrastructure
+description: |
   Verification & requirements infrastructure (INFRA)
 
   This branch turns verification into an enforceable process: a one-command offline test run, deterministic async test helpers, an offline mock exchange harness, render snapshot regression, sanitizer and parser-robustness jobs, and a requirements tree whose every normative leaf is provably covered by a UID-tagged automated test and frozen by a user-approved review workflow. It is cross-cutting: every other branch's requirements become mechanically verifiable through this infrastructure.
+parents: [PRODUCT-169]
+order: 50

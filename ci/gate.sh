@@ -3,27 +3,23 @@
 # Copyright (c) 2026 l2xl (l2xl/at/proton.me)
 # Distributed under the Intellectual Property Reserve License, v2 (IPRL)
 
-# Requirements-driven CI gate: doorstop validation + frozen-test and coverage checks.
-# Build and test execution are explicit workflow steps (see validate.yml).
+# Requirements-driven CI gate: structural validation + frozen-routine checks.
+# Coverage joining happens in the workflow's report step once test coverage
+# JSONL files exist; extra arguments (e.g. --coverage FILE) are passed through.
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
 PY="$ROOT/.venv-req/bin/python"
-DOORSTOP="$ROOT/.venv-req/bin/doorstop"
 if [[ ! -x "$PY" ]]; then
     python3 -m venv "$ROOT/.venv-req"
-    "$ROOT/.venv-req/bin/pip" install --quiet 'doorstop>=3.1,<4' pytest jinja2 junitparser pyyaml
+    "$ROOT/.venv-req/bin/pip" install --quiet pyyaml pytest jinja2
 fi
 
-# Relaxed mode skips review/suspect checks while the tree is being adopted item by
-# item (freeze semantics are enforced by the two scripts below on reviewed items).
-# GATE_STRICT=1 requires the whole tree reviewed and all link stamps current.
+# GATE_STRICT=1 requires every item in the tree reviewed.
+STRICT=()
 if [[ "${GATE_STRICT:-0}" == 1 ]]; then
-    "$DOORSTOP" --error-all
-else
-    "$DOORSTOP" -W -S --error-all
+    STRICT=(--strict)
 fi
-"$PY" scripts/check_frozen_tests.py
-"$PY" scripts/check_req_coverage.py
+"$PY" scripts/req.py validate "${STRICT[@]}" "$@"
 echo "gate: OK"

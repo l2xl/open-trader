@@ -2,55 +2,81 @@
 # Copyright (c) 2026 l2xl (l2xl/at/proton.me)
 # Distributed under the Intellectual Property Reserve License, v2 (IPRL)
 
-"""Unreviewed items and suspect links block the strict gate until user-approved re-approval -- [INFRA-050]."""
+"""Unapproved changes block the gate -- [INFRA-050]."""
 
-import re
+import argparse
 
-import doorstop
+import pytest
 
-from workflow_doc import REPO_ROOT
-
-
-def _issues(base):
-    tree = doorstop.build(root=str(base))
-    return [str(issue) for document in tree.documents for issue in document.get_issues()]
+import reqlib
 
 
-def _linked_fixture(tree_builder):
-    base, make_document, make_item = tree_builder
-    make_document(base, "prd", "PRD")
-    make_document(base, "infra", "INFRA", parent="PRD")
-    make_item(base / "prd", "PRD-001", "1.0", "parent requirement", normative=True)
-    make_item(base / "infra", "INFRA-050", "1.5.0", "leaf", normative=True, verify="test")
-    doorstop.build(root=str(base)).find_item("INFRA-050").link("PRD-001")
-    tree = doorstop.build(root=str(base))
-    tree.find_item("PRD-001").review()
-    tree.find_item("INFRA-050").review()
-    assert _issues(base) == []  # also stamps the new link (doorstop stamps links on validation, not review)
-    return base
+def _stamp_for(header, description, parents, tests):
+    item = reqlib.Item(uid="X", path=reqlib.ROOT, header=header, description=description, parents=list(parents), tests=tests)
+    return reqlib.compute_stamp(item)
 
 
-def test_editing_a_reviewed_item_raises_unreviewed_changes_until_re_approval(tree_builder):
-    base = _linked_fixture(tree_builder)
-    doorstop.build(root=str(base)).find_item("INFRA-050").set("text", "changed after approval")
-    assert "INFRA-050: unreviewed changes" in _issues(base)
+@pytest.mark.req("INFRA-050")
+def test_editing_a_reviewed_item_without_re_review_fails_validate_structure(req_tree):
+    req_dir, make_item = req_tree
+    sha = "a" * 64
+    original = "The leaf shall do the thing.\n"
+    stamp = _stamp_for("leaf", original, [], {None: sha})
+    make_item(req_dir, "INFRA-050", "The leaf shall do a different thing entirely.\n", header="leaf", tests=sha, reviewed=stamp)
 
-    item = doorstop.build(root=str(base)).find_item("INFRA-050")
-    item.clear()
-    item.review()
-    assert _issues(base) == []
-
-
-def test_editing_a_linked_parent_marks_the_child_link_suspect(tree_builder):
-    base = _linked_fixture(tree_builder)
-    doorstop.build(root=str(base)).find_item("PRD-001").set("text", "parent changed")
-    assert "INFRA-050: suspect link: PRD-001" in _issues(base)
+    items, errors = reqlib.load_tree(req_dir)
+    assert not errors
+    problems = reqlib.validate_structure(items)
+    assert any("INFRA-050" in e and "reviewed stamp does not match item content" in e for e in problems)
 
 
-def test_gate_strict_mode_enables_review_and_suspect_checks():
-    gate = (REPO_ROOT / "ci" / "gate.sh").read_text()
-    branch = re.search(r"GATE_STRICT.*?then\s*(.*?)\s*else\s*(.*?)\s*fi", gate, re.DOTALL)
-    assert branch, "gate.sh lost its GATE_STRICT branch"
-    strict_cmd, relaxed_cmd = branch.group(1), branch.group(2)
-    assert "--error-all" in strict_cmd and "-W" not in strict_cmd and "-S" not in strict_cmd
-    assert "-W" in relaxed_cmd and "-S" in relaxed_cmd
+def test_reviewed_item_left_untouched_passes_validate_structure(req_tree):
+    req_dir, make_item = req_tree
+    sha = "a" * 64
+    original = "The leaf shall do the thing.\n"
+    stamp = _stamp_for("leaf", original, [], {None: sha})
+    make_item(req_dir, "INFRA-050", original, header="leaf", tests=sha, reviewed=stamp)
+
+    items, errors = reqlib.load_tree(req_dir)
+    assert not errors
+    assert reqlib.validate_structure(items) == []
+
+
+def test_strict_validate_reports_every_unreviewed_item(monkeypatch, capsys):
+    import req as req_cli
+
+    root = reqlib.Item(uid="ROOT-1", path=reqlib.ROOT, header="root", description="Root branch.\n", parents=[])
+    child = reqlib.Item(
+        uid="CHILD-1", path=reqlib.ROOT, header="leaf", description="The child shall do work.\n",
+        parents=["ROOT-1"], tests={None: "b" * 64},
+    )
+    items = {"ROOT-1": root, "CHILD-1": child}
+
+    monkeypatch.setattr(reqlib, "load_tree", lambda *a, **kw: (items, []))
+    monkeypatch.setattr(reqlib, "discover_bindings", lambda *a, **kw: {})
+
+    rc = req_cli.cmd_validate(argparse.Namespace(coverage=[], strict=True))
+    captured = capsys.readouterr()
+
+    assert rc == 1
+    assert "ROOT-1: not reviewed (strict mode)" in captured.err
+    assert "CHILD-1: not reviewed (strict mode)" in captured.err
+
+
+def test_non_strict_validate_does_not_report_unreviewed_items(monkeypatch, capsys):
+    import req as req_cli
+
+    root = reqlib.Item(
+        uid="ROOT-1", path=reqlib.ROOT, header="root", description="The root shall stand alone.\n",
+        parents=[], tests={None: "c" * 64},
+    )
+    items = {"ROOT-1": root}
+
+    monkeypatch.setattr(reqlib, "load_tree", lambda *a, **kw: (items, []))
+    monkeypatch.setattr(reqlib, "discover_bindings", lambda *a, **kw: {})
+
+    rc = req_cli.cmd_validate(argparse.Namespace(coverage=[], strict=False))
+    captured = capsys.readouterr()
+
+    assert rc == 0
+    assert "not reviewed" not in captured.err

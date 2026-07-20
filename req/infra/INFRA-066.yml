@@ -1,20 +1,6 @@
-accept: ''
-active: true
-derived: false
-header: |
-  CI build on push and pull request
-level: 3.1.1
-links:
-- INFRA-065: JKki7_c8KDHAOAQ7FRGhmQ34wkkwfAQj0AeECJuZgkI=
-normative: true
-ref: ''
-references:
-- keyword: INFRA-066
-  path: scripts/tests/test_infra_066_ci_on_push.py
-  sha: 5108e66d9c7f4b173047329931525543d5d1fc19caec98feaaefae51d067c22f
-  type: file
-reviewed: EMdp7PkHG8bi4AQ4wWIA4ASU12aeGxIKY4V4lyEzV5s=
-test: workflow-lint test asserting push/pull_request triggers and a build step.
-text: |
+header: CI build on push and pull request
+description: |
   The CI pipeline shall build the project on every push and pull request.
-verify: test
+parents: [INFRA-065]
+order: 10
+tests: ~

@@ -1,11 +1,5 @@
-active: true
-derived: false
-header: |
-  Application shell & UX (defer)
-level: 1.4.0
-links: []
-normative: false
-ref: ''
-reviewed: WiAyHNFfKKM8ODDi6BbROoYQN4PK4_PhUuwRDZvkAxc=
-text: |
+header: Application shell & UX (defer)
+description: |
   (defer) Full decomposition of this branch is deferred until it is scheduled.
+parents: [PRODUCT-169]
+order: 40

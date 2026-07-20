@@ -1,21 +1,6 @@
-accept: |
-  exits non-zero listing uncovered item IDs; exits 0 when coverage is complete.
-active: true
-derived: false
-header: |
-  Coverage check script
-level: 1.3.1
-links:
-- INFRA-047: 1J-MlxOwP9Na7M45_rcHmzuzHp61E--w3wsl2UojOxY=
-normative: true
-ref: ''
-references:
-- keyword: INFRA-032
-  path: scripts/tests/test_check_req_coverage.py
-  sha: 2a3fb8fd8950861a01f1aa3532970d2021dc1d59437772459a4bcc7230fb11a5
-  type: file
-reviewed: wtx8bmGAqeiKJSgAB-IkS0iNycU8D5fVo9aD3LXtE8Y=
-test: script unit tests against a fixture tree with one uncovered item.
-text: |
-  An automated coverage check shall assert every normative leaf item is covered by ≥1 test case carrying its UID tag, cross-checking the requirements tree against the test sources
-verify: test
+header: Coverage check
+description: |
+  An automated coverage check shall verify the executed-test reports against the requirements tree in both directions: every reviewed leaf binding has at least one executed coverage record, and every coverage record's UID tag matches a known requirement
+parents: [INFRA-047]
+order: 10
+tests: ~

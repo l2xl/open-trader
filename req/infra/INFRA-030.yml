@@ -1,21 +1,6 @@
-accept: |
-  requirements-tree validation passes on fresh checkout; every branch prefix resolves to a document.
-active: true
-derived: false
-header: |
-  Requirements tree layout
-level: 1.2.1
-links:
-- INFRA-046: rLdhYkkrhi7uQhPJth3kvmrQUUfa4X2tUwXDFeAgMbw=
-normative: true
-ref: ''
-references:
-- keyword: INFRA-030
-  path: scripts/tests/test_doorstop_tree_shape.py
-  sha: 577d852361bb8929539e546fc2a2f713364e75026f0ae65cbd4ca652c629ea28
-  type: file
-reviewed: XRwNkuxJ8m7Mrvlwm29Ai9Vnfdgnw92ceqW0cdbl2HA=
-test: tree-shape tests in the requirements tooling suite.
-text: |
-  The repo shall contain a machine-validatable requirements tree: a single root PRODUCT document and one child document per requirements branch as that branch is scheduled (currently: INFRA only), items holding the normative leaf texts of the plan
-verify: test
+header: Requirements tree layout
+description: |
+  The repo shall contain a machine-validatable requirements tree under req/: every `*.yml` file under any subfolder is one requirement item, its UID is the file stem, folders carry no semantic meaning, and the tree shape is defined entirely inside item files via `parents` links forming a DAG with exactly one root item
+parents: [INFRA-046]
+order: 10
+tests: ~

@@ -131,21 +131,24 @@ jobs:
             libboost-context-dev libboost-system-dev libboost-url-dev libssl-dev
 
       - name: Run unit tests (ctest, offline)
+        env:
+          REQ_COVERAGE_FILE: ${{ github.workspace }}/build-ci/req_coverage.jsonl
         run: |
           set -o pipefail
-          ctest --test-dir build-ci -LE live --output-on-failure --output-junit ctest-results.xml 2>&1 | tee build-ci/ctest.log
+          ctest --test-dir build-ci -LE live --output-on-failure 2>&1 | tee build-ci/ctest.log
       - name: Report test failure as a Check Run
         if: ${{ failure() }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: python3 ci/report_build_failure.py build-ci/ctest.log
 
-      - name: Upload test results
+      - name: Upload C++ coverage records
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v4
         with:
-          name: ctest-results
-          path: build-ci/ctest-results.xml
+          name: req-coverage-cpp
+          path: build-ci/req_coverage.jsonl
+          if-no-files-found: warn
 
   requirements:
     runs-on: ubuntu-latest
@@ -164,7 +167,7 @@ jobs:
           python-version: '3.12'
 
       # Single source of truth for requirements validation: ci/gate.sh bootstraps
-      # .venv-req and runs doorstop validation + the frozen-test and coverage checks.
+      # .venv-req and runs `req validate` (structural + frozen-routine checks).
       - name: Validate requirements
         id: validate
         run: bash ci/gate.sh
@@ -174,21 +177,30 @@ jobs:
           bash <(curl -s https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash)
           sudo mv ./actionlint /usr/local/bin/
       - name: Run requirements tooling tests (pytest)
-        run: .venv-req/bin/python -m pytest scripts/tests --junitxml=pytest-results.xml
+        env:
+          REQ_COVERAGE_FILE: ${{ github.workspace }}/pytest-coverage.jsonl
+        run: .venv-req/bin/python -m pytest scripts/tests
 
-      - name: Download test results
+      - name: Download C++ coverage records
         if: ${{ !cancelled() && steps.validate.outcome == 'success' }}
         uses: actions/download-artifact@v4
         with:
-          name: ctest-results
+          name: req-coverage-cpp
           path: build-ci
+
+      - name: Check coverage against the tree
+        if: ${{ !cancelled() && steps.validate.outcome == 'success' }}
+        run: >
+          bash ci/gate.sh
+          --coverage pytest-coverage.jsonl
+          --coverage build-ci/req_coverage.jsonl
 
       - name: Compute recursive requirement status
         if: ${{ !cancelled() && steps.validate.outcome == 'success' }}
         run: >
-          .venv-req/bin/python scripts/req_status.py
-          --junit pytest-results.xml
-          --junit build-ci/ctest-results.xml
+          .venv-req/bin/python scripts/req.py report
+          --coverage pytest-coverage.jsonl
+          --coverage build-ci/req_coverage.jsonl
           --out req_status.json
 
       - name: Write requirements report to the job summary
