@@ -43,7 +43,7 @@ import yaml
 ROOT = Path(__file__).resolve().parent.parent
 REQ_DIR = ROOT / "req"
 
-UID_RE = re.compile(r"^[A-Z][A-Z_]*-[0-9]+$")
+UID_RE = re.compile(r"^[A-Z][A-Z_]*(-[A-Z0-9_]+)+$")
 BINDING_NAME_RE = re.compile(r"^[a-z0-9_]+$")
 SHA_RE = re.compile(r"^[0-9a-f]{64}$")
 KNOWN_FIELDS = {"header", "description", "parents", "order", "tests", "reviewed"}
