@@ -34,7 +34,7 @@ Replace Doorstop with a self-owned requirements toolkit. Two drivers:
 - **`order` field added** (user, 2nd round): number, presentation-only sibling sort key for
   reports; siblings sort by `(order, UID)`; optional, default 0. **Excluded from the reviewed
   stamp** — reordering a report must never trigger re-review.
-- **Single root enforced**: exactly one item with empty `parents` (PRODUCT-169).
+- **Single root enforced**: exactly one item with empty `parents` (OPEN-TRADER).
 - **Tag-only test binding, no paths or test names in items** (user, 2nd round — replaces the
   earlier `path::name` scheme): a binding is the structural tag pair `[UID][binding_name]`;
   a requirement's single default test is `[UID]` alone. Test source location is *discovered*
@@ -140,7 +140,7 @@ Single entry point `scripts/req.py` (thin subcommands over reqlib):
 
 # Current State Facts (verified 2026-07-20, branch req-bootstrap)
 
-- Tree: 22 items — 16 in `req/infra/` (all reviewed/frozen) + 6 in `req/product/` (PRODUCT-169
+- Tree: 22 items — 16 in `req/infra/` (all reviewed/frozen) + 6 in `req/product/` (OPEN-TRADER
   root, PRODUCT-168 Infrastructure branch, rest are `(defer)` placeholders; PRODUCT-001 is
   `normative: false` heading → becomes a plain branch item in the new model).
 - **PRODUCT hierarchy is level-only**: every product item has `links: []`; INFRA items carry real

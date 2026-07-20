@@ -1,5 +1,0 @@
-header: XCockpit
-description: |
-  XCockpit -- the trading terminal product itself. Root of the requirements tree; every top-level feature branch is a child of this item.
-parents: []
-order: 10

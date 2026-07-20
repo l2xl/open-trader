@@ -1,4 +1,4 @@
-// XCockpit
+// Open Trader
 // Copyright (c) 2026 l2xl (l2xl/at/proton.me)
 // Distributed under the Intellectual Property Reserve License, v2 (IPRL)
 
@@ -8,7 +8,7 @@
 //
 // Output directory is set at build time via TIME_RULER_OUTPUT_DIR (an absolute path
 // pointing inside the build tree). Fonts are loaded from `<cwd>/resources/`, so the
-// fixture chdir()s into ELSCRATCHER_RUNTIME_DIR (where the elscratcher exe + fonts live).
+// fixture chdir()s into TRADER_RUNTIME_DIR (where the trader exe + fonts live).
 
 #include <algorithm>
 #include <chrono>
@@ -119,10 +119,10 @@ struct CwdFixture
 {
     CwdFixture()
     {
-        // Fonts are next to the elscratcher exe (resources/OpenSans-Regular.ttf).
+        // Fonts are next to the trader exe (resources/OpenSans-Regular.ttf).
         // LoadDefaultFont() in InstrumentContentPanel uses CWD-relative lookup.
-        if (chdir(ELSCRATCHER_RUNTIME_DIR) != 0)
-            FAIL("Failed to chdir to ELSCRATCHER_RUNTIME_DIR");
+        if (chdir(TRADER_RUNTIME_DIR) != 0)
+            FAIL("Failed to chdir to TRADER_RUNTIME_DIR");
     }
 };
 

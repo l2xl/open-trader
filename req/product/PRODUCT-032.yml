@@ -1,5 +1,5 @@
 header: Exchange integration (defer)
 description: |
   (defer) Full decomposition of this branch is deferred until it is scheduled.
-parents: [PRODUCT-169]
+parents: [OPEN-TRADER]
 order: 20

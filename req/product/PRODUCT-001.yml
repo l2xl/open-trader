@@ -1,5 +1,5 @@
 header: Data backbone
 description: |
   The market data backbone: the connect transport layer delivering exchange payloads and the datahub library persisting, deduplicating and fanning them out to consumers.
-parents: [PRODUCT-169]
+parents: [OPEN-TRADER]
 order: 10

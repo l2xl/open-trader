@@ -73,7 +73,7 @@ The upper tier is **application-layer code** (e.g. `src/cockpit/`, `src/app/`) �
 
 # Requirements & the TDD gate
 
-Project requirements are tracked formally in a [Doorstop](https://github.com/doorstop-dev/doorstop) tree under `req/` (documents `PRODUCT ← CORE/DATA_MODEL/TRADER_HUD/APP/INFRA`); the item files are the single source of truth, decomposed branch by branch as each is scheduled. See [req/README.md](req/README.md) for the requirements-system design and operating guide.
+Project requirements are tracked formally in a Doorstop inspired self implemented tree under `req/` (documents `PRODUCT ← CORE/DATA_MODEL/TRADER_HUD/APP/INFRA`); the item files are the single source of truth, decomposed branch by branch as each is scheduled. See [req/README.md](req/README.md) for the requirements-system design and operating guide.
 
 Binding process rules:
 - **Test-first, then freeze.** For a requirement leaf, the covering Catch2 `TEST_CASE` is tagged with the leaf UID (`[DATA_MODEL-042]`) and bound via the leaf's `references:` before implementation. The user approves by running `doorstop review <UID>`, which fingerprints the item and its test files' SHAs.
@@ -81,7 +81,7 @@ Binding process rules:
 - **Frozen tests are immutable.** Editing a reviewed item's referenced test reddens the gate until the user runs a sanctioned `doorstop clear` + re-review.
 - **The gate must pass.** `ci/gate.sh` (and `.github/workflows/validate.yml`) run `doorstop --error-all` plus the frozen-test and coverage checks; they bite only on reviewed items.
 
-# The Exchange Scratchpad Components
+# Open Trader Components
 
 ## Data Pipeline
 
@@ -101,15 +101,15 @@ The data model is the main Data Pipeline parameter. It is defined by entity type
 
 For any work involving data entities, `IDataController` implementations, or persistence — using, extending, or modifying them — see [src/data/README.md](src/data/README.md).
 
-## Trader Cockpit
+## Trader HUD
 
-User experience is orchestrated by the central Exchange Scratchpad component — `The Trader Cockpit`.
+User UI/UX is represented by the central Open Trader component — `Trader HUD`.
 
 For any work involving `TradeCockpit`, `ContentPanel`, or panel registration and data routing — using, extending, or modifying them — see [src/cockpit/README.md](src/cockpit/README.md).
 
 ## Application layer
 
-Application lifecycle management and UI implementation.
+Application and UI lifecycle management.
 
 For any work involving application startup, panel tree nodes, `UiBuilder`, or UI-engine-specific panel implementations — using, extending, or modifying them — see [src/app/README.md](src/app/README.md).
 

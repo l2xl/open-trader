@@ -1,4 +1,4 @@
-# XCockpit
+# Open Trader
 # Copyright (c) 2026 l2xl (l2xl/at/proton.me)
 # Distributed under the Intellectual Property Reserve License, v2 (IPRL)
 
@@ -153,8 +153,8 @@ add_library(core STATIC ${core_SOURCES})
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(FONTCONFIG REQUIRED fontconfig)
 
-# Add xcockpit executable (Elements-based application)
-add_executable(xcockpit
+# Add trader executable (Elements-based application)
+add_executable(trader
             src/main.cpp
             src/app/main_window.cpp
             src/app/main_window.hpp
@@ -170,24 +170,24 @@ add_executable(xcockpit
             src/config.hpp
             src/config.cpp
     )
-target_link_libraries(xcockpit PRIVATE elements core glaze::glaze Thorvg::thorvg ${CAIRO_LIBRARIES})
-target_include_directories(xcockpit PRIVATE ${CAIRO_INCLUDE_DIRS})
+target_link_libraries(trader PRIVATE elements core glaze::glaze Thorvg::thorvg ${CAIRO_LIBRARIES})
+target_include_directories(trader PRIVATE ${CAIRO_INCLUDE_DIRS})
 
-# Copy Elements font resources for xcockpit
+# Copy Elements font resources for trader
 set(ELEMENTS_FONT_DIR "${elements_SOURCE_DIR}/resources/fonts")
-set(XCOCKPIT_RESOURCES_DIR "$<TARGET_FILE_DIR:xcockpit>/resources")
+set(TRADER_RESOURCES_DIR "$<TARGET_FILE_DIR:trader>/resources")
 
 add_custom_command(
-    TARGET xcockpit POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E make_directory ${XCOCKPIT_RESOURCES_DIR}
+    TARGET trader POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${TRADER_RESOURCES_DIR}
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         "${ELEMENTS_FONT_DIR}/elements_basic.ttf"
         "${ELEMENTS_FONT_DIR}/OpenSans-Regular.ttf"
         "${ELEMENTS_FONT_DIR}/OpenSans-Light.ttf"
         "${ELEMENTS_FONT_DIR}/OpenSans-Bold.ttf"
         "${ELEMENTS_FONT_DIR}/Roboto-Regular.ttf"
-        ${XCOCKPIT_RESOURCES_DIR}
-    COMMENT "Copying Elements font resources for xcockpit"
+        ${TRADER_RESOURCES_DIR}
+    COMMENT "Copying Elements font resources for trader"
 )
 
 include_directories(
@@ -283,9 +283,9 @@ if(NOT ANDROID)
         target_include_directories(test_time_ruler PRIVATE ${CAIRO_INCLUDE_DIRS})
         target_compile_definitions(test_time_ruler PRIVATE
             "TIME_RULER_OUTPUT_DIR=\"${CMAKE_BINARY_DIR}/test_output/time_ruler\""
-            "ELSCRATCHER_RUNTIME_DIR=\"$<TARGET_FILE_DIR:xcockpit>\""
+            "TRADER_RUNTIME_DIR=\"$<TARGET_FILE_DIR:trader>\""
         )
-        add_dependencies(test_time_ruler xcockpit)  # ensures resources/ is populated
+        add_dependencies(test_time_ruler trader)  # ensures resources/ is populated
     endif()
 
 endif()

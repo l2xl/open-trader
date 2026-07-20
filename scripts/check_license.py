@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# XCockpit
+# Open Trader
 # Copyright (c) 2026 l2xl (l2xl/at/proton.me)
 # Distributed under the Intellectual Property Reserve License, v2 (IPRL)
 
@@ -16,13 +16,13 @@ import os
 import sys
 
 CPP_HEADER = """\
-// XCockpit
+// Open Trader
 // Copyright (c) 2026 l2xl (l2xl/at/proton.me)
 // Distributed under the Intellectual Property Reserve License, v2 (IPRL)
 """
 
 HASH_HEADER = """\
-# XCockpit
+# Open Trader
 # Copyright (c) 2026 l2xl (l2xl/at/proton.me)
 # Distributed under the Intellectual Property Reserve License, v2 (IPRL)
 """
@@ -91,7 +91,7 @@ def strip_old_header(lines, comment):
 
         if 'BEGIN PGP' in content:
             in_pgp = True
-        if any(k in content for k in ('XCockpit', 'Copyright', 'IPRL')):
+        if any(k in content for k in ('Open Trader', 'Copyright', 'IPRL')):
             has_project_header = True
 
         j += 1

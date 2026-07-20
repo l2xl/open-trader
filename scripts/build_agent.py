@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# XCockpit
+# Open Trader
 # Copyright (c) 2026 l2xl (l2xl/at/proton.me)
 # Distributed under the Intellectual Property Reserve License, v2 (IPRL)
 
@@ -46,7 +46,7 @@ def build(target, jobs):
 def main():
     parser = argparse.ArgumentParser(description="Build agent for extools project")
     parser.add_argument("action", choices=["configure", "build", "auto"], help="configure: generate build files; build: compile; auto: configure if needed then build")
-    parser.add_argument("--target", default="elscratcher", help="build target (default: elscratcher)")
+    parser.add_argument("--target", default="trader", help="build target (default: trader)")
     parser.add_argument("--jobs", type=int, default=7, help="parallel jobs (default: 7)")
     args = parser.parse_args()
 

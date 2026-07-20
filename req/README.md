@@ -9,7 +9,7 @@ Self-owned requirements toolkit — no external requirements manager. The tree o
   (`INFRA-066.yml` → `INFRA-066`), globally unique. Folders are external sorting only — moving a
   file between folders changes nothing. Other extensions (`.md`, …) are ignored by tooling.
 - **The tree shape lives inside the items** via `parents`. Multi-parent items form a DAG; exactly
-  one item has empty `parents` (the root, `PRODUCT-169`). No settings files anywhere.
+  one item has empty `parents` (the root, `OPEN-TRADER`). No settings files anywhere.
 - **Leaf vs branch is structural**: a leaf carries a `tests` key; a branch has children. Mutually
   exclusive. A childless item without `tests` is a deferred leaf and must carry the `(defer)` token
   in its description.

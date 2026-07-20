@@ -1,4 +1,4 @@
-// XCockpit
+// Open Trader
 // Copyright (c) 2026 l2xl (l2xl/at/proton.me)
 // Distributed under the Intellectual Property Reserve License, v2 (IPRL)
 
@@ -29,7 +29,7 @@ bool ContainsNode(const std::shared_ptr<PanelNode>& root, const std::shared_ptr<
 } // anonymous namespace
 
 MainWindow::MainWindow(UiBuilder& builder, std::shared_ptr<cockpit::TradeCockpit> cockpit)
-    : mApp("Exchange Scratchpad")
+    : mApp("Open Trader")
     , mWindow(mApp.name())
     , mBuilder(builder)
     , mCockpit(std::move(cockpit))

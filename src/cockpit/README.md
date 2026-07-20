@@ -1,4 +1,4 @@
-# Trader Cockpit - the unique UI controller for The Exchange Scratchpad
+# Trader HUD 
 
 **Namespace:** `scratcher::cockpit`
 
