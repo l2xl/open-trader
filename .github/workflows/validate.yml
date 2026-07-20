@@ -11,7 +11,7 @@ jobs:
   license:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Check IPRL v2 license headers
         run: python3 scripts/check_license.py --check
@@ -25,7 +25,7 @@ jobs:
   approval:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
@@ -56,7 +56,7 @@ jobs:
       contents: read
       checks: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Install LLVM apt repository (clang-23)
         run: |
@@ -71,7 +71,7 @@ jobs:
             libboost-dev libboost-context-dev libboost-system-dev libboost-url-dev \
             libssl-dev libfontconfig-dev ninja-build pkg-config
       - name: Restore build cache
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: build-ci
           key: build-ci-clang23-${{ hashFiles('CMakeLists.txt', 'cmake/**') }}
@@ -100,7 +100,7 @@ jobs:
           --exclude=CMakeFiles --exclude='*-src' --exclude='*-subbuild' build-ci
 
       - name: Upload built tree
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: build-tree
           path: build-tree.tar.zst
@@ -117,16 +117,30 @@ jobs:
     permissions:
       contents: read
       checks: write
+      actions: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Download built tree
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           name: build-tree
 
       - name: Unpack built tree
         run: tar --zstd -xf build-tree.tar.zst
+
+      # build-tree is only needed by this job; delete it now instead of
+      # waiting out the retention-days TTL.
+      - name: Delete build-tree artifact
+        if: ${{ always() }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          ARTIFACT_ID=$(gh api "repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/artifacts" \
+            --jq '.artifacts[] | select(.name=="build-tree") | .id')
+          if [ -n "$ARTIFACT_ID" ]; then
+            gh api -X DELETE "repos/${{ github.repository }}/actions/artifacts/$ARTIFACT_ID"
+          fi
 
       # Fresh runner: only the shared libs the test binaries link against at
       # runtime are needed here, not the toolchain used to build them.
@@ -150,7 +164,7 @@ jobs:
 
       - name: Upload C++ coverage records
         if: ${{ !cancelled() }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: req-coverage-cpp
           path: build-ci/req_coverage.jsonl
@@ -166,9 +180,9 @@ jobs:
       contents: read
       checks: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
 
@@ -189,7 +203,7 @@ jobs:
 
       - name: Download C++ coverage records
         if: ${{ !cancelled() && steps.validate.outcome == 'success' }}
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           name: req-coverage-cpp
           path: build-ci
