@@ -36,6 +36,16 @@ def test_any_yaml_is_an_item_uid_is_stem_folders_meaningless(req_tree):
     assert errors == []
 
 
+def test_bare_feature_name_without_numbered_suffix_is_a_valid_uid(req_tree):
+    req_dir, make_item = req_tree
+    make_item(req_dir, "ROOT-1", "root shall be here", header="root")
+    make_item(req_dir, "EXCHANGE", "exchange integrations shall be grouped here", parents=["ROOT-1"])
+    make_item(req_dir, "EXCHANGE-1", "the leaf shall pass", parents=["EXCHANGE"], tests=None)
+    _items, load_errors, errors = _errors(req_dir)
+    assert load_errors == []
+    assert errors == []
+
+
 def test_duplicate_stem_across_folders_is_rejected(req_tree):
     req_dir, make_item = req_tree
     make_item(req_dir / "a", "ROOT-1", "root shall be one", header="root")
@@ -99,14 +109,10 @@ def test_leaf_and_branch_are_mutually_exclusive(req_tree):
     assert _matching(errors, "mutually exclusive")
 
 
-def test_childless_item_without_tests_needs_defer_token(req_tree):
+def test_childless_item_without_tests_is_structurally_valid(req_tree):
     req_dir, make_item = req_tree
     make_item(req_dir, "ROOT-1", "root shall exist", header="root")
     make_item(req_dir, "STUB-1", "not planned yet", parents=["ROOT-1"])
-    _items, _load_errors, errors = _errors(req_dir)
-    assert _matching(errors, "(defer)")
-
-    make_item(req_dir, "STUB-1", "not planned yet (defer)", parents=["ROOT-1"])
     _items, _load_errors, errors = _errors(req_dir)
     assert errors == []
 

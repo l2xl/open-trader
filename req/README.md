@@ -10,9 +10,11 @@ Self-owned requirements toolkit — no external requirements manager. The tree o
   file between folders changes nothing. Other extensions (`.md`, …) are ignored by tooling.
 - **The tree shape lives inside the items** via `parents`. Multi-parent items form a DAG; exactly
   one item has empty `parents` (the root, `OPEN-TRADER`). No settings files anywhere.
+  Use consideration to name requirements, which represents a whole feature, without a number (like top OPEN_TRADER),
+  then its subbranches may be groupped by subfolder and have same name and numbered suffix (unless it again represent large feature)
 - **Leaf vs branch is structural**: a leaf carries a `tests` key; a branch has children. Mutually
-  exclusive. A childless item without `tests` is a deferred leaf and must carry the `(defer)` token
-  in its description.
+  exclusive. A childless item without `tests` is simply not yet implemented — it rolls up as
+  `not_implemented` like any leaf with no coverage.
 
 # Item Schema
 
@@ -26,7 +28,7 @@ tests: ~
 reviewed: <sha256 hex, present only after user review>
 ```
 
-- `description` — exactly one "shall" on test-bearing leaves; `(defer)` marks deferral.
+- `description` — exactly one "shall" on test-bearing leaves.
 - `order` — optional, presentation-only sibling sort key; siblings sort by `(order, UID)`.
   Excluded from the reviewed stamp: reordering a report never triggers re-review.
 - `tests` forms: `~` → single default test bound by the `[UID]` tag alone (becomes
@@ -78,10 +80,11 @@ file named by `REQ_COVERAGE_FILE` (no emission when unset).
 
 # Status Rollup
 
-Leaf: no executed records → `not_implemented` (deferred leaves always); any failed record →
-`test_failed`; all bindings covered and passing → `test_passed`; some covered →
-`partially_implemented`. Branch: aggregate of children (any failed → failed; all
-not_implemented → not_implemented; all passed → passed; else partial).
+Leaf: no executed records → `not_implemented`; any failed record → `test_failed`; all bindings
+covered and passing → `test_passed`; some covered → `partially_implemented`. A childless item
+without a `tests` key has no bindings to cover, so it rolls up as `not_implemented` the same way.
+Branch: aggregate of children (any failed → failed; all not_implemented → not_implemented; all
+passed → passed; else partial).
 
 # Process Rules (TDD gate)
 

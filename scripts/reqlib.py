@@ -9,7 +9,7 @@ UID is the file stem; folders carry no semantics. Item schema:
 
     header: one-line title
     description: |
-      prose with exactly one "shall" on test-bearing leaves; `(defer)` marks deferral
+      prose with exactly one "shall" on test-bearing leaves
     parents: [UID, ...]        # DAG edges; exactly one item in the tree has none
     order: 10                  # optional presentation-only sibling sort key
     tests: ~ | <sha> | {name: sha|~, ...}   # leaf test bindings; absent on branches
@@ -43,7 +43,7 @@ import yaml
 ROOT = Path(__file__).resolve().parent.parent
 REQ_DIR = ROOT / "req"
 
-UID_RE = re.compile(r"^[A-Z][A-Z_]*(-[A-Z0-9_]+)+$")
+UID_RE = re.compile(r"^[A-Z][A-Z_]*(-[A-Z0-9_]+)*$")
 BINDING_NAME_RE = re.compile(r"^[a-z0-9_]+$")
 SHA_RE = re.compile(r"^[0-9a-f]{64}$")
 KNOWN_FIELDS = {"header", "description", "parents", "order", "tests", "reviewed"}
@@ -65,17 +65,13 @@ class Item:
     description: str = ""
     parents: list = field(default_factory=list)
     order: float = 0
-    tests: dict = None  # None = branch/deferred; {name|None: sha|None} otherwise
+    tests: dict = None  # None = branch (no tests key); {name|None: sha|None} otherwise
     reviewed: str = None
     folder: str = ""
 
     @property
     def is_leaf(self):
         return self.tests is not None
-
-    @property
-    def deferred(self):
-        return "(defer)" in self.description
 
 
 @dataclass
@@ -195,11 +191,9 @@ def validate_structure(items):
         kids = children[uid]
         if item.is_leaf and kids:
             errors.append(f"{uid}: has both 'tests' and children {sorted(kids)}; leaf and branch are mutually exclusive")
-        if not item.is_leaf and not kids and not item.deferred:
-            errors.append(f"{uid}: childless item without 'tests' must carry the (defer) token")
         if not item.description.strip():
             errors.append(f"{uid}: empty description")
-        if item.is_leaf and not item.deferred and item.description.count("shall") != 1:
+        if item.is_leaf and item.description.count("shall") != 1:
             errors.append(f"{uid}: test-bearing leaf description must contain exactly one 'shall'")
         if item.reviewed:
             if item.is_leaf and any(sha is None for sha in item.tests.values()):
@@ -340,7 +334,7 @@ def check_bindings_exist(items, discovered):
     """Unreviewed leaves: report (non-fatal) bindings with no tagged routine yet."""
     pending = []
     for uid, item in sorted(items.items()):
-        if item.reviewed or not item.is_leaf or item.deferred:
+        if item.reviewed or not item.is_leaf:
             continue
         for name in item.tests:
             if not discovered.get((uid, name)):
@@ -444,7 +438,6 @@ def compute_status(items, records):
             "order": item.order,
             "folder": item.folder,
             "reviewed": bool(item.reviewed),
-            "deferred": item.deferred,
             "tests": tests,
         }
     return report

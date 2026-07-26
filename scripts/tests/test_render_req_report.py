@@ -20,12 +20,12 @@ def _status_entries():
         "ROOT-001": {
             "status": "test_passed", "header": "Root", "description": "Root",
             "parents": [], "children": ["INFRA-001"], "order": 0, "folder": "req",
-            "reviewed": False, "deferred": False, "tests": [],
+            "reviewed": False, "tests": [],
         },
         "INFRA-001": {
             "status": "test_passed", "header": "", "description": "Leaf",
             "parents": ["ROOT-001"], "children": [], "order": 0, "folder": "req/infra",
-            "reviewed": False, "deferred": False, "tests": [],
+            "reviewed": False, "tests": [],
         },
     }
 
@@ -67,11 +67,10 @@ def test_item_card_shows_collapsible_test_logs(tmp_path):
     assert leaf_card.count("<details") == 2
 
 
-def test_item_card_shows_folder_reviewed_and_deferred(tmp_path):
+def test_item_card_shows_folder_and_reviewed(tmp_path):
     entries = _status_entries()
     entries["INFRA-001"]["folder"] = "req/infra"
     entries["INFRA-001"]["reviewed"] = True
-    entries["INFRA-001"]["deferred"] = True
     status_path = tmp_path / "req_status.json"
     _write_status(status_path, entries)
     out_dir = tmp_path / "site"
@@ -87,7 +86,7 @@ def test_tree_page_renders_root_and_marks_dag_merge_duplicates(tmp_path):
     entries["INFRA-002"] = {
         "status": "test_passed", "header": "", "description": "Shared leaf",
         "parents": ["ROOT-001", "INFRA-001"], "children": [], "order": 0, "folder": "req/infra",
-        "reviewed": False, "deferred": False, "tests": [],
+        "reviewed": False, "tests": [],
     }
     entries["ROOT-001"]["children"] = ["INFRA-001", "INFRA-002"]
     entries["INFRA-001"]["children"] = ["INFRA-002"]

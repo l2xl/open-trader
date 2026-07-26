@@ -1,0 +1,5 @@
+header: Application shell
+description: |
+  Application startup and configuration
+parents: [OPEN-TRADER]
+order: 40

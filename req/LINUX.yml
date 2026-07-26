@@ -1,0 +1,5 @@
+header: Linux application
+description: |
+  Linux desktop start up management
+parents: [APP]
+order: 40

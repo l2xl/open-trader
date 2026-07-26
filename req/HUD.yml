@@ -1,0 +1,5 @@
+header: Trader HUD
+description: |
+  Open Trader UI/UX.
+parents: [OPEN-TRADER]
+order: 30

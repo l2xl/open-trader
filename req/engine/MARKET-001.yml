@@ -1,0 +1,7 @@
+header: Buoy Candle notation
+description: |
+  A rendering algorithm for an alternative to the Japanese candlestick, where each
+  period is drawn as a *buoy candle* whose **silhouette encodes
+  the intra-period price distribution** and whose **area encodes traded volume**.
+parents: [MARKET]
+order: 10

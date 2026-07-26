@@ -27,7 +27,7 @@ def test_leaf_status_reflects_coverage_records(req_tree, monkeypatch):
     make(req_dir, "PASS-1", "shall pass", parents=["ROOT-1"], tests=None)
     make(req_dir, "FAIL-1", "shall fail", parents=["ROOT-1"], tests=None)
     make(req_dir, "PART-1", "shall partly bind", parents=["ROOT-1"], tests={"a": None, "b": None})
-    make(req_dir, "DEFER-1", "shall arrive later (defer)", parents=["ROOT-1"], tests="absent")
+    make(req_dir, "STUB-1", "not planned yet", parents=["ROOT-1"])
     items, errs = reqlib.load_tree(req_dir)
     assert errs == []
 
@@ -41,15 +41,13 @@ def test_leaf_status_reflects_coverage_records(req_tree, monkeypatch):
     assert reqlib.leaf_status(items["PASS-1"], records) == reqlib.TEST_PASSED
     assert reqlib.leaf_status(items["FAIL-1"], records) == reqlib.TEST_FAILED
     assert reqlib.leaf_status(items["PART-1"], records) == reqlib.PARTIALLY_IMPLEMENTED
-    assert reqlib.leaf_status(items["DEFER-1"], records) == reqlib.NOT_IMPLEMENTED
 
     report = reqlib.compute_status(items, records)
     assert report["NONE-1"]["status"] == reqlib.NOT_IMPLEMENTED
     assert report["PASS-1"]["status"] == reqlib.TEST_PASSED
     assert report["FAIL-1"]["status"] == reqlib.TEST_FAILED
     assert report["PART-1"]["status"] == reqlib.PARTIALLY_IMPLEMENTED
-    assert report["DEFER-1"]["status"] == reqlib.NOT_IMPLEMENTED
-    assert report["DEFER-1"]["deferred"] is True
+    assert report["STUB-1"]["status"] == reqlib.NOT_IMPLEMENTED
 
 
 def test_leaf_status_all_bindings_must_be_covered_to_pass(req_tree, monkeypatch):
@@ -142,7 +140,7 @@ def test_report_entry_exposes_presentation_fields(req_tree, monkeypatch):
     make(req_dir, "CB-1", "shall b", parents=["PARENT-1"], order=10, tests=None)
     make(req_dir, "CC-1", "shall c", parents=["PARENT-1"], order=10, tests=None)
     make(req_dir, "LEAF-1", "shall report cleanly  ", parents=["ROOT-1"], header="Leaf", tests=None, reviewed=stamp)
-    make(req_dir, "DEF-1", "shall wait (defer)", parents=["ROOT-1"], tests="absent")
+    make(req_dir, "STUB-1", "not planned yet", parents=["ROOT-1"])
     items, errs = reqlib.load_tree(req_dir)
     assert errs == []
 
@@ -159,8 +157,7 @@ def test_report_entry_exposes_presentation_fields(req_tree, monkeypatch):
     leaf = report["LEAF-1"]
     assert leaf["header"] == "Leaf"
     assert leaf["reviewed"] is True
-    assert leaf["deferred"] is False
     assert leaf["description"] == "shall report cleanly"
     assert leaf["tests"] == [{"binding": "", "name": "mytest", "passed": True, "log": "ok"}]
 
-    assert report["DEF-1"]["deferred"] is True
+    assert report["STUB-1"]["status"] == reqlib.NOT_IMPLEMENTED

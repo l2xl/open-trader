@@ -1,0 +1,5 @@
+header: OpenTrader engine
+description: |
+  API and infrastructure components representing the exchange trading process domain
+parents: [OPEN-TRADER]
+order: 20

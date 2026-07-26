@@ -1,0 +1,5 @@
+header: Market data basic instruments
+description: |
+  Application startup and configuration
+parents: [ENGINE]
+order: 10

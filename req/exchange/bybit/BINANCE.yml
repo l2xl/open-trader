@@ -1,0 +1,4 @@
+header: Binance integration
+description: Binance exchange integration data entities
+parents: [EXCHANGE]
+order: 20
