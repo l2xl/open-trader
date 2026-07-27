@@ -1,0 +1,7 @@
+header: Cross-scale comparison
+description: |
+  The comparison operators shall compare values of differing scales exactly
+  via integer rescale to the wider scale.
+parents: [CURRENCY]
+order: 60
+tests: ~

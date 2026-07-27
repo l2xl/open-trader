@@ -1,0 +1,7 @@
+header: Negation
+description: |
+  Unary minus and negate() shall flip the sign preserving magnitude and scale
+  on signed storage.
+parents: [CURRENCY]
+order: 90
+tests: ~

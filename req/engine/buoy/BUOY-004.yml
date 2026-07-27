@@ -1,0 +1,7 @@
+header: Empty-period carry-forward
+description: |
+  Elapsed periods without trades shall close as zero-volume, zero-extent
+  candles at the carried last price.
+parents: [MARKET-001]
+order: 40
+tests: ~

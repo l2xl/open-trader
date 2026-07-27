@@ -1,0 +1,7 @@
+header: Open at first trade
+description: |
+  The first trade of a period shall set min, max and mean to its own price,
+  without memorising the carried previous close.
+parents: [MARKET-001]
+order: 30
+tests: ~

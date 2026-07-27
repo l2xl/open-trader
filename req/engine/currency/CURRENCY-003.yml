@@ -1,0 +1,8 @@
+header: Parse rejection
+description: |
+  Parsing shall reject malformed input (repeated or trailing decimal point,
+  non-digit characters, empty string) with std::invalid_argument and
+  out-of-range values with std::overflow_error.
+parents: [CURRENCY]
+order: 30
+tests: ~

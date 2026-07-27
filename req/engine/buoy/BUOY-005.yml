@@ -1,0 +1,8 @@
+header: Time-driven advance
+description: |
+  AdvanceTo shall close all elapsed periods without ingesting trade data,
+  resetting the active candle in place and leaving the series untouched while
+  the current period boundary is not crossed.
+parents: [MARKET-001]
+order: 50
+tests: ~

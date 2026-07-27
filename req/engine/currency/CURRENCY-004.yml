@@ -1,0 +1,8 @@
+header: String rendering round-trip
+description: |
+  to_string shall render zero-padded fixed decimals, omitting the decimal
+  point at scale zero and prefixing '-' for negative values, such that parsing
+  the rendered string reproduces the original value.
+parents: [CURRENCY]
+order: 40
+tests: ~

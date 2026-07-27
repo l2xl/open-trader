@@ -1,0 +1,8 @@
+header: Fixed-point construction
+description: |
+  A currency constructed from an integer value and a decimal count shall
+  preserve the raw value and decimals and expose multiplier() equal to
+  10^decimals.
+parents: [CURRENCY]
+order: 10
+tests: ~

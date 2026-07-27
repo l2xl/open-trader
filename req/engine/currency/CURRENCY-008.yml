@@ -1,0 +1,8 @@
+header: Multiplicative scale algebra
+description: |
+  Multiplication and division shall perform scale algebra by summing and
+  subtracting operand scales respectively, widening the numerator when the
+  divisor scale is larger, with truncating integer division.
+parents: [CURRENCY]
+order: 80
+tests: ~

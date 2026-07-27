@@ -1,0 +1,8 @@
+header: Decimal string parsing
+description: |
+  Parsing shall infer the scale from the fractional digits or normalise to a
+  preset scale by zero-padding or truncation, accepting digit group
+  separators.
+parents: [CURRENCY]
+order: 20
+tests: ~

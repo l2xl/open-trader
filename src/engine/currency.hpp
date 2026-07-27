@@ -8,8 +8,8 @@
 #include <algorithm>
 #include <atomic>
 #include <concepts>
-#include <cmath>
 #include <cstdint>
+#include <limits>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -200,7 +200,7 @@ public:
                 if (c == '.') is_decimal = true;
                 continue;
             }
-            if (decimals > md && c != '0') throw std::overflow_error("decimals length: " + std::string(str));
+            if (is_decimal && decimals >= md && c != '0') throw std::overflow_error("decimals length: " + std::string(str));
             if (value > MAX_PARSE) throw std::overflow_error(std::string(str));
 
             value *= 10;
@@ -214,10 +214,8 @@ public:
             else if (c != '0') throw std::invalid_argument(std::string(str));
         }
 
-        if (decimals < md)
-            value *= std::pow(10, md - decimals);
-        else if (decimals > md)
-            value /= std::pow(10, decimals - md);
+        for (size_t i = decimals; i < md; ++i) value *= 10;
+        for (size_t i = md; i < decimals; ++i) value /= 10;
 
         set_val(negative ? static_cast<value_type>(0) - value : value);
         return *this;

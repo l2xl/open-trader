@@ -1,0 +1,7 @@
+header: Snapshot rebuild
+description: |
+  Reset shall clear all series anchors so the next ingestion rebuilds the
+  series from scratch without deduplicating against stale timestamps.
+parents: [MARKET-001]
+order: 70
+tests: ~

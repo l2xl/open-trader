@@ -1,5 +1,5 @@
-header: Market data basic instruments
+header: Market data
 description: |
-  Application startup and configuration
+  Public market data basic instruments
 parents: [ENGINE]
 order: 10

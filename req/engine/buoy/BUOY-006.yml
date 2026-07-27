@@ -1,0 +1,7 @@
+header: Monotonic ingestion guard
+description: |
+  Trade ingestion shall reject trades earlier than the last processed trade or
+  falling inside the closed-candle span by throwing std::invalid_argument.
+parents: [MARKET-001]
+order: 60
+tests: ~

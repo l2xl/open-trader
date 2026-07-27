@@ -1,0 +1,7 @@
+header: Rescaling
+description: |
+  raw_at shall rescale the raw value to a requested decimal count, widening by
+  exact powers of ten and narrowing by truncation toward zero.
+parents: [CURRENCY]
+order: 50
+tests: ~

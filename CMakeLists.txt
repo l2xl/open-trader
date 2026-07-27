@@ -92,7 +92,7 @@ set(core_SOURCES
         src/common/config_helper.hpp
         src/data/bybit/bybit_config.hpp
         src/cockpit/trade_cockpit_config.hpp
-        src/data/currency.hpp
+        src/engine/currency.hpp
         src/common/hex.cpp
         src/common/hex.hpp
         src/common/timedef.hpp
@@ -100,8 +100,8 @@ set(core_SOURCES
         src/core/generic_handler.hpp
         src/core/scheduler.cpp
         src/core/scheduler.hpp
-        src/data/buoy_candle.cpp
-        src/data/buoy_candle.hpp
+        src/engine/buoy_candle.cpp
+        src/engine/buoy_candle.hpp
         src/data/data_controller.hpp
         src/data/entities/common.hpp
         src/data/entities/common.cpp
@@ -201,6 +201,7 @@ include_directories(
         src/cockpit
         src/data
         src/data/entities
+        src/engine
         src/datahub
         src/widget
 )
@@ -253,8 +254,8 @@ if(NOT ANDROID)
     endfunction()
 
     # Add each test file as a separate executable
-    add_unit_test(test_currency test/data/test_currency.cpp)
-    add_unit_test(test_buoy_candle test/core/test_buoy_candle.cpp)
+    add_unit_test(test_currency test/engine/test_currency.cpp)
+    add_unit_test(test_buoy_candle test/engine/test_buoy_candle.cpp)
     add_unit_test(test_dao test/datahub/test_dao.cpp)
     add_unit_test(test_http_query test/connect/test_http_query.cpp)
     add_unit_test(test_websocket test/connect/test_websocket.cpp)

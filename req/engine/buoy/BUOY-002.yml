@@ -1,0 +1,8 @@
+header: Volume-weighted aggregation
+description: |
+  Within a period the candle shall track min, max and close over trade prices,
+  sum trade sizes into volume, and compute mean as the volume-weighted average
+  price.
+parents: [MARKET-001]
+order: 20
+tests: ~

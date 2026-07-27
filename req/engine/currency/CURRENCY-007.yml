@@ -1,0 +1,7 @@
+header: Additive arithmetic
+description: |
+  Addition and subtraction shall produce exact results carrying the wider
+  operand scale.
+parents: [CURRENCY]
+order: 70
+tests: ~

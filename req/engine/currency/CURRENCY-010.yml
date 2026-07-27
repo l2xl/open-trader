@@ -1,0 +1,7 @@
+header: Cross-storage conversion
+description: |
+  A currency over atomic storage shall copy-construct and assign to and from
+  plain-integral currency preserving value and scale.
+parents: [CURRENCY]
+order: 100
+tests: ~
