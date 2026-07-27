@@ -1,0 +1,16 @@
+header: Batch review addressing
+description: |
+  The review and clear commands shall accept several requirement UIDs and glob
+  patterns in one invocation, expanding patterns against the loaded tree --
+  to leaf items for review and to stamped items for clear -- and rejecting a
+  pattern that matches nothing.
+parents: [INFRA-041]
+order: 60
+tests:
+  leaves_only: ~
+  branch_skip: ~
+  literal_passthrough: ~
+  no_match_error: ~
+  dedup: ~
+  clear_batch: ~
+  clear_unknown_literal: ~
