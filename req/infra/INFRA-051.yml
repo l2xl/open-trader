@@ -6,11 +6,8 @@ description: |
   pattern that matches nothing.
 parents: [INFRA-041]
 order: 60
-tests:
-  leaves_only: ~
-  branch_skip: ~
-  literal_passthrough: ~
-  no_match_error: ~
-  dedup: ~
-  clear_batch: ~
-  clear_unknown_literal: ~
+tests: {leaves_only: 9b61f75c820d5c13f97fdb2eceb26e1ce7531f1c8d7142e81f8f56532d12b2de, branch_skip: b8fb73a91c8a2908565a34d5ac3e18e2713349d71997d7a388dec28b3e99450c,
+  literal_passthrough: b197f2ab15850fe0ef5b4ba116737899cf9059394461d5d172400bba4164c3f2, no_match_error: 2e681da133241514b9d654d1415debddd5566039a8dbb37e478daf6e128b6744,
+  dedup: d394f115f600c3257b2e2e157b05351c7f4f537c4b84535b40ea867b925a9432, clear_batch: 835780ca4739531474290cf47c0cd35c7cd053e6fe21b3ba68e09ffeb701de25,
+  clear_unknown_literal: 2773ca33297f078762c93ef60d45c351f4948f91adc9800742a102acb0f928e1}
+reviewed: 9f7d326bb61d585b798ba3b6b74adac644ab27ee2a6e1ebcca1922a5c8a2a61b
