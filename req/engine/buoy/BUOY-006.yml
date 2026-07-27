@@ -4,4 +4,5 @@ description: |
   falling inside the closed-candle span by throwing std::invalid_argument.
 parents: [MARKET-001]
 order: 60
-tests: ~
+tests: 1a54388c968ccf52124e5b7c908d9dce0bd87b9176638a058fa6e8df775f5c3e
+reviewed: 54068874a8105db74dd0bd829a2763997056744654acd6e688f257f3606c9c53

@@ -4,4 +4,5 @@ description: |
   plain-integral currency preserving value and scale.
 parents: [CURRENCY]
 order: 100
-tests: ~
+tests: 39e93c24cdd55ee4c18476f6f4a23593871d389bfc2fb923ebc23306c8cd2d06
+reviewed: bcb780b5dee7198751da6e48e21b66c3d1b92f6d74a3985a17cabec359af7945

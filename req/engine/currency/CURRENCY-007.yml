@@ -4,4 +4,5 @@ description: |
   operand scale.
 parents: [CURRENCY]
 order: 70
-tests: ~
+tests: 5c7d252ec6f266ab05ec16a9e7f90707bc78800dcd8e309df55c625acd0b96e7
+reviewed: fa33c2a23abecbc00f572e03401ae4e905dc7a40ff0f362a13fccd83ab61319d

@@ -5,4 +5,5 @@ description: |
   divisor scale is larger, with truncating integer division.
 parents: [CURRENCY]
 order: 80
-tests: ~
+tests: af92fb1e5767f195ee807bdcd2d5e88d62253d1663f131f2a27a9e8053438579
+reviewed: 9a9e1c7becccc3fc75d0342a83d1a4c5dfcfd6349752ca643f9b76f003b6129a

@@ -5,4 +5,5 @@ description: |
   separators.
 parents: [CURRENCY]
 order: 20
-tests: ~
+tests: c5d269e26a02ccf6f575cc41b3152e4751623e2aaa698298214679679efb551c
+reviewed: 07e5ee8d4f6b7a801179c458ca58434bf8bc1e704f8f9a09657ef299229c51a3

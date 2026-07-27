@@ -4,4 +4,5 @@ description: |
   without memorising the carried previous close.
 parents: [MARKET-001]
 order: 30
-tests: ~
+tests: ad4b69e6de1053e08a49e6e1202466e7df9434ba2ed62279441677cce835ed76
+reviewed: 5c4c68b4fa75f6e4dd15471a6891f205141e79287d98feaaaf4d1ab124ae3579

@@ -5,4 +5,5 @@ description: |
   price.
 parents: [MARKET-001]
 order: 20
-tests: ~
+tests: 591db0e04aba4b50bee3a9320b51e799f72204fcdaa174ee1ba968e13dcf9948
+reviewed: be1e9cbc4df7c8908ba2df6657962d50ebba3ac2b1f3240b297bd6b698bf5dec

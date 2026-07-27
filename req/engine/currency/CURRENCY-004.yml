@@ -5,4 +5,5 @@ description: |
   the rendered string reproduces the original value.
 parents: [CURRENCY]
 order: 40
-tests: ~
+tests: ce3cda958a2a61627a84362d52a75dcc6b5fada1ca2a36cd53cf0eea3f28fbc1
+reviewed: 15d121a5db263f27745b7e725fa52a4082787f1806c76cf3a10d347adea7e3ae

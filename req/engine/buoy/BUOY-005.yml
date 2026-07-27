@@ -5,4 +5,5 @@ description: |
   the current period boundary is not crossed.
 parents: [MARKET-001]
 order: 50
-tests: ~
+tests: 44db1e59805c1bb7bef348afdbcd4382cc72c939daa7bc0703ae9ed0391167af
+reviewed: 62cb2116b7378376d70a55b4c90958be92b083df040d13a9feb7aaaefe2d32a0

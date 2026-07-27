@@ -5,4 +5,5 @@ description: |
   closed candles in chronological order.
 parents: [MARKET-001]
 order: 10
-tests: ~
+tests: 54b5f070269d180beb4ec321565514848d38088e75d77b0e5ca88d15c8a4556b
+reviewed: 33ee7ffb2a010cd1660acf1160824cae877558152848249ffc7004de099fa479

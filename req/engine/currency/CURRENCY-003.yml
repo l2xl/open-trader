@@ -5,4 +5,5 @@ description: |
   out-of-range values with std::overflow_error.
 parents: [CURRENCY]
 order: 30
-tests: ~
+tests: 6b5cb9f41ce0d35290ad89c5fa5cdb941899ba6746e49b64257147931ad2eed7
+reviewed: f5290110c8f9275e7ae2263c2f8e76e49048a8b4128881f9c1b95f58d6d5a140

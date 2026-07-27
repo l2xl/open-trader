@@ -5,4 +5,5 @@ description: |
   10^decimals.
 parents: [CURRENCY]
 order: 10
-tests: ~
+tests: 34af035b1f83a5efe009f94e35ed446702f8ed0db32704e803416cbbc9cf0174
+reviewed: c7f08e3a0b0ba6e1650be60b44b1979e19b417b2d74a8b8af9d5ceb159271173

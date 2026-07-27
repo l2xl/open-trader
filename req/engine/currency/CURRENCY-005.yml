@@ -4,4 +4,5 @@ description: |
   exact powers of ten and narrowing by truncation toward zero.
 parents: [CURRENCY]
 order: 50
-tests: ~
+tests: 1f64f1ec1a03cac7e208e8abc3d2c5b8e63c40814b12a68819bd72c3d885e118
+reviewed: 8543a236db6c32747a2328dd88cd168c9c5d1e074c696d91b2cff7b3e93dd766

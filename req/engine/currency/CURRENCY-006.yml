@@ -4,4 +4,5 @@ description: |
   via integer rescale to the wider scale.
 parents: [CURRENCY]
 order: 60
-tests: ~
+tests: a103c77fa392ce3fa2bd10c8f8ba2c35c80bd6b79d4ef452a43352af3766c62f
+reviewed: 6f5956b1b243a221b2703d51af42695bd873ee00ee11d72593afe48bb3ba1671

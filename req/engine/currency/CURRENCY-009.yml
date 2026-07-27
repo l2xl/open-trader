@@ -4,4 +4,5 @@ description: |
   on signed storage.
 parents: [CURRENCY]
 order: 90
-tests: ~
+tests: 8e08e7561a7f99ad58aa32a670eb1351f5183224a0501c40acc987f6c0a41509
+reviewed: cc4e14a7260a22f77f5848fabd8194c485a5745f6b5b11d3f2811e1950fbdab8
