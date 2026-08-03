@@ -62,7 +62,7 @@ jobs:
     # being up at every CI run. Pinned by digest, not the mutable :latest tag;
     # re-pin here after any build-clang-image.yml run that changes the Dockerfile.
     container:
-      image: ghcr.io/l2xl/open-trader/clang23-build@sha256:a317f404102e90bbf1642cfd41b8c6ab29d4f9d69e94dc6bc057ae4de3899171
+      image: ghcr.io/l2xl/open-trader/clang23-build@sha256:f4a2c80bdaf0ea1ce94d80e4c2ca8c54d02054560114b1faaf12b25af0c7f6d0
       credentials:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
