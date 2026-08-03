@@ -78,6 +78,8 @@ cmake-build-*/**
 .venv-req/**
 req_status.json
 req_status_junit.xml
+req_validate.log
 pytest-results.xml
+*coverage.jsonl
 /site/**
 scripts/tests/__pycache__/**

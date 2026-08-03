@@ -19,9 +19,9 @@ Self-owned requirements toolkit — no external requirements manager. The tree o
 # Item Schema
 
 ```yaml
-header: CI build on push and pull request
+header: CI build on push
 description: |
-  The CI pipeline shall build the project on every push and pull request.
+  The CI pipeline shall build the project on every push to the repository.
 parents: [INFRA-065]
 order: 10
 tests: ~
@@ -86,6 +86,15 @@ without a `tests` key has no bindings to cover, so it rolls up as `not_implement
 Branch: aggregate of children (any failed → failed; all not_implemented → not_implemented; all
 passed → passed; else partial).
 
+**Validation problems redden the item they name, never the item that found them.** A stale review
+stamp, a drifted frozen routine or a malformed item is a defect of *that* item: `item_problems`
+attributes it by UID, `compute_status` marks the item `test_failed`, and it rolls up through that
+item's own parents only. A requirement whose bound test detects such a violation is working, so it
+stays green — the tooling's own tests assert tooling behaviour against fixtures, and where they read
+the live tree (`INFRA-030`) they assert its *layout* (`validate_layout`), not its review state.
+Coverage gaps are deliberately not item problems: an unrun binding already rolls up as
+`not_implemented`, and one missing coverage file would otherwise redden every reviewed leaf at once.
+
 # Process Rules (TDD gate)
 
 - **Test-first, then freeze.** The covering routine is tagged with the leaf's UID before
@@ -99,6 +108,10 @@ passed → passed; else partial).
   `build-ci/req_coverage.jsonl`, uploaded as `req-coverage-cpp`) → requirements job: `gate.sh`,
   pytest (emits `pytest-coverage.jsonl`), coverage join via `gate.sh --coverage …`, `req report`,
   job summary + `Requirements Status` check run.
+- **A red gate never costs the report.** The gate's verdict decides the job's colour, not whether
+  the run is reported: every report step runs on `!cancelled()`, and `gate.sh`'s output (`gate: OK`
+  / `gate: FAILED`) is captured into `req_validate.log` and folded into the top of both the job
+  summary and the check run, so the reason for the red is read off the report itself.
 
 # Migration Note (2026-07-20)
 

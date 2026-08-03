@@ -161,3 +161,41 @@ def test_report_entry_exposes_presentation_fields(req_tree, monkeypatch):
     assert leaf["tests"] == [{"binding": "", "name": "mytest", "passed": True, "log": "ok"}]
 
     assert report["STUB-1"]["status"] == reqlib.NOT_IMPLEMENTED
+
+
+@pytest.mark.req("INFRA-070")
+def test_an_items_own_problem_reddens_that_item_and_only_its_parents(req_tree, monkeypatch):
+    """A validation problem is a defect of the item it names: it reddens that
+    item and rolls up through its own parents, leaving unrelated branches alone
+    -- notably the branch whose tooling detected the problem."""
+    req_dir, make = _build(req_tree, monkeypatch)
+    make(req_dir, "ROOT-1", "root branch", tests="absent")
+    make(req_dir, "DATA-1", "data branch", parents=["ROOT-1"], tests="absent")
+    make(req_dir, "BAD-1", "shall carry a stale stamp", parents=["DATA-1"], tests=None)
+    make(req_dir, "TOOL-1", "tooling branch", parents=["ROOT-1"], tests="absent")
+    make(req_dir, "TOOL_A-1", "shall detect stale stamps", parents=["TOOL-1"], tests=None)
+    items, errs = reqlib.load_tree(req_dir)
+    assert errs == []
+
+    records = {("TOOL_A-1", None): [_rec(True)], ("BAD-1", None): [_rec(True)]}
+    problems = {"BAD-1": ["BAD-1: reviewed stamp does not match item content"]}
+    report = reqlib.compute_status(items, records, problems)
+
+    assert report["BAD-1"]["status"] == reqlib.TEST_FAILED
+    assert report["BAD-1"]["problems"] == problems["BAD-1"]
+    assert report["DATA-1"]["status"] == reqlib.TEST_FAILED  # rolls up its own branch
+    assert report["TOOL_A-1"]["status"] == reqlib.TEST_PASSED  # detecting it is success
+    assert report["TOOL-1"]["status"] == reqlib.TEST_PASSED
+    assert report["TOOL-1"]["problems"] == []
+    assert report["ROOT-1"]["status"] == reqlib.TEST_FAILED  # the root still shows the tree is red
+
+
+def test_coverage_gaps_are_not_item_problems(req_tree):
+    """A missing coverage file must not redden every reviewed leaf: an unrun
+    binding already rolls up as not_implemented."""
+    req_dir, make_item = req_tree
+    make_item(req_dir, "ROOT-1", "root shall exist", header="root")
+    make_item(req_dir, "LEAF-1", "the leaf shall pass", parents=["ROOT-1"], tests=None)
+    items, errs = reqlib.load_tree(req_dir)
+    assert errs == []
+    assert reqlib.item_problems(items) == {}
