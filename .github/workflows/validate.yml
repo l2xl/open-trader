@@ -59,13 +59,10 @@ jobs:
     # Built by .github/workflows/build-clang-image.yml from ci/docker/clang23/Dockerfile
     # and published to GHCR, so this job doesn't depend on apt.llvm.org's clang-23
     # feed (an unreleased-version nightly build that disappears without notice)
-    # being up at every CI run.
-    #
-    # TODO: pin to the digest printed by the first successful run of
-    # build-clang-image.yml (ghcr.io/l2xl/open-trader/clang23-build@sha256:...)
-    # instead of the mutable :latest tag.
+    # being up at every CI run. Pinned by digest, not the mutable :latest tag;
+    # re-pin here after any build-clang-image.yml run that changes the Dockerfile.
     container:
-      image: ghcr.io/l2xl/open-trader/clang23-build:latest
+      image: ghcr.io/l2xl/open-trader/clang23-build@sha256:dd7f22917db95ed900a71ebb60f8948bbf68838d8c5b6aac282b438671d9067e
       credentials:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
