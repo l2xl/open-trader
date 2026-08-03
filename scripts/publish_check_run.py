@@ -130,7 +130,9 @@ def _render_validation(validation):
     failed = gate_failed(validation)
     ball = _bullet("test_failed" if failed else "test_passed")
     title = "Requirements gate failed" if failed else "Requirements gate passed"
-    lines = validation.strip().splitlines()
+    # gate.sh bootstraps .venv-req on a cold runner, so pip's upgrade banner
+    # rides along on the captured output; it says nothing about the gate.
+    lines = [line for line in validation.strip().splitlines() if not line.startswith("[notice]")]
     if len(lines) > MAX_VALIDATION_LINES:
         dropped = len(lines) - MAX_VALIDATION_LINES
         lines = lines[:MAX_VALIDATION_LINES] + [f"...({dropped} more line(s), see the job log)"]

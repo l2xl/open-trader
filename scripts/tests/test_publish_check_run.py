@@ -101,6 +101,13 @@ def test_passing_gate_output_is_reported_without_reddening_the_check():
     assert "Requirements gate passed" in body["output"]["summary"]
 
 
+def test_pip_bootstrap_noise_is_kept_out_of_the_gate_block():
+    noisy = "[notice] A new release of pip is available: 25.0.1 -> 26.2\n" + FAILED_GATE
+    summary = render_summary({"A": _entry("test_passed")}, noisy)
+    assert "[notice]" not in summary
+    assert "BUOY-001" in summary
+
+
 def test_missing_rollup_still_produces_a_report(tmp_path, capsys):
     body = build_check_run_body(load_status(tmp_path / "absent.json"), FAILED_GATE)
     assert body["conclusion"] == "failure"
