@@ -77,16 +77,13 @@ jobs:
           restore-keys: build-ci-clang23-
 
       - name: Configure (CMake)
-        # oneTBB (vendored via CPM, not our code) builds itself with
-        # TBB_STRICT's -Werror. clang-23 fires -Wunused-template by default
-        # in its headers (it didn't on the older clang-23 snapshot this
-        # built against previously), turning a warning in third-party code
-        # into a hard CI failure. Silence just that diagnostic via the
-        # compiler flags, rather than touching TBB or CMakeLists.txt.
+        # -Wunused-template suppression for oneTBB (vendored, not our code)
+        # lives in the clang23-build image's clang++-23 wrapper, not here:
+        # TBB's own -Wall -Wextra -Werror is appended after CMAKE_CXX_FLAGS
+        # on the command line, so a flag passed from this step can't win.
         run: >
           cmake -B build-ci -DCMAKE_BUILD_TYPE=Debug
           -DCMAKE_C_COMPILER=clang-23 -DCMAKE_CXX_COMPILER=clang++-23
-          -DCMAKE_CXX_FLAGS=-Wno-unused-template
 
       - name: Build unit tests
         # Container jobs default run steps to `sh`, not `bash` (unlike jobs

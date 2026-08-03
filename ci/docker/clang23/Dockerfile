@@ -39,3 +39,20 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # installing gcc/g++, to keep the whole build on one compiler.
 RUN ln -s /usr/bin/clang-23 /usr/bin/clang \
     && ln -s /usr/bin/clang++-23 /usr/bin/clang++
+
+# oneTBB (vendored via CPM, not our code) builds itself with -Wall -Wextra
+# -Werror via its own target_compile_options, appended by CMake *after*
+# CMAKE_CXX_FLAGS on the command line — so passing -Wno-unused-template
+# via CMAKE_CXX_FLAGS has no effect: TBB's own -Wall re-enables the
+# -Wunused group (which -Wunused-template belongs to) later in the same
+# invocation, and the last occurrence of a warning flag wins. clang-23
+# fires that warning by default in TBB's headers where the clang-23
+# snapshot this last built clean against didn't. Wrap the real binary so
+# the suppression is always the last argument, regardless of what CMake
+# or meson put before it — this reaches every caller (CMake's
+# CMAKE_CXX_COMPILER=clang++-23, and meson via the clang++ symlink above)
+# without touching CMakeLists.txt or vendored code.
+RUN mv /usr/bin/clang++-23 /usr/bin/clang++-23.real \
+    && printf '#!/bin/sh\nexec /usr/bin/clang++-23.real "$@" -Wno-unused-template\n' \
+         > /usr/bin/clang++-23 \
+    && chmod +x /usr/bin/clang++-23
