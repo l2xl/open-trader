@@ -172,38 +172,79 @@ def compute_stamp(item):
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
-def validate_structure(items):
-    errors = []
+def layout_problems(items):
+    """[(uid|None, message)] -- how the tree is shaped: UID form, parent links,
+    leaf/branch exclusivity, description form, exactly one root, no cycles.
+
+    Deliberately free of review state. A stale stamp is the tree's *data*, not a
+    defect of its layout, so it reddens the item that carries it (see
+    `review_problems`) instead of whatever requirement describes the layout.
+    Tree-wide problems that name no single item carry a None uid."""
+    problems = []
     children = children_map(items)
     roots = []
     for uid, item in sorted(items.items()):
         if not UID_RE.match(uid):
-            errors.append(f"{uid}: file stem is not a valid UID")
+            problems.append((uid, f"{uid}: file stem is not a valid UID"))
         for parent in item.parents:
             if parent == uid:
-                errors.append(f"{uid}: links to itself")
+                problems.append((uid, f"{uid}: links to itself"))
             elif parent not in items:
-                errors.append(f"{uid}: unknown parent '{parent}'")
+                problems.append((uid, f"{uid}: unknown parent '{parent}'"))
         if len(set(item.parents)) != len(item.parents):
-            errors.append(f"{uid}: duplicate parents")
+            problems.append((uid, f"{uid}: duplicate parents"))
         if not item.parents:
             roots.append(uid)
         kids = children[uid]
         if item.is_leaf and kids:
-            errors.append(f"{uid}: has both 'tests' and children {sorted(kids)}; leaf and branch are mutually exclusive")
+            problems.append((uid, f"{uid}: has both 'tests' and children {sorted(kids)}; leaf and branch are mutually exclusive"))
         if not item.description.strip():
-            errors.append(f"{uid}: empty description")
+            problems.append((uid, f"{uid}: empty description"))
         if item.is_leaf and item.description.count("shall") != 1:
-            errors.append(f"{uid}: test-bearing leaf description must contain exactly one 'shall'")
-        if item.reviewed:
-            if item.is_leaf and any(sha is None for sha in item.tests.values()):
-                errors.append(f"{uid}: reviewed but a binding has no stamped routine sha")
-            elif compute_stamp(item) != item.reviewed:
-                errors.append(f"{uid}: reviewed stamp does not match item content (edit without user re-review)")
+            problems.append((uid, f"{uid}: test-bearing leaf description must contain exactly one 'shall'"))
     if len(roots) != 1:
-        errors.append(f"tree: expected exactly one root item with empty parents, found {len(roots)}: {sorted(roots)}")
-    errors.extend(_cycle_errors(items, children))
-    return errors
+        problems.append((None, f"tree: expected exactly one root item with empty parents, found {len(roots)}: {sorted(roots)}"))
+    problems.extend((None, message) for message in _cycle_errors(items, children))
+    return problems
+
+
+def review_problems(items):
+    """[(uid, message)] -- each item's own user-approval state: a stamp that no
+    longer matches its content, or a reviewed binding with no stamped sha."""
+    problems = []
+    for uid, item in sorted(items.items()):
+        if not item.reviewed:
+            continue
+        if item.is_leaf and any(sha is None for sha in item.tests.values()):
+            problems.append((uid, f"{uid}: reviewed but a binding has no stamped routine sha"))
+        elif compute_stamp(item) != item.reviewed:
+            problems.append((uid, f"{uid}: reviewed stamp does not match item content (edit without user re-review)"))
+    return problems
+
+
+def validate_layout(items):
+    return [message for _uid, message in layout_problems(items)]
+
+
+def validate_structure(items):
+    """The gate's structural check: layout plus review-stamp state."""
+    return validate_layout(items) + [message for _uid, message in review_problems(items)]
+
+
+def item_problems(items, discovered=None):
+    """{uid: [message]} -- the problems each item owns, for the status rollup.
+
+    Coverage gaps are deliberately excluded: a binding with no records already
+    rolls up as not_implemented, and one missing coverage file would otherwise
+    redden every reviewed leaf in the tree at once."""
+    problems = {}
+    attributed = layout_problems(items) + review_problems(items)
+    if discovered is not None:
+        attributed += frozen_problems(items, discovered)
+    for uid, message in attributed:
+        if uid is not None:
+            problems.setdefault(uid, []).append(message)
+    return problems
 
 
 def _cycle_errors(items, children):
@@ -311,10 +352,10 @@ def binding_tag(uid, name):
     return f"[{uid}][{name}]" if name else f"[{uid}]"
 
 
-def check_frozen(items, discovered):
-    """Reviewed leaves: every binding resolves to exactly one routine whose
-    span hash still matches the stamped sha."""
-    errors = []
+def frozen_problems(items, discovered):
+    """[(uid, message)] -- reviewed leaves whose bindings no longer resolve to
+    exactly one routine, or whose routine drifted from the stamped sha."""
+    problems = []
     for uid, item in sorted(items.items()):
         if not (item.reviewed and item.is_leaf):
             continue
@@ -322,12 +363,18 @@ def check_frozen(items, discovered):
             tag = binding_tag(uid, name)
             locations = discovered.get((uid, name), [])
             if not locations:
-                errors.append(f"{uid}: no test routine tagged {tag} found")
+                problems.append((uid, f"{uid}: no test routine tagged {tag} found"))
             elif len(locations) > 1:
-                errors.append(f"{uid}: tag {tag} is ambiguous: {', '.join(l.name for l in locations)}")
+                problems.append((uid, f"{uid}: tag {tag} is ambiguous: {', '.join(l.name for l in locations)}"))
             elif sha and routine_sha(locations[0]) != sha:
-                errors.append(f"{uid}: frozen test routine {locations[0].name} modified after review (requires user re-review)")
-    return errors
+                problems.append((uid, f"{uid}: frozen test routine {locations[0].name} modified after review (requires user re-review)"))
+    return problems
+
+
+def check_frozen(items, discovered):
+    """Reviewed leaves: every binding resolves to exactly one routine whose
+    span hash still matches the stamped sha."""
+    return [message for _uid, message in frozen_problems(items, discovered)]
 
 
 def check_bindings_exist(items, discovered):
@@ -410,7 +457,12 @@ def aggregate(child_statuses):
     return PARTIALLY_IMPLEMENTED
 
 
-def compute_status(items, records):
+def compute_status(items, records, problems=None):
+    """`problems` ({uid: [message]}, see `item_problems`) reddens the exact items
+    it names. A bad stamp is a defect of that item, so it is reported there and
+    aggregates up through its own parents -- never against the requirement whose
+    tooling detected it."""
+    problems = problems or {}
     children = children_map(items)
     memo = {}
 
@@ -418,6 +470,9 @@ def compute_status(items, records):
         if uid in memo:
             return memo[uid]
         memo[uid] = NOT_IMPLEMENTED  # cycle guard
+        if problems.get(uid):
+            memo[uid] = TEST_FAILED
+            return memo[uid]
         kids = children[uid]
         memo[uid] = aggregate([status_of(k) for k in kids]) if kids else leaf_status(items[uid], records)
         return memo[uid]
@@ -438,6 +493,7 @@ def compute_status(items, records):
             "order": item.order,
             "folder": item.folder,
             "reviewed": bool(item.reviewed),
+            "problems": list(problems.get(uid, ())),
             "tests": tests,
         }
     return report

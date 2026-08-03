@@ -200,7 +200,10 @@ def cmd_report(args):
     records, coverage_errors = reqlib.load_coverage(args.coverage)
     for line in coverage_errors:
         print(f"warning: {line}", file=sys.stderr)
-    report = reqlib.compute_status(items, records)
+    # Validation problems land on the items that own them, not on whichever
+    # requirement's tooling found them.
+    problems = reqlib.item_problems(items, reqlib.discover_bindings())
+    report = reqlib.compute_status(items, records, problems)
     out = Path(args.out)
     import json
     out.write_text(json.dumps(report, indent=2, sort_keys=True))

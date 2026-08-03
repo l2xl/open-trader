@@ -95,19 +95,29 @@ def _render_test(test, depth):
     return _details(label, _fenced(log) + "\n", open_=not test["passed"])
 
 
+def _render_problems(problems, depth):
+    """An item's own validation problems -- a stale stamp, a drifted frozen
+    routine -- shown on the item they belong to."""
+    if not problems:
+        return ""
+    label = f"{_indent(depth)}{_bullet('test_failed')} <b>validation</b>"
+    return _details(label, _fenced("\n".join(problems)) + "\n", open_=True)
+
+
 def _render_node(uid, report, path, depth=0):
     entry = report[uid]
     failed = entry["status"] == "test_failed"
     label = f"{_indent(depth)}{_bullet(entry['status'])} <b>{html.escape(uid)}</b> {html.escape(_title(entry))}"
     kids = entry["children"]
     tests = entry.get("tests") or []
+    problems = _render_problems(entry.get("problems"), depth + 1)
     if not kids:
-        if not tests:
+        if not tests and not problems:
             return f"- {label}\n"
-        return _details(label, "".join(_render_test(t, depth + 1) for t in tests), open_=failed)
+        return _details(label, problems + "".join(_render_test(t, depth + 1) for t in tests), open_=failed)
     if uid in path:
         return f"- {label} <i>(cycle)</i>\n"
-    body = "".join(_render_node(child, report, path | {uid}, depth + 1) for child in kids)
+    body = problems + "".join(_render_node(child, report, path | {uid}, depth + 1) for child in kids)
     # Failure aggregates up the DAG, so opening every failed branch expands
     # exactly the paths from the roots down to the failing leaves.
     return _details(label, body, open_=failed)

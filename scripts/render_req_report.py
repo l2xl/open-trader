@@ -91,6 +91,9 @@ ITEM_TEMPLATE = """<!doctype html><meta charset="utf-8"><title>{{ uid }}</title>
 {% if header %}<div class="field"><div class="label">Header</div>{{ header }}</div>{% endif %}
 <div class="field"><div class="label">Description</div><div>{{ description }}</div></div>
 <div class="field"><div class="label">Reviewed</div>{{ reviewed }}</div>
+{% if problems %}<div class="field"><div class="label">Validation</div>
+<pre>{% for p in problems %}{{ p }}
+{% endfor %}</pre></div>{% endif %}
 <div class="field"><div class="label">Parents</div>
 <ul class="links">{% for l in parents %}<li><a href="{{ l }}.html">{{ l }}</a></li>{% else %}<li>(none)</li>{% endfor %}</ul>
 </div>
@@ -190,6 +193,7 @@ def run(status_path, out_dir):
             status_label=STATUS_LABEL[entry["status"]],
             parents=entry["parents"],
             children=entry["children"],
+            problems=entry.get("problems") or [],
             tests=entry.get("tests") or [],
         ))
 

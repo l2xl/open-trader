@@ -158,9 +158,31 @@ def test_reviewed_stamp_must_match_computed_content(req_tree):
     assert _matching(errors, "reviewed stamp does not match")
 
 
+def test_review_state_is_attributed_to_the_item_that_carries_it(req_tree):
+    """A stale stamp is a defect of its own item: it is a review problem, never a
+    layout one, so it cannot redden whatever requirement covers the layout."""
+    req_dir, make_item = req_tree
+    _seed_minimal(req_dir, make_item)
+    make_item(req_dir, "ROOT-1", "the product shall exist", header="root", reviewed="0" * 64)
+    items, load_errors = reqlib.load_tree(req_dir)
+    assert load_errors == []
+
+    assert reqlib.validate_layout(items) == []
+    assert _matching(reqlib.validate_structure(items), "reviewed stamp does not match")
+    assert _matching(reqlib.item_problems(items)["ROOT-1"], "reviewed stamp does not match")
+    assert "LEAF-1" not in reqlib.item_problems(items)
+
+
 @pytest.mark.req("INFRA-030")
-def test_live_requirements_tree_validates():
-    """The real req/ tree loads and satisfies validate_structure with no errors."""
+def test_live_requirements_tree_has_a_valid_layout():
+    """The real req/ tree loads and satisfies the layout this requirement
+    describes: UIDs are file stems and `parents` forms a DAG with one root.
+
+    Review state is deliberately out of scope here. A stale stamp or a drifted
+    frozen routine is the tree's data; the status rollup reddens the item that
+    carries it. Detecting such a violation is this requirement working, so
+    asserting the tree is clean here would redden INFRA for another item's fault.
+    """
     items, load_errors = reqlib.load_tree()
     assert load_errors == []
-    assert reqlib.validate_structure(items) == []
+    assert reqlib.validate_layout(items) == []

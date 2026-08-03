@@ -86,6 +86,15 @@ without a `tests` key has no bindings to cover, so it rolls up as `not_implement
 Branch: aggregate of children (any failed → failed; all not_implemented → not_implemented; all
 passed → passed; else partial).
 
+**Validation problems redden the item they name, never the item that found them.** A stale review
+stamp, a drifted frozen routine or a malformed item is a defect of *that* item: `item_problems`
+attributes it by UID, `compute_status` marks the item `test_failed`, and it rolls up through that
+item's own parents only. A requirement whose bound test detects such a violation is working, so it
+stays green — the tooling's own tests assert tooling behaviour against fixtures, and where they read
+the live tree (`INFRA-030`) they assert its *layout* (`validate_layout`), not its review state.
+Coverage gaps are deliberately not item problems: an unrun binding already rolls up as
+`not_implemented`, and one missing coverage file would otherwise redden every reviewed leaf at once.
+
 # Process Rules (TDD gate)
 
 - **Test-first, then freeze.** The covering routine is tagged with the leaf's UID before
