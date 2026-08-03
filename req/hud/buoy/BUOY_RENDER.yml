@@ -1,0 +1,9 @@
+header: Buoy-candle rendering
+description: |
+  Pixel-space emission of the volume-weighted buoy-candle notation specified in
+  src/engine/BUOY_CANDLE.md: projecting the engine's scene-free shape model
+  (BUOY_CANDLE) through the offscreen vector rendering API, the non-overlap
+  width clamp against the period slot, the aspect-ratio special regime and its
+  fixed-size marker, the VWAP waist diamond, and the volume colour encoding.
+parents: [BUOY_CANDLE_SCRATCHER]
+order: 45

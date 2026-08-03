@@ -1,9 +1,0 @@
-header: Buoy Candle notation
-description: |
-  Computation of the per-period price distribution aggregate (min, max,
-  volume-weighted mean, close, volume) backing the buoy-candle notation — an
-  alternative to the Japanese candlestick whose silhouette encodes the
-  intra-period price distribution and whose area encodes traded volume.
-  Engine scope covers data calculation only; rendering is out of scope.
-parents: [MARKET]
-order: 10

@@ -1,0 +1,5 @@
+header: Order Book scene
+description: |
+  Preconfigured vector scene for order book display.
+parents: [VECTOR_SCENE]
+order: 20

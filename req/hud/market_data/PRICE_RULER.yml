@@ -1,0 +1,8 @@
+header: Price ruler
+description: |
+  Vertical price axis strip for the Market Data scene: full-height axis line,
+  evenly spaced "nice" price-step tick marks, and per-tick price labels
+  formatted through the instrument's currency scale, tracking pan/zoom and
+  autoscale live from the scene transform.
+parents: [MARKET_DATA_SCENE]
+order: 10

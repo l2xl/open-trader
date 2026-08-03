@@ -1,0 +1,9 @@
+header: Scale-invariant width ratio
+description: |
+  Each period shall yield a dimensionless width ratio, its traded volume over the
+  median volume times the median summed deviation over its own summed deviation,
+  from which the renderer obtains the peak half-width as half the target waist
+  width times that ratio; the median period's ratio is exactly one.
+parents: [BUOY_GEOMETRY]
+order: 20
+tests: ~

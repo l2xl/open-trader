@@ -1,0 +1,7 @@
+header: Waist continuity and pinned tips
+description: |
+  The contour shall close at zero width on the period high and low while both
+  halves meet the waist at unit normalised width with zero slope.
+parents: [BUOY_GEOMETRY]
+order: 40
+tests: ~

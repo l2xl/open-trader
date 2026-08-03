@@ -1,0 +1,8 @@
+header: Per-side volume-weighted deviation
+description: |
+  Each period shall expose per-side volume-weighted deviations, the
+  volume-weighted root-mean-square deviation of the trades above and below the
+  waist, each normalised by that side's own traded volume.
+parents: [BUOY_CANDLE]
+order: 80
+tests: ~

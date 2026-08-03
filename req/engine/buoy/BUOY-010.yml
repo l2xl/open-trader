@@ -1,0 +1,8 @@
+header: Deviation floor
+description: |
+  Each per-side deviation shall be clamped to a positive floor, so a side with no
+  trades or with all its trades at a single price yields the floor rather than
+  zero or a non-finite value.
+parents: [BUOY_CANDLE]
+order: 100
+tests: ~

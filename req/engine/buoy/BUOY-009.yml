@@ -1,0 +1,9 @@
+header: Running-mean side classification
+description: |
+  Because the tick stream is not retained, each trade shall be assigned to the
+  upper or lower side by comparing its price against the running volume-weighted
+  mean at ingestion time, per the approximation sanctioned by
+  src/engine/BUOY_CANDLE.md section 3.
+parents: [BUOY_CANDLE]
+order: 90
+tests: ~

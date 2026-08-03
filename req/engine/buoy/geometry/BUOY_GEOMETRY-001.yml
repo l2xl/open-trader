@@ -1,0 +1,8 @@
+header: Window calibration medians
+description: |
+  Calibration over a range of periods shall yield the median traded volume and
+  the median summed per-side deviation, both taken over the range's non-empty
+  periods in a single pass.
+parents: [BUOY_GEOMETRY]
+order: 10
+tests: ~

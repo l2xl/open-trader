@@ -1,0 +1,8 @@
+header: Wire-scale moment accumulation
+description: |
+  Per-side moment accumulation shall stay free of overflow and precision collapse
+  at wire scale, where the volume-weighted second moment exceeds the range of the
+  fixed-point currency storage carrying prices and volumes.
+parents: [BUOY_CANDLE]
+order: 130
+tests: ~

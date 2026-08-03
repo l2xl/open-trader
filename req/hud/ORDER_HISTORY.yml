@@ -1,0 +1,6 @@
+header: Order history
+description: |
+  Universal component to display historical records as a table — currently
+  active orders, closed orders, or private trades.
+parents: [CONTENT_PANEL]
+order: 20

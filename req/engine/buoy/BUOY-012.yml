@@ -1,0 +1,6 @@
+header: Empty-period deviations
+description: |
+  Zero-volume carry-forward periods shall report floor deviations on both sides.
+parents: [BUOY_CANDLE]
+order: 120
+tests: ~

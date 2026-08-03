@@ -1,0 +1,6 @@
+header: Market Data scene
+description: |
+  Common preconfigured vector scene used to show exchange time-series market
+  data — line graphs and indicators — against a time axis.
+parents: [VECTOR_SCENE]
+order: 10

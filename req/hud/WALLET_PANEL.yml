@@ -1,0 +1,5 @@
+header: Wallet panel
+description: |
+  Component to display the user's actual account balances.
+parents: [CONTENT_PANEL]
+order: 30

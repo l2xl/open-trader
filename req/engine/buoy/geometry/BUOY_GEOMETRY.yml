@@ -1,0 +1,12 @@
+header: Buoy shape model
+description: |
+  Scene-free geometry of the buoy-candle notation: window calibration, the
+  scale-invariant width ratio, the two-piece Gaussian wall and its sampled
+  contour. Every quantity here is expressed in price and volume units or as a
+  dimensionless ratio, so it is computed without reference to the render scene's
+  vertical scale or slot width. The chart scale cancels between the calibration
+  factor and the width formula of src/engine/BUOY_CANDLE.md section 4, leaving
+  only the pixel-space clamp, the aspect-ratio classification and emission with
+  the renderer.
+parents: [BUOY_CANDLE]
+order: 200

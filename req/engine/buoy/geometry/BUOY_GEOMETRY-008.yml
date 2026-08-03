@@ -1,0 +1,8 @@
+header: Catmull-Rom to cubic Bezier
+description: |
+  Consecutive contour points shall be smoothed into cubic Bezier segments whose
+  control points are the segment ends offset by one sixth of the vector between
+  their respective neighbours.
+parents: [BUOY_GEOMETRY]
+order: 80
+tests: ~

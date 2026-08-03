@@ -1,0 +1,8 @@
+header: Monotone decay to the tips
+description: |
+  The wall shall decay monotonically from the waist to each tip, tracing the
+  fitted normal model rather than the empirical volume-by-price profile with its
+  local bulges and pinches.
+parents: [BUOY_GEOMETRY]
+order: 50
+tests: ~

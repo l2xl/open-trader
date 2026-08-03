@@ -1,0 +1,6 @@
+header: Instrument panel
+description: |
+  Content panel specialization with a common API to display a vector scene
+  bound to a specific instrument, in exchange terms.
+parents: [CONTENT_PANEL]
+order: 10

@@ -1,5 +1,0 @@
-header: Offscreen vector rendering
-description: |
-  API for universal offscreen vector based scene rendering for various data visualization
-parents: [HUD]
-order: 10

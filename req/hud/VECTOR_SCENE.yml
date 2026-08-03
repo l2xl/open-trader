@@ -1,0 +1,6 @@
+header: Vector scene
+description: |
+  Common API for offscreen vector based scene rendering, used by the
+  Instrument panel to render arbitrary graphical content.
+parents: [INSTRUMENT_PANEL]
+order: 10

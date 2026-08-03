@@ -1,0 +1,9 @@
+header: Two-piece Gaussian wall
+description: |
+  The normalised wall profile shall decay from the waist as a Gaussian in price,
+  evaluated with the upper deviation above the waist and the lower deviation
+  below, so the two halves are asymmetric whenever the per-side deviations differ
+  and coincide only when they are equal.
+parents: [BUOY_GEOMETRY]
+order: 30
+tests: ~

@@ -1,0 +1,8 @@
+header: Per-side accumulator reset
+description: |
+  Closing a period and Reset shall zero the active candle's per-side moment
+  accumulators, so a fresh period's deviations carry no spread from its
+  predecessor.
+parents: [BUOY_CANDLE]
+order: 110
+tests: ~

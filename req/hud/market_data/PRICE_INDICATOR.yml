@@ -1,0 +1,8 @@
+header: Price indicator
+description: |
+  Overlay of the current (last-trade) price on the Market Data scene: a
+  dotted horizontal line at the last price across the inner data rect, plus a
+  price label box on the price ruler strip, coloured by whether the last
+  trade sits above or below the active period's volume-weighted mean.
+parents: [MARKET_DATA_SCENE]
+order: 30

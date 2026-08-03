@@ -1,0 +1,8 @@
+header: Japanese-candle scratcher
+description: |
+  Market Data scene component rendering the classic open/high/low/close
+  Japanese candlestick notation (body + wick, per-period up/down colouring)
+  from live instrument trades, as an alternative to the buoy-candle
+  notation.
+parents: [MARKET_DATA_SCENE]
+order: 50

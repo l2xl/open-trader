@@ -1,0 +1,8 @@
+header: Standard-deviation tick levels
+description: |
+  The model shall expose tick levels one upper deviation above and one lower
+  deviation below the waist, both at the same normalised width, the exponential
+  of minus one half.
+parents: [BUOY_GEOMETRY]
+order: 60
+tests: ~

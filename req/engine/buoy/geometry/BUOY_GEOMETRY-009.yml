@@ -1,0 +1,9 @@
+header: Half-normal regime
+description: |
+  A period whose waist sits within the skew fraction of either extreme shall be
+  modelled as half a bell: a flat widest edge at the waist, a single wall
+  decaying with the far side's deviation to the opposite tip, and an open contour
+  keeping both waist corners sharp.
+parents: [BUOY_GEOMETRY]
+order: 90
+tests: ~

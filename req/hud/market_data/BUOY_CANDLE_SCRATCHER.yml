@@ -1,0 +1,9 @@
+header: Buoy-candle scratcher
+description: |
+  Market Data scene component driving the buoy-candle notation (see
+  BUOY_RENDER) from live instrument trades. Currently implemented as
+  QuoteScratcher; buoy_candle_plan.md's geometry/emitter split will retarget
+  this requirement onto the resulting dedicated class without changing its
+  intent.
+parents: [MARKET_DATA_SCENE]
+order: 40

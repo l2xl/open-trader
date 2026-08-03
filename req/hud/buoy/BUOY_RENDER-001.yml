@@ -1,0 +1,9 @@
+header: Volume colour dimension
+description: |
+  Every buoy's fill shall carry a colour component sampled from its traded
+  volume — a redundant volume channel for all buoys and the sole remaining
+  volume signal for buoys width-capped by the non-overlap clamp. Colour
+  channel choice, ramp scale and accessibility follow the open research in
+  src/engine/BUOY_CANDLE.md §9.
+parents: [BUOY_RENDER]
+order: 90

@@ -1,0 +1,7 @@
+header: Content panel
+description: |
+  Universal component displaying panel content, either graphical or arbitrary
+  structured data (graphs, tables, forms, etc.), hosted by a Trader HUD tab or
+  split node.
+parents: [HUD]
+order: 10

@@ -1,0 +1,8 @@
+header: Contour sampling and mirroring
+description: |
+  The wall shall be sampled at a fixed number of price levels from the high to
+  the low and mirrored about the centre line to close the outline, without
+  duplicating the shared tip points.
+parents: [BUOY_GEOMETRY]
+order: 70
+tests: ~

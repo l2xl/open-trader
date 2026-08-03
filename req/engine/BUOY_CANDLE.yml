@@ -1,0 +1,12 @@
+header: Buoy Candle notation
+description: |
+  Computation backing the buoy-candle notation — an alternative to the Japanese
+  candlestick whose silhouette encodes the intra-period price distribution and
+  whose area encodes traded volume. Engine scope is everything the notation
+  determines without reference to the render scene: the per-period aggregate
+  (min, max, volume-weighted mean and per-side deviations, close, volume) and
+  the scene-free shape model derived from it. Pixel-space emission — the
+  non-overlap clamp, the aspect-ratio regime and the scene decorations — is out
+  of scope.
+parents: [MARKET]
+order: 10
