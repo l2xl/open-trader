@@ -25,7 +25,7 @@ FROM ubuntu:24.04
 # switching off GNU libstdc++ (staying ABI-compatible with the
 # apt-provided Boost .so's this links against).
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      ca-certificates wget gnupg \
+      ca-certificates wget curl gnupg \
     && wget -qO /etc/apt/trusted.gpg.d/apt.llvm.org.asc https://apt.llvm.org/llvm-snapshot.gpg.key \
     && echo 'deb https://apt.llvm.org/noble/ llvm-toolchain-noble-23 main' \
          > /etc/apt/sources.list.d/llvm.list \

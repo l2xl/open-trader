@@ -124,6 +124,17 @@ jobs:
       contents: read
       checks: write
       actions: write
+      packages: read
+    # The build job runs in a container, where GitHub Actions mounts the
+    # workspace at /__w/... instead of the bare runner's /home/runner/work/...;
+    # CMake bakes that absolute path into CTestTestfile.cmake. Running this
+    # job in a container too (same image, so no extra pull) keeps the
+    # unpacked tree's path matching what ctest expects.
+    container:
+      image: ghcr.io/l2xl/open-trader/clang23-build@sha256:77ea9d690eb4ec5b4deaa145e7a78b82105df12d02355ad86680faf7b6778ebf
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@v5
 
@@ -136,25 +147,23 @@ jobs:
         run: tar --zstd -xf build-tree.tar.zst
 
       # build-tree is only needed by this job; delete it now instead of
-      # waiting out the retention-days TTL.
+      # waiting out the retention-days TTL. Uses the REST API directly
+      # rather than the gh CLI, which isn't installed in this container.
       - name: Delete build-tree artifact
         if: ${{ always() }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ARTIFACTS_URL: https://api.github.com/repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/artifacts
+          ARTIFACT_BASE_URL: https://api.github.com/repos/${{ github.repository }}/actions/artifacts
         run: |
-          ARTIFACT_ID=$(gh api "repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/artifacts" \
-            --jq '.artifacts[] | select(.name=="build-tree") | .id')
+          ARTIFACT_ID=$(curl -sS -H "Authorization: Bearer $GITHUB_TOKEN" -H "Accept: application/vnd.github+json" "$ARTIFACTS_URL" \
+            | python3 -c "import json,sys; d=json.load(sys.stdin); print(next((str(a['id']) for a in d['artifacts'] if a['name']=='build-tree'), ''))")
           if [ -n "$ARTIFACT_ID" ]; then
-            gh api -X DELETE "repos/${{ github.repository }}/actions/artifacts/$ARTIFACT_ID"
+            curl -sS -X DELETE -H "Authorization: Bearer $GITHUB_TOKEN" -H "Accept: application/vnd.github+json" "$ARTIFACT_BASE_URL/$ARTIFACT_ID"
           fi
 
-      # Fresh runner: only the shared libs the test binaries link against at
-      # runtime are needed here, not the toolchain used to build them.
-      - name: Install runtime dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            libboost-context-dev libboost-system-dev libboost-url-dev libssl-dev
+      # This image already has the project's toolchain deps (Boost, OpenSSL)
+      # from the build job's install; no separate runtime-only install needed.
 
       - name: Run unit tests (ctest, offline)
         env:
