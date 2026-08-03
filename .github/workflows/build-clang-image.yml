@@ -2,7 +2,6 @@ name: Build clang-23 CI image
 
 on:
   push:
-    branches: [main]
     paths:
       - ci/docker/clang23/Dockerfile
       - .github/workflows/build-clang-image.yml
