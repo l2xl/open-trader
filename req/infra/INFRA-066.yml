@@ -1,6 +1,6 @@
-header: CI build on push and pull request
+header: CI build on push
 description: |
-  The CI pipeline shall build the project on every push and pull request.
+  The CI pipeline shall build the project on every push to the repository. Pull request events are deliberately not a trigger: a pull request's head branch is itself pushed, so triggering on them as well would only re-run the same commit twice.
 parents: [INFRA-065]
 order: 10
 tests: aeacec1c7abf9c8045443a6c3cd200beb3218304d8347ba982885426b15a127e

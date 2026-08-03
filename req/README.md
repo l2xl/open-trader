@@ -19,9 +19,9 @@ Self-owned requirements toolkit — no external requirements manager. The tree o
 # Item Schema
 
 ```yaml
-header: CI build on push and pull request
+header: CI build on push
 description: |
-  The CI pipeline shall build the project on every push and pull request.
+  The CI pipeline shall build the project on every push to the repository.
 parents: [INFRA-065]
 order: 10
 tests: ~
