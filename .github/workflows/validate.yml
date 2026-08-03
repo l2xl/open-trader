@@ -82,6 +82,9 @@ jobs:
           -DCMAKE_C_COMPILER=clang-23 -DCMAKE_CXX_COMPILER=clang++-23
 
       - name: Build unit tests
+        # Container jobs default run steps to `sh`, not `bash` (unlike jobs
+        # on the bare runner), and `set -o pipefail` is a bash-ism.
+        shell: bash
         run: |
           set -o pipefail
           cmake --build build-ci --target unit_tests --parallel 2>&1 | tee build-ci/build.log
