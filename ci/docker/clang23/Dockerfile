@@ -25,7 +25,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && apt-get update \
     && apt-get install -y --no-install-recommends \
       clang-23 lld-23 lldb-23 clangd-23 \
-      cmake ninja-build pkg-config git zstd \
+      cmake make ninja-build pkg-config git zstd \
       libboost-dev libboost-context-dev libboost-system-dev libboost-url-dev \
       libssl-dev libfontconfig-dev \
     && rm -rf /var/lib/apt/lists/*
