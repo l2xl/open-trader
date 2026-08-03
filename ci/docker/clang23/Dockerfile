@@ -17,6 +17,13 @@
 # what actually resolves clang-23 packages.
 FROM ubuntu:24.04
 
+# clang-23 has no runtime/standard library of its own on Linux; it uses
+# whatever libstdc++ headers are on the system. Ubuntu 24.04's default
+# libstdc++-dev tracks GCC 13, which predates full C++23 library support
+# (std::ranges::to, ...) that the project's own code (not the vendored
+# deps below) uses. libstdc++-14-dev pulls in newer headers without
+# switching off GNU libstdc++ (staying ABI-compatible with the
+# apt-provided Boost .so's this links against).
 RUN apt-get update && apt-get install -y --no-install-recommends \
       ca-certificates wget gnupg \
     && wget -qO /etc/apt/trusted.gpg.d/apt.llvm.org.asc https://apt.llvm.org/llvm-snapshot.gpg.key \
@@ -29,6 +36,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       python3 python3-venv python3-pip \
       libboost-dev libboost-context-dev libboost-system-dev libboost-url-dev \
       libssl-dev libfontconfig-dev \
+      libstdc++-14-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # ThorVG (vendored via CPM) drives its own meson sub-build, which probes
