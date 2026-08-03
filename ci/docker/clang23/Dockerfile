@@ -30,3 +30,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       libboost-dev libboost-context-dev libboost-system-dev libboost-url-dev \
       libssl-dev libfontconfig-dev \
     && rm -rf /var/lib/apt/lists/*
+
+# ThorVG (vendored via CPM) drives its own meson sub-build, which probes
+# PATH for generic compiler names (clang++, c++, g++, ...) rather than
+# taking CMAKE_CXX_COMPILER from the parent build. Only versioned
+# clang-23/clang++-23 binaries exist otherwise, so meson's compiler
+# detection fails. Symlink the generic names to clang-23 rather than
+# installing gcc/g++, to keep the whole build on one compiler.
+RUN ln -s /usr/bin/clang-23 /usr/bin/clang \
+    && ln -s /usr/bin/clang++-23 /usr/bin/clang++
