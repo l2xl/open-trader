@@ -55,21 +55,23 @@ jobs:
     permissions:
       contents: read
       checks: write
+      packages: read
+    # Built by .github/workflows/build-clang-image.yml from ci/docker/clang23/Dockerfile
+    # and published to GHCR, so this job doesn't depend on apt.llvm.org's clang-23
+    # feed (an unreleased-version nightly build that disappears without notice)
+    # being up at every CI run.
+    #
+    # TODO: pin to the digest printed by the first successful run of
+    # build-clang-image.yml (ghcr.io/l2xl/open-trader/clang23-build@sha256:...)
+    # instead of the mutable :latest tag.
+    container:
+      image: ghcr.io/l2xl/open-trader/clang23-build:latest
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@v5
 
-      - name: Install LLVM apt repository (clang-23)
-        run: |
-          wget -qO /tmp/llvm.sh https://apt.llvm.org/llvm.sh
-          chmod +x /tmp/llvm.sh
-          sudo /tmp/llvm.sh 23
-
-      - name: Install build dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            libboost-dev libboost-context-dev libboost-system-dev libboost-url-dev \
-            libssl-dev libfontconfig-dev ninja-build pkg-config
       - name: Restore build cache
         uses: actions/cache@v5
         with:
