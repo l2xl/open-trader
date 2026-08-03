@@ -3,4 +3,5 @@ description: |
   A validation problem shall redden the requirement item it names -- a stale review stamp, a drifted frozen routine or a malformed item -- and roll up only through that item's own parents, so the requirement whose tooling detected the violation is not reddened by it.
 parents: [INFRA-042]
 order: 40
-tests: ~
+tests: 9dc3c2bb1808923fee93db81065f82e20fb7e251af7e470887f34c40328b89cc
+reviewed: 09acaea6dc8ced4bf57d89daa1ae57306349faa26b962eaf6c4fcedcf35c8b56
