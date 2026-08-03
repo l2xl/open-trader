@@ -99,6 +99,10 @@ passed → passed; else partial).
   `build-ci/req_coverage.jsonl`, uploaded as `req-coverage-cpp`) → requirements job: `gate.sh`,
   pytest (emits `pytest-coverage.jsonl`), coverage join via `gate.sh --coverage …`, `req report`,
   job summary + `Requirements Status` check run.
+- **A red gate never costs the report.** The gate's verdict decides the job's colour, not whether
+  the run is reported: every report step runs on `!cancelled()`, and `gate.sh`'s output (`gate: OK`
+  / `gate: FAILED`) is captured into `req_validate.log` and folded into the top of both the job
+  summary and the check run, so the reason for the red is read off the report itself.
 
 # Migration Note (2026-07-20)
 

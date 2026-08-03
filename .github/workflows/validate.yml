@@ -206,35 +206,49 @@ jobs:
 
       # Single source of truth for requirements validation: ci/gate.sh bootstraps
       # .venv-req and runs `req validate` (structural + frozen-routine checks).
+      #
+      # The gate's verdict decides whether this job is red -- it must not decide
+      # whether the run gets a requirements report at all. A red gate is exactly
+      # when the tree is most worth reading, so every step below runs on
+      # `!cancelled()` rather than on this step's outcome, and the gate's output
+      # is teed into req_validate.log so the report itself carries the reason.
       - name: Validate requirements
         id: validate
-        run: bash ci/gate.sh
+        shell: bash
+        run: |
+          set -o pipefail
+          bash ci/gate.sh 2>&1 | tee -a req_validate.log
 
       - name: Install actionlint
+        if: ${{ !cancelled() }}
         run: |
           bash <(curl -s https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash)
           sudo mv ./actionlint /usr/local/bin/
       - name: Run requirements tooling tests (pytest)
+        if: ${{ !cancelled() }}
         env:
           REQ_COVERAGE_FILE: ${{ github.workspace }}/pytest-coverage.jsonl
         run: .venv-req/bin/python -m pytest scripts/tests
 
+      # continue-on-error, not a hard dependency: when the test job died before
+      # uploading, the report is still rendered from whatever coverage exists.
       - name: Download C++ coverage records
-        if: ${{ !cancelled() && steps.validate.outcome == 'success' }}
+        if: ${{ !cancelled() }}
+        continue-on-error: true
         uses: actions/download-artifact@v7
         with:
           name: req-coverage-cpp
           path: build-ci
 
       - name: Check coverage against the tree
-        if: ${{ !cancelled() && steps.validate.outcome == 'success' }}
-        run: >
-          bash ci/gate.sh
-          --coverage pytest-coverage.jsonl
-          --coverage build-ci/req_coverage.jsonl
+        if: ${{ !cancelled() }}
+        shell: bash
+        run: |
+          set -o pipefail
+          bash ci/gate.sh --coverage pytest-coverage.jsonl --coverage build-ci/req_coverage.jsonl 2>&1 | tee -a req_validate.log
 
       - name: Compute recursive requirement status
-        if: ${{ !cancelled() && steps.validate.outcome == 'success' }}
+        if: ${{ !cancelled() }}
         run: >
           .venv-req/bin/python scripts/req.py report
           --coverage pytest-coverage.jsonl
@@ -242,11 +256,15 @@ jobs:
           --out req_status.json
 
       - name: Write requirements report to the job summary
-        if: ${{ !cancelled() && steps.validate.outcome == 'success' }}
-        run: .venv-req/bin/python ci/write_status_summary.py
+        if: ${{ !cancelled() }}
+        run: >
+          .venv-req/bin/python ci/write_status_summary.py
+          --validation req_validate.log
 
       - name: Publish requirements tree as a Check Run
-        if: ${{ !cancelled() && steps.validate.outcome == 'success' }}
+        if: ${{ !cancelled() }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: .venv-req/bin/python scripts/publish_check_run.py --status req_status.json
+        run: >
+          .venv-req/bin/python scripts/publish_check_run.py --status req_status.json
+          --validation req_validate.log

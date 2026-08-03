@@ -21,5 +21,13 @@ STRICT=()
 if [[ "${GATE_STRICT:-0}" == 1 ]]; then
     STRICT=(--strict)
 fi
-"$PY" scripts/req.py validate "${STRICT[@]}" "$@"
-echo "gate: OK"
+# Both verdicts are printed, not just the happy one: CI captures this output and
+# folds it into the requirements report, where 'gate: FAILED' is what marks the
+# report red. Exit status is preserved so the workflow step still fails.
+if "$PY" scripts/req.py validate "${STRICT[@]}" "$@"; then
+    echo "gate: OK"
+else
+    status=$?
+    echo "gate: FAILED (req validate exited $status)"
+    exit "$status"
+fi

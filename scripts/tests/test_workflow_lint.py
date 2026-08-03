@@ -29,12 +29,16 @@ def test_workflow_entry_checks_gate_the_sequential_pipeline_jobs():
     assert "needs.build.result == 'success'" in doc["jobs"]["requirements"]["if"]
 
 
-def test_workflow_installs_runtime_libs_before_running_tests():
-    test_job_steps = load()["jobs"]["test"]["steps"]
-    test_index = next(i for i, s in enumerate(test_job_steps) if "ctest" in s.get("run", ""))
-    deps_index = next(i for i, s in enumerate(test_job_steps) if "apt-get install" in s.get("run", ""))
-    assert deps_index < test_index
-    assert "libboost-context-dev" in test_job_steps[deps_index]["run"]
+def test_ctest_runs_in_the_same_pinned_toolchain_container_as_the_build():
+    # The runtime libs the tests link against are no longer apt-installed per
+    # job: they come from the build image. ctest also needs the workspace at the
+    # same absolute path CMake baked in, which only holds inside that container.
+    doc = load()
+    build_image = doc["jobs"]["build"]["container"]["image"]
+    test_image = doc["jobs"]["test"]["container"]["image"]
+    assert build_image == test_image
+    assert "@sha256:" in build_image  # pinned by digest, not a mutable tag
+    assert any("ctest" in s.get("run", "") for s in doc["jobs"]["test"]["steps"])
 
 
 @pytest.mark.skipif(shutil.which("actionlint") is None, reason="actionlint not installed")

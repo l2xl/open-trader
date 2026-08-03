@@ -1,0 +1,6 @@
+header: Requirements report survives a failed gate
+description: |
+  The CI pipeline shall publish the requirements status report on the run's report page and on the commit's checks even when requirements validation fails, folding the gate's diagnostics into the report itself.
+parents: [INFRA-065]
+order: 40
+tests: ~
