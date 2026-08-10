@@ -7,9 +7,11 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <cstddef>
 #include <cstdint>
 #include <limits>
 #include <optional>
+#include <vector>
 
 #include "instrument_panel.hpp"
 #include "timedef.hpp"
@@ -20,15 +22,24 @@ namespace {
 
 struct Color { uint8_t r, g, b, a; };
 
-// Pure dark green/red sampled from the reference swatch, used for the wick triangles
-// (the high/low reach). The mean-price diamond uses ~65 %-luminance derivatives so the
-// body grounds as a darker anchor while staying the same hue — triangles read brighter
-// than the body, keeping the high/low pop above the mean.
-constexpr Color kWickGreen{0, 95, 0, 255};     // #005f00
-constexpr Color kWickRed{95, 0, 0, 255};       // #5f0000
-constexpr Color kBodyGreen{0, 62, 0, 255};     // #003e00
-constexpr Color kBodyRed{62, 0, 0, 255};       // #3e0000
+// Dark green/red fill the bell body; the waist diamond uses the brighter same-hue
+// derivatives so it pops as a crisp anchor on top of the darker contour. The special
+// lozenge is the deliberately foreign high-contrast amber of the case the bell cannot
+// express.
+constexpr Color kBodyGreen{0, 62, 0, 255};      // #003e00
+constexpr Color kBodyRed{62, 0, 0, 255};        // #3e0000
+constexpr Color kDiamondGreen{0, 95, 0, 255};   // #005f00
+constexpr Color kDiamondRed{95, 0, 0, 255};     // #5f0000
+constexpr Color kSpecial{255, 191, 0, 255};     // #ffbf00
 constexpr Color kGray{110, 110, 110, 255};
+
+// BUOY_CANDLE.md section 8 render-side tunables: the median-volume buoy's full waist
+// width, the horizontal clearance between neighbouring slots, the contour sample count
+// (N = 12 wall levels), and the aspect ratio below which a period becomes special.
+constexpr float kTargetWaistWidthPx = 14.f;
+constexpr float kSlotGapPx = 2.f;
+constexpr std::size_t kContourLevels = 13;
+constexpr float kAspect = 2.f;
 
 inline float SubToFloat(uint64_t value, uint64_t floor)
 {
@@ -60,21 +71,35 @@ const BuoyCandleQuotes::candle_t* PrevFilledBuoy(const BuoyCandleQuotes::quotes_
     return nullptr;
 }
 
-// Emit one buoy into its color-grouped Shape pools. Filled geometry only (no strokes),
-// sized so that:
-//   * the diamond body is candle_width px wide × (candle_width / 2) px tall,
-//   * the wick triangles span the full buoy width at their base and reach the real
-//     curr.max / curr.min price at their apex,
+// Color-grouped Shape pools one buoy emits into; references borrow the scratcher's
+// pooled shapes for the duration of a single AppendBuoy call.
+struct BuoyShapes
+{
+    tvg::Shape& gray;
+    tvg::Shape& body_green;
+    tvg::Shape& body_red;
+    tvg::Shape& diamond_green;
+    tvg::Shape& diamond_red;
+    tvg::Shape& special;
+};
+
+// Emit one buoy into its Shape pools per BUOY_CANDLE.md. Filled geometry only:
+//   * the BODY is a 1 px vertical spine spanning min..max (keeps the range visible
+//     where the 3σ taper thins below a pixel) followed by the Catmull-Rom-smoothed
+//     two-piece Gaussian contour of the fitted candle, waist half-width =
+//     (Wt/2)·WidthRatio px clamped to the slot;
+//   * the waist diamond is candle_width px wide × (candle_width / 2) px tall;
+//   * SPECIAL periods (single-price, or failing the screen-space ASPECT test) draw
+//     only the fixed-size bright lozenge;
 //   * the empty-buoy gray dash is candle_width px wide × 0.5 px tall.
 // X dimensions are pixel-stable through the LogicalScene matrix because period_ms
 // maps to candle_width px via e11; Y dimensions that need a fixed pixel count are
 // supplied in scene units as (pixels * px.y).
-void AppendBuoy(tvg::Shape& wicks_green, tvg::Shape& wicks_red,
-                tvg::Shape& body_green,  tvg::Shape& body_red,
-                tvg::Shape& gray,
+void AppendBuoy(BuoyShapes shapes,
                 uint64_t buoy_ts, uint64_t duration,
                 const BuoyCandleQuotes::candle_t& curr,
                 const BuoyCandleQuotes::candle_t& prev,
+                const BuoyCandleQuotes::Calibration& calibration,
                 const SceneFloor& floor,
                 const ScenePixelSize& px,
                 float candle_width_px,
@@ -91,65 +116,24 @@ void AppendBuoy(tvg::Shape& wicks_green, tvg::Shape& wicks_red,
     if (curr.volume.raw() == 0) {
         // Empty buoy — no trades arrived during the period. Carry the previous last
         // price forward as a 0.5 px-tall gray rect; in this state the model has
-        // min == max == mean == last_price, so neither wicks nor a body would have
-        // any visible extent anyway.
+        // min == max == mean == last_price, so no body would have any visible extent.
         const float half_h = 0.25f * px.y;
-        gray.moveTo(left_x,  mean_y - half_h);
-        gray.lineTo(right_x, mean_y - half_h);
-        gray.lineTo(right_x, mean_y + half_h);
-        gray.lineTo(left_x,  mean_y + half_h);
-        gray.close();
+        shapes.gray.moveTo(left_x,  mean_y - half_h);
+        shapes.gray.lineTo(right_x, mean_y - half_h);
+        shapes.gray.lineTo(right_x, mean_y + half_h);
+        shapes.gray.lineTo(left_x,  mean_y + half_h);
+        shapes.gray.close();
         return;
     }
 
-    const float min_y = SubToFloat(curr.min.raw_at(price_decimals), floor.price_points);
-    const float max_y = SubToFloat(curr.max.raw_at(price_decimals), floor.price_points);
-
-    // Flatten each wick apex into a 0.5 px-wide horizontal edge so the tip reads as a
-    // crisp short cap rather than a needle-thin point that the rasterizer thins to
-    // near-invisibility. Pixel-stable through the scene matrix (period_ms → candle_width
-    // px via e11), so the cap stays 0.5 px regardless of zoom.
-    const float tip_half_w = 0.25f * px.x;
-
-    // Top wick: trapezium with the long base from (left, mean) → (right, mean) and a
-    // short top edge spanning (mid ± tip_half_w, max). Color by curr.max vs prev.max.
-    auto& top_shape = (curr.max >= prev.max) ? wicks_green : wicks_red;
-    top_shape.moveTo(left_x, mean_y);
-    top_shape.lineTo(mid_x - tip_half_w, max_y);
-    top_shape.lineTo(mid_x + tip_half_w, max_y);
-    top_shape.lineTo(right_x, mean_y);
-    top_shape.close();
-
-    // Bottom wick: trapezium mirroring the top — short bottom edge spanning
-    // (mid ± tip_half_w, min). Color by curr.min vs prev.min. Wound the opposite way so
-    // both shapes use a consistent fill rule under any future winding-sensitive setting.
-    auto& bot_shape = (curr.min >= prev.min) ? wicks_green : wicks_red;
-    bot_shape.moveTo(left_x, mean_y);
-    bot_shape.lineTo(right_x, mean_y);
-    bot_shape.lineTo(mid_x + tip_half_w, min_y);
-    bot_shape.lineTo(mid_x - tip_half_w, min_y);
-    bot_shape.close();
-
-    // Mean body diamond. Vertices: left tip at (left, mean), top at (mid, mean+halfH),
-    // right tip at (right, mean), bottom at (mid, mean-halfH). Half-height is one
-    // quarter of the candle width in canvas px so the full diamond height equals
-    // candle_width / 2 px regardless of the price-axis scale.
-    const float half_diamond_h = (candle_width_px * 0.25f) * px.y;
-    auto& body_shape = (curr.mean >= prev.mean) ? body_green : body_red;
-    body_shape.moveTo(left_x,  mean_y);
-    body_shape.lineTo(mid_x,   mean_y + half_diamond_h);
-    body_shape.lineTo(right_x, mean_y);
-    body_shape.lineTo(mid_x,   mean_y - half_diamond_h);
-    body_shape.close();
-
     // Gray "move" connector: a thin vertical line bridging the previous close to this
     // buoy's mean level, drawn only when the previous close sits outside [min, max] — i.e.
-    // the price jumped into a new band between periods. The candle no longer encodes that
+    // the price jumped into a new band between periods. The candle does not encode that
     // move (min/max reflect only this period's own trades), so the connector is what makes
     // a gap between consecutive buoys visible. The rect spans down to mean so it meets the
-    // candle with no gap, but the gray pool is drawn UNDER the wicks and body (see OnAttach
-    // Z-order), so the inner segment is hidden and only the part outside [min, max]
-    // (previous close → nearest tip) shows — a stem from the prior close to the candle edge.
+    // candle with no gap, but the gray pool is drawn UNDER the body (see OnAttach Z-order),
+    // so the inner segment is hidden and only the part outside [min, max] (previous close →
+    // nearest tip) shows — a stem from the prior close to the candle edge.
     if (prev.close > curr.max || prev.close < curr.min) {
         const float prev_close_y = SubToFloat(prev.close.raw_at(price_decimals), floor.price_points);
         // 1 px wide (not 0.5 px). A sub-pixel-width filled rect distributes its
@@ -158,12 +142,128 @@ void AppendBuoy(tvg::Shape& wicks_green, tvg::Shape& wicks_red,
         // flickering change in thickness/brightness. At a full pixel the covered ink is
         // constant across sub-pixel offsets, so the connector stays visually steady.
         const float half_w  = 0.5f * px.x;
-        gray.moveTo(mid_x - half_w, prev_close_y);
-        gray.lineTo(mid_x + half_w, prev_close_y);
-        gray.lineTo(mid_x + half_w, mean_y);
-        gray.lineTo(mid_x - half_w, mean_y);
-        gray.close();
+        shapes.gray.moveTo(mid_x - half_w, prev_close_y);
+        shapes.gray.lineTo(mid_x + half_w, prev_close_y);
+        shapes.gray.lineTo(mid_x + half_w, mean_y);
+        shapes.gray.lineTo(mid_x - half_w, mean_y);
+        shapes.gray.close();
     }
+
+    const float half_diamond_h = (candle_width_px * 0.25f) * px.y;
+
+    // Peak half-width from the area constraint: the target waist scaled by the
+    // dimensionless window ratio, capped by the slot so neighbours never touch.
+    const bool single_price = !(curr.min < curr.max);
+    const float a_slot_px = std::max(0.5f, 0.5f * (candle_width_px - kSlotGapPx));
+    float a_px = 0.f;
+    BuoyCandleQuotes::candle_t fitted = curr;
+    if (!single_price) {
+        fitted = curr.FitRange();
+        a_px = std::min(0.5f * kTargetWaistWidthPx * BuoyCandleQuotes::WidthRatio(fitted, calibration), a_slot_px);
+    }
+
+    // Screen-space regime test (BUOY_CANDLE.md section 5): a single-price period is
+    // special by construction; otherwise the buoy is special when even its longer half
+    // is shorter than ASPECT body widths on screen — the bell cannot be read at that
+    // aspect, so a fixed-size high-contrast lozenge is stamped instead and nothing
+    // height-scaled is drawn.
+    const float top_px = static_cast<float>((curr.max - curr.mean).raw_at(price_decimals)) / px.y;
+    const float bot_px = static_cast<float>((curr.mean - curr.min).raw_at(price_decimals)) / px.y;
+    if (single_price || std::max(top_px, bot_px) < kAspect * 2.f * a_px) {
+        shapes.special.moveTo(left_x,  mean_y);
+        shapes.special.lineTo(mid_x,   mean_y + half_diamond_h);
+        shapes.special.lineTo(right_x, mean_y);
+        shapes.special.lineTo(mid_x,   mean_y - half_diamond_h);
+        shapes.special.close();
+        return;
+    }
+
+    // Range spine first: a 1 px-wide vertical rect from min to max in the body color,
+    // under the bell, so the extremes stay readable where the 3σ taper thins the wall
+    // below a pixel. Full-pixel width for the same anti-aliasing steadiness as the
+    // move connector. Wound in the bell's orientation (top edge left→right, then down
+    // the right side) so the shared nonzero fill rule never carves a hole where the
+    // sub-paths overlap.
+    const float min_y = SubToFloat(curr.min.raw_at(price_decimals), floor.price_points);
+    const float max_y = SubToFloat(curr.max.raw_at(price_decimals), floor.price_points);
+    const float spine_half_w = 0.5f * px.x;
+    auto& body_shape = (curr.mean >= prev.mean) ? shapes.body_green : shapes.body_red;
+    body_shape.moveTo(mid_x - spine_half_w, max_y);
+    body_shape.lineTo(mid_x + spine_half_w, max_y);
+    body_shape.lineTo(mid_x + spine_half_w, min_y);
+    body_shape.lineTo(mid_x - spine_half_w, min_y);
+    body_shape.close();
+
+    // Bell body: sample the fitted contour on the price grid, project to scene
+    // coordinates (normalised wall width → a_px canvas pixels via px.x), smooth with
+    // the Catmull-Rom spline. A half-normal contour arrives open; its close() edge is
+    // the straight flat waist with sharp corners.
+    const auto contour = fitted.SampleContour(kContourLevels);
+    std::vector<BuoySplinePoint> outline;
+    outline.reserve(contour.points.size());
+    for (const auto& sample : contour.points)
+        outline.push_back({mid_x + sample.width * a_px * px.x,
+                           SubToFloat(sample.price.raw_at(price_decimals), floor.price_points)});
+    body_shape.moveTo(outline.front().x, outline.front().y);
+    for (const auto& segment : CatmullRomSpline(outline, contour.closed))
+        body_shape.cubicTo(segment.control1.x, segment.control1.y,
+                           segment.control2.x, segment.control2.y,
+                           segment.end.x, segment.end.y);
+    body_shape.close();
+
+    // Waist diamond on top of the body. Vertices: left tip at (left, mean), top at
+    // (mid, mean+halfH), right tip at (right, mean), bottom at (mid, mean-halfH) —
+    // full height = candle_width / 2 px regardless of the price-axis scale.
+    auto& diamond_shape = (curr.mean >= prev.mean) ? shapes.diamond_green : shapes.diamond_red;
+    diamond_shape.moveTo(left_x,  mean_y);
+    diamond_shape.lineTo(mid_x,   mean_y + half_diamond_h);
+    diamond_shape.lineTo(right_x, mean_y);
+    diamond_shape.lineTo(mid_x,   mean_y - half_diamond_h);
+    diamond_shape.close();
+}
+
+// Visible-window calibration (BUOY_CANDLE.md section 4): medians over the buoys inside
+// the current view — closed periods plus the active candle when its slot is visible.
+// Ineligible periods (empty, single-price) are excluded by Calibrate itself.
+BuoyCandleQuotes::Calibration VisibleCalibration(const InstrumentPanel& panel, const BuoyCandleQuotes& quotes)
+{
+    const auto first_ts_opt = quotes.first_buoy_timestamp();
+    if (!first_ts_opt) return {};
+
+    const int64_t view_left  = panel.ViewLeftTimeMs();
+    const int64_t period_ms  = static_cast<int64_t>(panel.CandlePeriod().count()) * 1000;
+    const int64_t cwidth     = std::max<int64_t>(1, panel.CandleWidth());
+    const int64_t inner_w    = std::max<int64_t>(1, panel.InnerDataRect().w);
+    const int64_t view_right = view_left + (inner_w * period_ms) / cwidth;
+
+    const auto& closed = quotes.quotes();
+    const int64_t first_ts = static_cast<int64_t>(*first_ts_opt);
+    const int64_t duration = static_cast<int64_t>(quotes.buoy_duration());
+    if (duration <= 0) return {};
+
+    std::vector<BuoyCandleQuotes::candle_t> window;
+    const int64_t closed_n  = static_cast<int64_t>(closed.size());
+    const int64_t v_from    = std::max<int64_t>(0, (view_left - first_ts) / duration);
+    const int64_t v_to_excl = std::min<int64_t>(closed_n, std::max<int64_t>(0, (view_right - first_ts) / duration + 1));
+    window.reserve(static_cast<std::size_t>(std::max<int64_t>(0, v_to_excl - v_from)) + 1);
+    for (int64_t i = v_from; i < v_to_excl; ++i)
+        window.push_back(closed[static_cast<std::size_t>(i)]);
+
+    const int64_t active_ts = first_ts + closed_n * duration;
+    if (active_ts < view_right && active_ts + duration > view_left)
+        window.push_back(quotes.active_candle());
+
+    return BuoyCandleQuotes::Calibrate(window);
+}
+
+// ~10 % drift hysteresis on a calibration median: exact integer cross-products, so no
+// currency value ever leaves fixed point for the comparison.
+bool DriftedBeyondTenth(const BuoyCandleQuotes::price_t& emitted, const BuoyCandleQuotes::price_t& fresh)
+{
+    const std::size_t d = std::max(emitted.decimals(), fresh.decimals());
+    const big_int emitted_raw = big_int(emitted.raw_at(d));
+    const big_int fresh_raw = big_int(fresh.raw_at(d));
+    return fresh_raw * 10 > emitted_raw * 11 || fresh_raw * 10 < emitted_raw * 9;
 }
 
 }
@@ -173,46 +273,52 @@ void QuoteScratcher::OnAttach(InstrumentPanel& panel)
     mScene.reset(tvg::Scene::gen());
 
     mClosedGrayShape.reset(tvg::Shape::gen());
-    mClosedWicksGreenShape.reset(tvg::Shape::gen());
-    mClosedWicksRedShape.reset(tvg::Shape::gen());
     mClosedBodyGreenShape.reset(tvg::Shape::gen());
     mClosedBodyRedShape.reset(tvg::Shape::gen());
+    mClosedDiamondGreenShape.reset(tvg::Shape::gen());
+    mClosedDiamondRedShape.reset(tvg::Shape::gen());
+    mClosedSpecialShape.reset(tvg::Shape::gen());
 
     mActiveGrayShape.reset(tvg::Shape::gen());
-    mActiveWicksGreenShape.reset(tvg::Shape::gen());
-    mActiveWicksRedShape.reset(tvg::Shape::gen());
     mActiveBodyGreenShape.reset(tvg::Shape::gen());
     mActiveBodyRedShape.reset(tvg::Shape::gen());
+    mActiveDiamondGreenShape.reset(tvg::Shape::gen());
+    mActiveDiamondRedShape.reset(tvg::Shape::gen());
+    mActiveSpecialShape.reset(tvg::Shape::gen());
 
-    ApplyFill(*mClosedGrayShape,        kGray);
-    ApplyFill(*mClosedWicksGreenShape,  kWickGreen);
-    ApplyFill(*mClosedWicksRedShape,    kWickRed);
-    ApplyFill(*mClosedBodyGreenShape,   kBodyGreen);
-    ApplyFill(*mClosedBodyRedShape,     kBodyRed);
-    ApplyFill(*mActiveGrayShape,        kGray);
-    ApplyFill(*mActiveWicksGreenShape,  kWickGreen);
-    ApplyFill(*mActiveWicksRedShape,    kWickRed);
-    ApplyFill(*mActiveBodyGreenShape,   kBodyGreen);
-    ApplyFill(*mActiveBodyRedShape,     kBodyRed);
+    ApplyFill(*mClosedGrayShape,         kGray);
+    ApplyFill(*mClosedBodyGreenShape,    kBodyGreen);
+    ApplyFill(*mClosedBodyRedShape,      kBodyRed);
+    ApplyFill(*mClosedDiamondGreenShape, kDiamondGreen);
+    ApplyFill(*mClosedDiamondRedShape,   kDiamondRed);
+    ApplyFill(*mClosedSpecialShape,      kSpecial);
+    ApplyFill(*mActiveGrayShape,         kGray);
+    ApplyFill(*mActiveBodyGreenShape,    kBodyGreen);
+    ApplyFill(*mActiveBodyRedShape,      kBodyRed);
+    ApplyFill(*mActiveDiamondGreenShape, kDiamondGreen);
+    ApplyFill(*mActiveDiamondRedShape,   kDiamondRed);
+    ApplyFill(*mActiveSpecialShape,      kSpecial);
 
     // Z-order (add() order): gray first so the "move" connector renders UNDER the buoy —
-    // it runs all the way to mean but the wicks and body cover its inner segment, leaving
-    // only the part outside [min, max] (previous close → nearest tip) visible as a stem
-    // with no gap. Wicks next, then the diamond bodies on top so they cap the triangle
-    // bases meeting at mean. Empty-buoy dashes also live in the gray pool but sit where no
-    // buoy is drawn, so their layer placement is immaterial. Closed-pool shapes are grouped
-    // contiguously ahead of all active-pool shapes.
+    // it runs all the way to mean but the body covers its inner segment, leaving only the
+    // part outside [min, max] (previous close → nearest tip) visible as a stem with no
+    // gap. Bell bodies next, then the waist diamonds, and the special lozenges on
+    // top. Empty-buoy dashes also live in the gray pool but sit where
+    // no buoy is drawn, so their layer placement is immaterial. Closed-pool shapes are
+    // grouped contiguously ahead of all active-pool shapes.
     mScene->add(mClosedGrayShape.get());
-    mScene->add(mClosedWicksGreenShape.get());
-    mScene->add(mClosedWicksRedShape.get());
     mScene->add(mClosedBodyGreenShape.get());
     mScene->add(mClosedBodyRedShape.get());
+    mScene->add(mClosedDiamondGreenShape.get());
+    mScene->add(mClosedDiamondRedShape.get());
+    mScene->add(mClosedSpecialShape.get());
 
     mScene->add(mActiveGrayShape.get());
-    mScene->add(mActiveWicksGreenShape.get());
-    mScene->add(mActiveWicksRedShape.get());
     mScene->add(mActiveBodyGreenShape.get());
     mScene->add(mActiveBodyRedShape.get());
+    mScene->add(mActiveDiamondGreenShape.get());
+    mScene->add(mActiveDiamondRedShape.get());
+    mScene->add(mActiveSpecialShape.get());
 
     panel.LogicalScene().add(mScene.get());
 }
@@ -222,22 +328,25 @@ void QuoteScratcher::OnDetach(InstrumentPanel& /*panel*/)
     mScene.reset();
 
     mClosedGrayShape.reset();
-    mClosedWicksGreenShape.reset();
-    mClosedWicksRedShape.reset();
     mClosedBodyGreenShape.reset();
     mClosedBodyRedShape.reset();
+    mClosedDiamondGreenShape.reset();
+    mClosedDiamondRedShape.reset();
+    mClosedSpecialShape.reset();
 
     mActiveGrayShape.reset();
-    mActiveWicksGreenShape.reset();
-    mActiveWicksRedShape.reset();
     mActiveBodyGreenShape.reset();
     mActiveBodyRedShape.reset();
+    mActiveDiamondGreenShape.reset();
+    mActiveDiamondRedShape.reset();
+    mActiveSpecialShape.reset();
 
     mEmittedClosedCount = 0;
     mEmittedFirstBuoyTs.reset();
     mEmittedFloorTimeMs = 0;
     mEmittedFloorPricePts = 0;
     mEmittedPxSizeY = 0.0f;
+    mEmittedCalibration.reset();
 }
 
 uint64_t QuoteScratcher::WallNowMs()
@@ -253,7 +362,7 @@ void QuoteScratcher::PriceAutoscale(InstrumentPanel& panel)
     const int64_t view_left  = panel.ViewLeftTimeMs();
     const int64_t period_ms  = static_cast<int64_t>(panel.CandlePeriod().count()) * 1000;
     const int64_t cwidth     = std::max<int64_t>(1, panel.CandleWidth());
-    const int64_t inner_w    = std::max(1, panel.InnerDataRect().width());
+    const int64_t inner_w    = std::max<int64_t>(1, panel.InnerDataRect().w);
     const int64_t span_ms    = (inner_w * period_ms) / cwidth;
     const int64_t view_right = view_left + span_ms;
 
@@ -341,7 +450,7 @@ void QuoteScratcher::TimeFloorRefloor(InstrumentPanel& panel)
     const int64_t view_left  = panel.ViewLeftTimeMs();
     const int64_t period_ms  = static_cast<int64_t>(panel.CandlePeriod().count()) * 1000;
     const int64_t cwidth     = std::max<int64_t>(1, panel.CandleWidth());
-    const int64_t inner_w    = std::max(1, panel.InnerDataRect().width());
+    const int64_t inner_w    = std::max<int64_t>(1, panel.InnerDataRect().w);
     const int64_t span_ms    = (inner_w * period_ms) / cwidth;
     const int64_t view_right = view_left + span_ms;
 
@@ -370,7 +479,7 @@ void QuoteScratcher::CalculateSize(InstrumentPanel& panel)
 
     // Advance the candle clock: fill-forward empty buoys + roll the active candle to now.
     // Cheap unless a buoy boundary was crossed.
-    mQuotes.AdvanceTo(WallNowMs(), mLastPrice);
+    mQuotes.AdvanceTo(NowMs(), mLastPrice);
 
     // Defensive precision refloor of the time axis (replaces the old per-2-span hysteresis).
     TimeFloorRefloor(panel);
@@ -380,8 +489,8 @@ void QuoteScratcher::CalculateSize(InstrumentPanel& panel)
     // data path; skip until it exists. ApplyLogicalSceneTransform (run right after) preserves
     // whatever e22 we leave in the matrix.
     if (mScaleTopPrice > mScaleFloorPrice) {
-        const int H = std::max(1, panel.InnerDataRect().height());
-        const float e22 = static_cast<float>(H) / static_cast<float>(mScaleTopPrice - mScaleFloorPrice);
+        const float H = static_cast<float>(std::max<int64_t>(1, panel.InnerDataRect().h));
+        const float e22 = H / static_cast<float>(mScaleTopPrice - mScaleFloorPrice);
         const tvg::Matrix cur = panel.LogicalScene().transform();
         if (cur.e22 != e22) {
             panel.LogicalScene().transform(tvg::Matrix{cur.e11, 0.0f, cur.e13,
@@ -401,26 +510,43 @@ void QuoteScratcher::OnLayout(InstrumentPanel& panel)
     const float candle_w_px = static_cast<float>(panel.CandleWidth());
     const std::size_t pd = panel.PriceDecimals();
 
+    // Refresh the emitted calibration only when a visible-window median drifts beyond
+    // the ~10 % hysteresis band, so widths stay steady while the window's contents creep.
+    // An empty fresh calibration (no eligible visible buoy) never replaces an adopted
+    // one — special/degenerate periods draw fixed-size markers that need no calibration.
+    const auto fresh = VisibleCalibration(panel, mQuotes);
+    bool calibration_changed = false;
+    if (fresh.median_volume.raw() != 0 &&
+        (!mEmittedCalibration ||
+         DriftedBeyondTenth(mEmittedCalibration->median_volume, fresh.median_volume) ||
+         DriftedBeyondTenth(mEmittedCalibration->median_sigma_sum, fresh.median_sigma_sum))) {
+        mEmittedCalibration = fresh;
+        calibration_changed = true;
+    }
+    const BuoyCandleQuotes::Calibration calibration = mEmittedCalibration ? *mEmittedCalibration : BuoyCandleQuotes::Calibration{};
+
     // Closed-pool invalidation: any of (a) series anchor moved, (b) scene floor
-    // repositioned, (c) Y pixel size changed (diamond half-height and gray dash
-    // half-height are both derived from px.y and would otherwise drift out of
-    // their nominal pixel dimensions). Pan/zoom/resize on X are absorbed by the
-    // LogicalScene matrix and do NOT invalidate.
+    // repositioned, (c) Y pixel size changed (pixel-fixed heights and the ASPECT
+    // regime are derived from px.y), (d) calibration adopted — every closed width
+    // consumes it. Pan/zoom/resize on X are absorbed by the LogicalScene matrix and
+    // do NOT invalidate.
     const bool series_changed = !first_ts || mEmittedFirstBuoyTs != first_ts;
     const bool floor_changed  = floor.time_ms != mEmittedFloorTimeMs ||
                                 floor.price_points != mEmittedFloorPricePts;
     const bool px_changed     = px.y != mEmittedPxSizeY;
-    if (series_changed || floor_changed || px_changed) {
+    if (series_changed || floor_changed || px_changed || calibration_changed) {
         mClosedGrayShape->reset();
-        mClosedWicksGreenShape->reset();
-        mClosedWicksRedShape->reset();
         mClosedBodyGreenShape->reset();
         mClosedBodyRedShape->reset();
-        ApplyFill(*mClosedGrayShape,       kGray);
-        ApplyFill(*mClosedWicksGreenShape, kWickGreen);
-        ApplyFill(*mClosedWicksRedShape,   kWickRed);
-        ApplyFill(*mClosedBodyGreenShape,  kBodyGreen);
-        ApplyFill(*mClosedBodyRedShape,    kBodyRed);
+        mClosedDiamondGreenShape->reset();
+        mClosedDiamondRedShape->reset();
+        mClosedSpecialShape->reset();
+        ApplyFill(*mClosedGrayShape,         kGray);
+        ApplyFill(*mClosedBodyGreenShape,    kBodyGreen);
+        ApplyFill(*mClosedBodyRedShape,      kBodyRed);
+        ApplyFill(*mClosedDiamondGreenShape, kDiamondGreen);
+        ApplyFill(*mClosedDiamondRedShape,   kDiamondRed);
+        ApplyFill(*mClosedSpecialShape,      kSpecial);
         mEmittedClosedCount = 0;
         mEmittedFirstBuoyTs = first_ts;
         mEmittedFloorTimeMs = floor.time_ms;
@@ -428,18 +554,19 @@ void QuoteScratcher::OnLayout(InstrumentPanel& panel)
         mEmittedPxSizeY = px.y;
     }
 
-    // Active pool is always replaced — at most one buoy, three sub-paths across two
-    // color shapes plus the gray-dash branch.
+    // Active pool is always replaced — at most one buoy across the seven pooled shapes.
     mActiveGrayShape->reset();
-    mActiveWicksGreenShape->reset();
-    mActiveWicksRedShape->reset();
     mActiveBodyGreenShape->reset();
     mActiveBodyRedShape->reset();
-    ApplyFill(*mActiveGrayShape,       kGray);
-    ApplyFill(*mActiveWicksGreenShape, kWickGreen);
-    ApplyFill(*mActiveWicksRedShape,   kWickRed);
-    ApplyFill(*mActiveBodyGreenShape,  kBodyGreen);
-    ApplyFill(*mActiveBodyRedShape,    kBodyRed);
+    mActiveDiamondGreenShape->reset();
+    mActiveDiamondRedShape->reset();
+    mActiveSpecialShape->reset();
+    ApplyFill(*mActiveGrayShape,         kGray);
+    ApplyFill(*mActiveBodyGreenShape,    kBodyGreen);
+    ApplyFill(*mActiveBodyRedShape,      kBodyRed);
+    ApplyFill(*mActiveDiamondGreenShape, kDiamondGreen);
+    ApplyFill(*mActiveDiamondRedShape,   kDiamondRed);
+    ApplyFill(*mActiveSpecialShape,      kSpecial);
 
     if (!first_ts) return;
 
@@ -455,10 +582,9 @@ void QuoteScratcher::OnLayout(InstrumentPanel& panel)
         // (series anchor) compare against itself — paints neutral (green via `>=`).
         const auto* prev_filled = PrevFilledBuoy(closed, i);
         const auto& prev = prev_filled ? *prev_filled : curr;
-        AppendBuoy(*mClosedWicksGreenShape, *mClosedWicksRedShape,
-                   *mClosedBodyGreenShape,  *mClosedBodyRedShape,
-                   *mClosedGrayShape,
-                   ts, duration, curr, prev, floor, px, candle_w_px, pd);
+        AppendBuoy({*mClosedGrayShape, *mClosedBodyGreenShape, *mClosedBodyRedShape,
+                    *mClosedDiamondGreenShape, *mClosedDiamondRedShape, *mClosedSpecialShape},
+                   ts, duration, curr, prev, calibration, floor, px, candle_w_px, pd);
     }
     mEmittedClosedCount = n;
 
@@ -466,10 +592,9 @@ void QuoteScratcher::OnLayout(InstrumentPanel& panel)
     const uint64_t active_ts = *first_ts + n * duration;
     const auto* prev_filled = PrevFilledBuoy(closed, n);
     BuoyCandleQuotes::candle_t prev = prev_filled ? *prev_filled : active;
-    AppendBuoy(*mActiveWicksGreenShape, *mActiveWicksRedShape,
-               *mActiveBodyGreenShape,  *mActiveBodyRedShape,
-               *mActiveGrayShape,
-               active_ts, duration, active, prev, floor, px, candle_w_px, pd);
+    AppendBuoy({*mActiveGrayShape, *mActiveBodyGreenShape, *mActiveBodyRedShape,
+                *mActiveDiamondGreenShape, *mActiveDiamondRedShape, *mActiveSpecialShape},
+               active_ts, duration, active, prev, calibration, floor, px, candle_w_px, pd);
 }
 
 }

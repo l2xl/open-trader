@@ -2,15 +2,19 @@
 // Copyright (c) 2026 l2xl (l2xl/at/proton.me)
 // Distributed under the Intellectual Property Reserve License, v2 (IPRL)
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
 #include <catch2/generators/catch_generators_range.hpp>
+#include <catch2/matchers/catch_matchers_floating_point.hpp>
 
+#include "instrument_panel.hpp"
 #include "scratchers/quote_scratcher.hpp"
 #include "bybit/entities/public_trade.hpp"
 #include "currency.hpp"
@@ -190,4 +194,186 @@ TEST_CASE("QuoteScratcher ignores already-seen trades", "[quote_scratcher][dedup
     CHECK(after_replay[0].mean   == after_first[0].mean);
     CHECK(after_replay[0].close  == after_first[0].close);
     CHECK(after_replay[0].volume == after_first[0].volume);
+}
+
+namespace {
+
+// Emission (Tier 2) seam: pins BOTH clocks (data-path IngestTradesAt and the time-path
+// NowMs consumed by CalculateSize's AdvanceTo) so panel-driven layout is deterministic
+// against toy timestamps, and exposes the pooled shapes for ThorVG path read-back.
+struct EmissionScratcher : QuoteScratcher {
+    uint64_t mPinnedNow;
+    EmissionScratcher(milliseconds duration, uint64_t now) : QuoteScratcher(duration), mPinnedNow(now) {}
+    using QuoteScratcher::IngestTradesAt;
+    uint64_t NowMs() const override { return mPinnedNow; }
+
+    tvg::Shape& ClosedGray() const    { return *mClosedGrayShape; }
+    tvg::Shape& ClosedGreen() const   { return *mClosedBodyGreenShape; }
+    tvg::Shape& ClosedRed() const     { return *mClosedBodyRedShape; }
+    tvg::Shape& ClosedDiamondGreen() const { return *mClosedDiamondGreenShape; }
+    tvg::Shape& ClosedSpecial() const { return *mClosedSpecialShape; }
+    tvg::Shape& ActiveGray() const    { return *mActiveGrayShape; }
+    tvg::Shape& ActiveGreen() const   { return *mActiveBodyGreenShape; }
+    tvg::Shape& ActiveSpecial() const { return *mActiveSpecialShape; }
+};
+
+struct PathData { std::vector<tvg::PathCommand> cmds; std::vector<tvg::Point> pts; };
+
+PathData ReadPath(const tvg::Shape& shape)
+{
+    const tvg::PathCommand* cmds = nullptr;
+    const tvg::Point* pts = nullptr;
+    uint32_t cmd_count = 0, pt_count = 0;
+    REQUIRE(shape.path(&cmds, &cmd_count, &pts, &pt_count) == tvg::Result::Success);
+    return {{cmds, cmds + cmd_count}, {pts, pts + pt_count}};
+}
+
+// Headless panel: no UI host, so the redraw request is a no-op.
+struct HeadlessPanel : InstrumentPanel {
+    using InstrumentPanel::InstrumentPanel;
+    void Refresh() override {}
+};
+
+// Headless panel with a pinned view, zero scene floor, and a hand-set price scale of
+// 20 px per point so the toy candles (a few points tall) pass the ASPECT regime test.
+// Slot geometry: candle period 1 s mapped to 20 px (e11 = 0.02 px/ms, px.x = 50), buoy
+// duration 10 ms, 400x300 canvas, no rulers (PanelType::Empty adds no scratchers).
+struct EmissionHarness {
+    HeadlessPanel panel{PanelType::Empty, seconds(1), 20};
+    std::shared_ptr<EmissionScratcher> scratcher;
+
+    EmissionHarness(const std::vector<Trade>& trades, uint64_t now)
+    {
+        panel.SetViewLeftTimeMs(0);
+        panel.SetSceneFloor(SceneFloor{0, 0});
+        const tvg::Matrix m = panel.LogicalScene().transform();
+        panel.LogicalScene().transform(tvg::Matrix{m.e11, 0.f, m.e13, 0.f, 20.f, m.e23, 0.f, 0.f, 1.f});
+        scratcher = std::make_shared<EmissionScratcher>(milliseconds(10), now);
+        panel.AddScratcher(scratcher);
+        scratcher->IngestTradesAt(ToTrades(trades), now);
+        panel.AllocatePixelBuffer(400, 300);
+    }
+};
+
+} // namespace
+
+// Fixture shared by the emission cases: slot 0 holds a two-price buoy (min 4, max 8,
+// mean 6, volume 4, fitted sigmas 1/1 after the range fit), the second filled slot
+// (min 5, max 9, mean 6, volume 4, fitted sigmas 1/1). Calibration medians over the
+// two: volume 4, sigma sum 2 — so each filled buoy's width ratio is exactly 1 and the
+// waist half-width is Wt/2 = 7 px = 350 scene ms at px.x = 50.
+TEST_CASE("Emitted bell body carries the range spine, pins tips and spans the calibrated waist", "[quote_scratcher][emission]")
+{
+    using Catch::Matchers::WithinAbs;
+    EmissionHarness h{{ {2, 4, 2}, {6, 8, 2}, {12, 5, 3}, {16, 9, 1} }, 16};
+
+    // Closed body (green: no filled predecessor, buoy compares to itself): the 1 px range
+    // spine rect (MoveTo + 3 LineTo + Close) followed by one closed Catmull-Rom ring of
+    // 2*13-2 = 24 samples (MoveTo + 24 CubicTo + Close).
+    const PathData body = ReadPath(h.scratcher->ClosedGreen());
+    REQUIRE(body.cmds.size() == 5 + 26);
+    CHECK(body.cmds.front() == tvg::PathCommand::MoveTo);
+    CHECK(body.cmds[5] == tvg::PathCommand::MoveTo);
+    CHECK(body.cmds.back() == tvg::PathCommand::Close);
+    CHECK(std::count(body.cmds.begin(), body.cmds.end(), tvg::PathCommand::CubicTo) == 24);
+    REQUIRE(body.pts.size() == 4 + 1 + 24 * 3);
+    CHECK(ReadPath(h.scratcher->ClosedRed()).cmds.empty());
+
+    // Spine rect: 1 px wide (50 ms at px.x = 50) around the slot centre (slot 0..10 ms
+    // -> mid 5), spanning exactly max..min.
+    for (std::size_t i = 0; i < 4; ++i) {
+        CHECK_THAT(std::abs(body.pts[i].x - 5.0f), WithinAbs(25.0, 0.01));
+        CHECK_THAT(body.pts[i].y, WithinAbs(i < 2 ? 8.0 : 4.0, 1e-4));
+    }
+
+    // First contour sample is the pinned high tip at the slot centre.
+    CHECK_THAT(body.pts[4].x, WithinAbs(5.0, 1e-4));
+    CHECK_THAT(body.pts[4].y, WithinAbs(8.0, 1e-4));
+
+    // On-curve extents (the MoveTo point and each CubicTo end — Bezier control points
+    // legitimately overshoot a rounded peak): the vertical span is exactly min..max, the
+    // horizontal span is the calibrated waist half-width (7 px * 50 ms/px) around the centre.
+    std::vector<tvg::Point> on_curve{body.pts[4]};
+    for (std::size_t i = 5; i + 2 < body.pts.size(); i += 3)
+        on_curve.push_back(body.pts[i + 2]);
+    REQUIRE(on_curve.size() == 25);
+    float min_x = 1e9f, max_x = -1e9f, min_y = 1e9f, max_y = -1e9f;
+    for (const auto& p : on_curve) {
+        min_x = std::min(min_x, p.x); max_x = std::max(max_x, p.x);
+        min_y = std::min(min_y, p.y); max_y = std::max(max_y, p.y);
+    }
+    CHECK_THAT(min_y, WithinAbs(4.0, 1e-4));
+    CHECK_THAT(max_y, WithinAbs(8.0, 1e-4));
+    CHECK_THAT(max_x, WithinAbs(5.0 + 350.0, 0.1));
+    CHECK_THAT(min_x, WithinAbs(5.0 - 350.0, 0.1));
+
+    // Waist diamond on top (green), lozenge pool empty, no gray ink (no empty buoy, and
+    // the previous close sits inside every following range).
+    CHECK(ReadPath(h.scratcher->ClosedDiamondGreen()).pts.size() == 4);
+    CHECK(ReadPath(h.scratcher->ClosedSpecial()).cmds.empty());
+    CHECK(ReadPath(h.scratcher->ClosedGray()).cmds.empty());
+
+    // The active buoy (same shape family) emits its own spine + bell into the active pool.
+    CHECK(ReadPath(h.scratcher->ActiveGreen()).cmds.size() == 5 + 26);
+}
+
+TEST_CASE("Empty period renders as the gray dash at the carried close", "[quote_scratcher][emission]")
+{
+    using Catch::Matchers::WithinAbs;
+    EmissionHarness h{{ {2, 4, 2}, {6, 8, 2}, {22, 5, 3}, {26, 9, 1} }, 26};
+
+    // Closed series: filled slot 0, empty slot 1 (carried close 8), active slot 2.
+    // The dash is the only closed gray ink: one rect spanning the empty slot.
+    const PathData gray = ReadPath(h.scratcher->ClosedGray());
+    REQUIRE(gray.cmds.size() == 5);
+    REQUIRE(gray.pts.size() == 4);
+    float min_x = 1e9f, max_x = -1e9f;
+    for (const auto& p : gray.pts) {
+        min_x = std::min(min_x, p.x);
+        max_x = std::max(max_x, p.x);
+        CHECK_THAT(p.y, WithinAbs(8.0, 0.02));  // 0.5 px tall at px.y = 0.05
+    }
+    CHECK_THAT(min_x, WithinAbs(10.0, 1e-4));
+    CHECK_THAT(max_x, WithinAbs(20.0, 1e-4));
+
+    CHECK(ReadPath(h.scratcher->ClosedGreen()).cmds.size() == 5 + 26);
+}
+
+TEST_CASE("Single-price periods stamp the bright lozenge instead of a bell", "[quote_scratcher][emission][BUOY_GEOMETRY-010]")
+{
+    EmissionHarness h{{ {3, 5, 4}, {13, 7, 2} }, 13};
+
+    // Lone-trade closed buoy: special lozenge only — no body, no diamond.
+    CHECK(ReadPath(h.scratcher->ClosedSpecial()).pts.size() == 4);
+    CHECK(ReadPath(h.scratcher->ClosedGreen()).cmds.empty());
+    CHECK(ReadPath(h.scratcher->ClosedRed()).cmds.empty());
+    CHECK(ReadPath(h.scratcher->ClosedDiamondGreen()).cmds.empty());
+
+    // The lone-trade active buoy is special too, and its price band (7) excludes the
+    // previous close (5), so the gray move connector bridges them in the active pool.
+    CHECK(ReadPath(h.scratcher->ActiveSpecial()).pts.size() == 4);
+    CHECK(ReadPath(h.scratcher->ActiveGray()).cmds.size() == 5);
+}
+
+TEST_CASE("Catmull-Rom control points offset segment ends by a sixth of the neighbour vector", "[BUOY_GEOMETRY-008]")
+{
+    using Catch::Matchers::WithinAbs;
+    const std::vector<BuoySplinePoint> square{ {0.f, 0.f}, {1.f, 0.f}, {1.f, 1.f}, {0.f, 1.f} };
+
+    const auto closed = CatmullRomSpline(square, true);
+    REQUIRE(closed.size() == 4);
+    // Segment P1 -> P2: C1 = P1 + (P2 - P0)/6, C2 = P2 - (P3 - P1)/6
+    CHECK_THAT(closed[1].control1.x, WithinAbs(1.0 + 1.0 / 6.0, 1e-6));
+    CHECK_THAT(closed[1].control1.y, WithinAbs(1.0 / 6.0, 1e-6));
+    CHECK_THAT(closed[1].control2.x, WithinAbs(1.0 + 1.0 / 6.0, 1e-6));
+    CHECK_THAT(closed[1].control2.y, WithinAbs(1.0 - 1.0 / 6.0, 1e-6));
+    CHECK(closed[1].end.x == 1.f);
+    CHECK(closed[1].end.y == 1.f);
+
+    const auto open = CatmullRomSpline(square, false);
+    REQUIRE(open.size() == 3);
+    CHECK_THAT(open[1].control1.x, WithinAbs(1.0 + 1.0 / 6.0, 1e-6));  // interior segment: same formula, neighbours exist
+    CHECK_THAT(open[1].control1.y, WithinAbs(1.0 / 6.0, 1e-6));
+    CHECK_THAT(open[1].control2.x, WithinAbs(1.0 + 1.0 / 6.0, 1e-6));
+    CHECK_THAT(open[1].control2.y, WithinAbs(1.0 - 1.0 / 6.0, 1e-6));
 }

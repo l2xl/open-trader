@@ -4,6 +4,8 @@
 
 #pragma once
 
+#include <cstdint>
+
 #include "scratcher.hpp"
 #include "tvg_ptr.hpp"
 
@@ -34,7 +36,7 @@ public:
 private:
     void RebuildAll(InstrumentPanel& panel);
 
-    int mReservedWidth = 0;
+    int64_t mReservedWidth = 0;
 
     tvg_ptr<tvg::Scene> mScene;
     tvg_ptr<tvg::Shape> mAxisShape;

@@ -19,7 +19,7 @@
 #include "bybit/entities/instrument.hpp"
 #include "content_panel.hpp"
 #include "data_controller.hpp"
-#include "pixel_rect.hpp"
+#include "data_rectangle.hpp"
 #include "scratcher.hpp"
 #include "scratchers/quote_scratcher.hpp"
 #include "tvg_ptr.hpp"
@@ -74,9 +74,9 @@ public:
     tvg::Scene& HudScene() const { return *mHudScene; }
     tvg::Scene& LogicalScene() const { return *mLogicalScene; }
 
-    PixelRect OuterCanvasRect() const { return PixelRect{0, 0, mCanvasWidth, mCanvasHeight}; }
-    PixelRect& MutableInnerDataRect() { return mInnerDataRect; }
-    const PixelRect& InnerDataRect() const { return mInnerDataRect; }
+    Rectangle OuterCanvasRect() const { return Rectangle{0, 0, mCanvasWidth, mCanvasHeight}; }
+    Rectangle& MutableInnerDataRect() { return mInnerDataRect; }
+    const Rectangle& InnerDataRect() const { return mInnerDataRect; }
 
     const SceneFloor& GetSceneFloor() const { return mSceneFloor; }
     // Adjust the static precision epoch. Scratchers (e.g. QuoteScratcher when a
@@ -149,7 +149,7 @@ public:
     // previous buffer is freed, so the canvas target never points at freed memory.
     // After allocation the layout is recomputed for the new size. The buffer is laid
     // out as ARGB8888 with a tight stride of `width` pixels per row.
-    void AllocatePixelBuffer(int width, int height);
+    void AllocatePixelBuffer(uint32_t width, uint32_t height);
 
     // Raw access to the render buffer for callers that need to wrap it in a
     // platform-specific surface (e.g. a cairo image surface for cycfi/elements).
@@ -172,7 +172,7 @@ public:
     // cairo_surface_mark_dirty_rectangle (the buffer is unchanged from the previous frame).
     // Holds mDataMutex across the whole viewport→update→draw→sync sequence — workers
     // wait one frame's rasterisation latency, which the 100 ms worker tick absorbs.
-    PixelRect Render();
+    Rectangle Render();
 
     //virtual void PostToUi(std::function<void()> fn) = 0;
 
@@ -210,9 +210,9 @@ private:
     tvg_ptr<tvg::Scene> mHudScene;
     tvg_ptr<tvg::Scene> mLogicalScene;
 
-    PixelRect mInnerDataRect{};
-    int mCanvasWidth = 0;
-    int mCanvasHeight = 0;
+    Rectangle mInnerDataRect{};
+    uint32_t mCanvasWidth = 0;
+    uint32_t mCanvasHeight = 0;
 
     SceneFloor mSceneFloor{};
     int  mRightPadPx = 0;                        // live-edge right inset; recomputed each DoUpdate in EnsureViewAnchor

@@ -55,7 +55,7 @@ void InstrumentPanelElement::layout(el::context const& ctx)
     const int w = static_cast<int>(fw);
     const int h = static_cast<int>(fh);
     const auto canvas_rect = OuterCanvasRect();
-    if (w == canvas_rect.width() && h == canvas_rect.height())
+    if (w == static_cast<int>(canvas_rect.w) && h == static_cast<int>(canvas_rect.h))
         return;
 
     // Panel allocates the render buffer and binds the ThorVG canvas target in one
@@ -78,7 +78,7 @@ void InstrumentPanelElement::draw(el::context const& ctx)
     OnUpdate();
     const auto dmg = Render();
     if (!dmg.empty()) {
-        cairo_surface_mark_dirty_rectangle(mSurface, dmg.left, dmg.top, dmg.width(), dmg.height());
+        cairo_surface_mark_dirty_rectangle(mSurface, static_cast<int>(dmg.x), static_cast<int>(dmg.y), static_cast<int>(dmg.w), static_cast<int>(dmg.h));
     }
 
     cairo_t* cr = &ctx.canvas.cairo_context();

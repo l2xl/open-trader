@@ -31,7 +31,7 @@ For a single period the buoy replaces the OHLC candle:
   was, the wall never traces the raw volume-by-price profile with its local
   bulges and pinches; the distribution is always *modelled* as normal.
 - The **total area** of the body is proportional to the period's **traded
-  volume**. The peak half-width at the waist (the amplitude, shared by both
+  volume**. The peak half-width at the waist (the amplitude, may be individual per each of
   halves) follows from that area constraint, so at any price level the width
   reads as the model's volume density around that price.
 
@@ -96,6 +96,35 @@ periods can be recomputed exactly wherever the tick stream is retained.
 ---
 
 ## 4. From volume to width: the area constraint
+
+### Fitting the bell inside the range
+
+The raw `σ±` of §3 describe the trades, not a drawable bell. In the extreme
+two-trade period they degenerate to `σ⁺ = H−μ` and `σ⁻ = μ−L` exactly, so the
+Gaussian would still be at `e^{−1/2} ≈ 61 %` of its waist width *at the tip* —
+the §6 tip pin would then chop a fat wall into an artificial point, and the
+area formula below would count tail ink that is never drawn. The model is
+therefore fitted to the range before anything else: declare the bell "zero"
+at `TAIL` standard deviations and clamp each side so that point never lands
+beyond its tip,
+
+$$\sigma^{+} \leftarrow \min\!\left(\sigma^{+},\, \frac{H-\mu}{\texttt{TAIL}}\right), \qquad
+  \sigma^{-} \leftarrow \min\!\left(\sigma^{-},\, \frac{\mu-L}{\texttt{TAIL}}\right), \qquad
+  \texttt{TAIL}=3.$$
+
+At `TAIL = 3` the residual width at a tip is `e^{−9/2} ≈ 1.1 %` of the waist,
+so the tip pin trims something invisible and the untruncated area formula
+holds to ~1 %. The clamp is deliberately one-sided: when `TAIL·σ` falls well
+inside the tip (a lone spike wick), the long thin taper is an honest picture
+of the distribution and is left alone.
+
+No separate area compensation is needed. The width formula below has
+`A_px ∝ V/(σ^{+}+σ^{-})`, so shrinking the σ's re-inflates the shared waist by
+exactly the factor that preserves `Area ∝ V` — jointly across both halves,
+which is the only way to compensate without breaking the seam: the halves
+share one amplitude, so per-half rescaling is not available. Everything
+downstream — the width formula, the K-calibration medians, the ±1σ ticks, the
+half-normal wall — consumes the clamped, fitted `σ±`, never the raw ones.
 
 Each wall is a Gaussian half-width centred on the waist, evaluated with the σ
 of its own side:
@@ -214,10 +243,14 @@ far tip. The single remaining wall decays with the far side's σ.
 The wall is sampled, then smoothed, rather than evaluated analytically — exact
 shape is not required, only a convincing bell.
 
-1. **Sample.** Take `N+1` price levels from `H` to `L`. At each level `y`
-   compute the right-hand point `(cx + w(y), y_px(y))`, using the σ of the side
-   `y` lies on. The tip levels are pinned to `w = 0` so the buoy ends in
-   points.
+1. **Sample.** Take `N+1` price levels from `H` to `L`, always including `μ`
+   itself as a level — a uniform grid generally misses the mean, and with
+   asymmetric σ± the smoothing would then interpolate the peak from two
+   off-peak neighbours and bulge the waist off the mean price. At each level
+   `y` compute the right-hand point `(cx + w(y), y_px(y))`, using the σ of the
+   side `y` lies on. The tip levels are pinned to `w = 0` so the buoy ends in
+   points — with the §4 range fit this trims at most `e^{−\texttt{TAIL}^2/2}`
+   of the waist width, a cosmetic snap rather than a structural cut.
 2. **Mirror.** Reflect the interior samples about the centre line `cx` to build
    the left wall, skipping the shared tip points to avoid duplicates.
 3. **Smooth.** Convert the ordered points to a path with a closed Catmull-Rom
@@ -244,7 +277,8 @@ standard deviation a visible place on the body.
 ```
 for each period:
     s        = stats(ticks)              # μ, σ⁺, σ⁻, V, H, L — O(n), side split per §3
-K            = calibrate(all stats)      # once per window: Wₜ/2 · median(σΣ·s_y) / median(V)
+    σ±       = min(σ±, tip± / TAIL)      # fit the bell inside [L, H] (§4)
+K            = calibrate(all stats)      # once per window: Wₜ/2 · median(σΣ·s_y) / median(V), clamped σ
 for each period:
     A        = min(K * V / (s_y·(σ⁺+σ⁻)), A_slot)   # peak half-width, non-overlap cap
     cls      = classify(s, s_y, A)       # normal | half | special
@@ -270,10 +304,11 @@ structure required.
 | --- | --- | --- |
 | `Wₜ` (target waist width) | 14 px | median-volume buoy's full waist width via `K` |
 | `gap` | 2 px | horizontal clearance between neighbours; `A_slot = (slot − gap)/2` |
+| `TAIL` | 3 | σ-multiple treated as the bell's zero; clamps `σ±` to `tip±/TAIL` (§4) |
 | `ASPECT` | 2 | aspect ratio below which a buoy becomes *special* |
 | `SKEW` | 0.15 | waist-to-extreme fraction below which it becomes *half-normal* |
 | `N` (contour samples) | 12 | wall smoothness |
-| `σ` floor | 1e-6 | per side; guards `w(y)` and the width division for empty sides and near-single-price periods |
+| `σ` floor | 1 raw price unit | per side; the fixed-point floor at the instrument's smallest tick — guards `w(y)` and the width division for empty sides and near-single-price periods; the §4 range fit never clamps below it |
 
 All thresholds are screen-space and dataset-relative, so the encoding stays
 legible across instruments, timeframes, and zoom levels.

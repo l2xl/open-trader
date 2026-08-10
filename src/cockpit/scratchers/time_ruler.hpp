@@ -41,7 +41,7 @@ public:
 private:
     void RebuildAll(InstrumentPanel& panel);
 
-    int mReservedHeight = 0;
+    int64_t mReservedHeight = 0;
 
     tvg_ptr<tvg::Scene> mScene;
     tvg_ptr<tvg::Shape> mAxisShape;

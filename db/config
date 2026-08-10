@@ -6,5 +6,5 @@ stream-port=443
 [application]
 default-instrument=BTCUSDT
 default-candle-period=60
-default-candle-width=8
+default-candle-width=12
 

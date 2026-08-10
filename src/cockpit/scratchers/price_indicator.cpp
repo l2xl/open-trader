@@ -30,10 +30,10 @@ constexpr Color kDownFill{170, 0, 0};
 constexpr Color kDownBorder{235, 85, 85};
 constexpr Color kLineColor{150, 150, 150};
 
-int approx_label_px(const std::string& s, float font_size)
+float approx_label_px(const std::string& s, float font_size)
 {
-    const int char_w = std::max(1, static_cast<int>(font_size) * kAvgCharWidthN / kAvgCharWidthD);
-    return static_cast<int>(s.size()) * char_w;
+    const float char_w = std::max(1.0f, font_size * kAvgCharWidthN / kAvgCharWidthD);
+    return static_cast<float>(s.size()) * char_w;
 }
 
 } // namespace
@@ -72,8 +72,8 @@ void PriceIndicator::OnLayout(InstrumentPanel& panel)
     const auto quote = panel.QuoteScratcherInstance();
     if (!quote || !quote->FirstBuoyTimestamp()) return;
 
-    const PixelRect& rect = panel.InnerDataRect();
-    if (rect.width() <= 0 || rect.height() <= 0) return;
+    const Rectangle& rect = panel.InnerDataRect();
+    if (rect.empty()) return;
 
     // close carries the most recent trade price (held forward through empty periods); mean is the
     // active period's VWAP. PriceAutoscale always includes the active candle, so the last price
@@ -89,8 +89,8 @@ void PriceIndicator::OnLayout(InstrumentPanel& panel)
 
     // Dotted horizontal line across the inner rect at the last price.
     const float dash[] = {1.5f * hud_px.x, 2.5f * hud_px.x};
-    mLine->moveTo(static_cast<float>(rect.left), hud_y);
-    mLine->lineTo(static_cast<float>(rect.right), hud_y);
+    mLine->moveTo(static_cast<float>(rect.x), hud_y);
+    mLine->lineTo(static_cast<float>(rect.x_end()), hud_y);
     mLine->strokeFill(kLineColor.r, kLineColor.g, kLineColor.b, 255);
     mLine->strokeWidth(1.0f * hud_px.y);
     mLine->strokeDash(dash, 2);
@@ -103,9 +103,9 @@ void PriceIndicator::OnLayout(InstrumentPanel& panel)
     const Color border_c = up ? kUpBorder : kDownBorder;
 
     const std::string text = currency<uint64_t>(last_pts, pd).to_string();
-    const float box_w    = static_cast<float>(approx_label_px(text, font_size) + kBoxPaddingX * 2);
+    const float box_w    = approx_label_px(text, font_size) + static_cast<float>(kBoxPaddingX * 2);
     const float box_h    = font_size + static_cast<float>(kBoxPaddingY) * 2.0f;
-    const float box_left = static_cast<float>(rect.right) + 1.0f;
+    const float box_left = static_cast<float>(rect.x_end()) + 1.0f;
     const float radius   = kBoxCornerRadius * hud_px.x;
 
     mBox->appendRect(box_left, hud_y - 0.5f * box_h, box_w, box_h, radius, radius);

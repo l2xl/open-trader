@@ -128,7 +128,6 @@ set(core_SOURCES
         src/datahub/data_subscription.hpp
         src/datahub/data_feed.hpp
         src/datahub/data_condition.hpp
-        src/cockpit/pixel_rect.hpp
         src/cockpit/tvg_ptr.hpp
         src/cockpit/scratcher.hpp
         src/cockpit/scratchers/time_ruler.hpp
@@ -256,6 +255,8 @@ if(NOT ANDROID)
     # Add each test file as a separate executable
     add_unit_test(test_currency test/engine/test_currency.cpp)
     add_unit_test(test_buoy_candle test/engine/test_buoy_candle.cpp)
+    add_unit_test(test_buoy_deviation test/engine/test_buoy_deviation.cpp)
+    add_unit_test(test_buoy_geometry test/engine/test_buoy_geometry.cpp)
     add_unit_test(test_dao test/datahub/test_dao.cpp)
     add_unit_test(test_http_query test/connect/test_http_query.cpp)
     add_unit_test(test_websocket test/connect/test_websocket.cpp)

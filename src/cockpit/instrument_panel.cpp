@@ -217,14 +217,14 @@ float InstrumentPanel::HudXOfTime(int64_t time_ms) const
     // the HUD-pixel projection that the scratchers consume is re-derived precisely.
     const tvg::Matrix m = mLogicalScene->transform();
     const int64_t dt_ms = time_ms - ViewLeftTimeMs();
-    return static_cast<float>(mInnerDataRect.left) + static_cast<float>(static_cast<double>(m.e11) * static_cast<double>(dt_ms));
+    return static_cast<float>(mInnerDataRect.x) + static_cast<float>(static_cast<double>(m.e11) * static_cast<double>(dt_ms));
 }
 
 int64_t InstrumentPanel::TimeOfHudX(float hud_x) const
 {
     const tvg::Matrix m = mLogicalScene->transform();
     if (m.e11 == 0.0f) return ViewLeftTimeMs();
-    const double dx = static_cast<double>(hud_x) - static_cast<double>(mInnerDataRect.left);
+    const double dx = static_cast<double>(hud_x) - static_cast<double>(mInnerDataRect.x);
     return ViewLeftTimeMs() + static_cast<int64_t>(std::llround(dx / static_cast<double>(m.e11)));
 }
 
@@ -283,7 +283,7 @@ int64_t InstrumentPanel::ViewLeftTimeMs() const
     // left of the right edge and skewing the visible-buoy span PriceAutoscale scans.
     const auto   now_ms        = duration_cast<milliseconds>(std::chrono::system_clock::now().time_since_epoch());
     const int    right_pad     = std::max(0, mRightPadPx);
-    const int    now_anchor_px = std::max(0, mInnerDataRect.width() - right_pad);
+    const int    now_anchor_px = std::max(0, static_cast<int>(mInnerDataRect.w) - right_pad);
     const auto   time_at_left  = now_ms - milliseconds{static_cast<int64_t>(static_cast<double>(now_anchor_px) * ms_per_px)};
     return time_at_left.count();
 }
@@ -300,14 +300,14 @@ void InstrumentPanel::EnsureViewAnchor()
     // reaches a full candle into the FUTURE (right of "now"); a smaller inset pushes its right half
     // behind the price ruler. The 5%-of-width term adds breathing room at the live edge on wider
     // panels, where it dominates the candle-width floor.
-    const int inner_w = std::max(0, mInnerDataRect.width());
+    const int inner_w = static_cast<int>(mInnerDataRect.w);
     mRightPadPx = std::max<int>(static_cast<int>(mCandleWidthPixels), inner_w * 5 / 100);
 }
 
 void InstrumentPanel::ApplyOuterSceneTransforms()
 {
-    const float w = static_cast<float>(std::max(0, mCanvasWidth));
-    const float h = static_cast<float>(std::max(0, mCanvasHeight));
+    const float w = static_cast<float>(std::max(0u, mCanvasWidth));
+    const float h = static_cast<float>(std::max(0u, mCanvasHeight));
 
     tvg_ptr<tvg::Shape> hud_clip{tvg::Shape::gen()};
     hud_clip->appendRect(0.0f, 0.0f, w, h);
@@ -322,9 +322,9 @@ void InstrumentPanel::ApplyOuterSceneTransforms()
 
 void InstrumentPanel::ApplyLogicalSceneTransform()
 {
-    const float outer_h = static_cast<float>(std::max(0, mCanvasHeight));
-    const float inner_left = static_cast<float>(mInnerDataRect.left);
-    const float inner_bottom = static_cast<float>(mInnerDataRect.bottom);
+    const float outer_h = static_cast<float>(std::max(0u, mCanvasHeight));
+    const float inner_left = static_cast<float>(mInnerDataRect.x);
+    const float inner_bottom = static_cast<float>(mInnerDataRect.y_end());
 
     // LogicalScene input X is (t - floor) in float ms; output X = e11*X + e13.
     // For pixel-at-view-left to land at inner_left, e13 absorbs the (view_left - floor)
@@ -344,18 +344,16 @@ void InstrumentPanel::ApplyLogicalSceneTransform()
     // not LogicalScene's local space — see tvgPaint.cpp Paint::Impl::update which calls
     // pclip->update(renderer, pm, ...) with the parent matrix, NOT pm * tr.m. Convert the
     // canvas-pixel inner rect to HUD-Y-up: bottom-left at (left, canvas_h - bottom).
-    const int w = std::max(0, mInnerDataRect.width());
-    const int h = std::max(0, mInnerDataRect.height());
-    if (w > 0 && h > 0) {
+    if (!mInnerDataRect.empty()) {
         tvg_ptr<tvg::Shape> logical_clip{tvg::Shape::gen()};
-        logical_clip->appendRect(static_cast<float>(mInnerDataRect.left),
-                                 outer_h - static_cast<float>(mInnerDataRect.bottom),
-                                 static_cast<float>(w), static_cast<float>(h));
+        logical_clip->appendRect(static_cast<float>(mInnerDataRect.x),
+                                 outer_h - static_cast<float>(mInnerDataRect.y_end()),
+                                 static_cast<float>(mInnerDataRect.w), static_cast<float>(mInnerDataRect.h));
         mLogicalScene->clip(logical_clip.get());
     }
 }
 
-void InstrumentPanel::AllocatePixelBuffer(int width, int height)
+void InstrumentPanel::AllocatePixelBuffer(uint32_t width, uint32_t height)
 {
     // Runs on the UI thread (Cycfi size-allocate, or directly from tests). Take
     // mDataMutex blockingly to serialise against any in-flight worker Update() and
@@ -367,11 +365,7 @@ void InstrumentPanel::AllocatePixelBuffer(int width, int height)
     // move, so the canvas never holds a pointer into deallocated memory. After the
     // move, mPixels owns the storage the canvas now points at.
     std::vector<uint32_t> new_pixels(static_cast<size_t>(width) * static_cast<size_t>(height), 0);
-    mCanvas->target(new_pixels.data(),
-                    static_cast<uint32_t>(width),   // tight ARGB8888 stride in pixels
-                    static_cast<uint32_t>(width),
-                    static_cast<uint32_t>(height),
-                    tvg::ColorSpace::ARGB8888);
+    mCanvas->target(new_pixels.data(), width, width, height, tvg::ColorSpace::ARGB8888);
     mPixels = std::move(new_pixels);
 
     mCanvasWidth = width;
@@ -412,7 +406,7 @@ void InstrumentPanel::DoUpdate()
     // strip from the inner rect, so the rect must be reseeded to the full canvas at
     // every DoUpdate — otherwise repeated heartbeat ticks keep shrinking it and the
     // layout collapses toward the upper-left corner.
-    mInnerDataRect = PixelRect{0, 0, mCanvasWidth, mCanvasHeight};
+    mInnerDataRect = Rectangle{0, 0, mCanvasWidth, mCanvasHeight};
 
     ApplyOuterSceneTransforms();
 
@@ -438,7 +432,7 @@ void InstrumentPanel::DoUpdate()
     mLastUpdateNs.store(MonotonicNs(), std::memory_order_release);
 }
 
-PixelRect InstrumentPanel::Render()
+Rectangle InstrumentPanel::Render()
 {
     // Whole-Render lock. ThorVG's draw()/sync() are not guaranteed to read solely from
     // the command buffer built by update() — empirically a worker mutating paints between
@@ -460,10 +454,10 @@ PixelRect InstrumentPanel::Render()
 
             mCanvas->draw(true);
             mCanvas->sync();
-            return PixelRect{0, 0, mCanvasWidth, mCanvasHeight};
+            return Rectangle{0, 0, mCanvasWidth, mCanvasHeight};
         }
 
-        if (mDirtyPaints.empty()) return PixelRect{};
+        if (mDirtyPaints.empty()) return Rectangle{};
 
             // Damage union from captured pre-bounds. Inflate-to-pixel-grid keeps every
             // dirtied sub-pixel covered: floor() the upper-left, ceil() the lower-right,
@@ -482,14 +476,14 @@ PixelRect InstrumentPanel::Render()
 
             const int x = std::max(0, static_cast<int>(std::floor(min_x)));
             const int y = std::max(0, static_cast<int>(std::floor(min_y)));
-            const int r = std::min(mCanvasWidth,  static_cast<int>(std::ceil(max_x)));
-            const int b = std::min(mCanvasHeight, static_cast<int>(std::ceil(max_y)));
+            const int r = std::min(static_cast<int>(mCanvasWidth),  static_cast<int>(std::ceil(max_x)));
+            const int b = std::min(static_cast<int>(mCanvasHeight), static_cast<int>(std::ceil(max_y)));
 
-            PixelRect dmg{x, y, r, b};
     mDirtyPaints.clear();
-    if (dmg.empty()) return PixelRect{};
+    if (r <= x || b <= y) return Rectangle{};
 
-    mCanvas->viewport(dmg.left, dmg.top, dmg.width(), dmg.height());
+    const Rectangle dmg{x, y, r - x, b - y};
+    mCanvas->viewport(static_cast<int32_t>(dmg.x), static_cast<int32_t>(dmg.y), static_cast<int32_t>(dmg.w), static_cast<int32_t>(dmg.h));
     mCanvas->update();
     mCanvas->draw(false);
     mCanvas->sync();
