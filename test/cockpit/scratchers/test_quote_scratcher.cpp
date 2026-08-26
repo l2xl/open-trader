@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <fstream>
 #include <memory>
 #include <string>
 #include <vector>
@@ -262,50 +263,58 @@ struct EmissionHarness {
 // (min 5, max 9, mean 6, volume 4, fitted sigmas 1/1). Calibration medians over the
 // two: volume 4, sigma sum 2 — so each filled buoy's width ratio is exactly 1 and the
 // waist half-width is Wt/2 = 7 px = 350 scene ms at px.x = 50.
-TEST_CASE("Emitted bell body carries the range spine, pins tips and spans the calibrated waist", "[quote_scratcher][emission]")
+TEST_CASE("Emitted half-bells carry per-half spines, pin tips and span the calibrated waist", "[quote_scratcher][emission]")
 {
     using Catch::Matchers::WithinAbs;
     EmissionHarness h{{ {2, 4, 2}, {6, 8, 2}, {12, 5, 3}, {16, 9, 1} }, 16};
 
-    // Closed body (green: no filled predecessor, buoy compares to itself): the 1 px range
-    // spine rect (MoveTo + 3 LineTo + Close) followed by one closed Catmull-Rom ring of
-    // 2*13-2 = 24 samples (MoveTo + 24 CubicTo + Close).
+    // Closed body (green: no filled predecessor, buoy compares to itself). Per half:
+    // the 1 px spine rect (MoveTo + 3 LineTo + Close) then ONE closed contour — the
+    // waist edge closing two 12-segment Catmull-Rom wall chains (MoveTo + 24 CubicTo +
+    // Close). Two halves -> 62 commands, all in the green pool.
     const PathData body = ReadPath(h.scratcher->ClosedGreen());
-    REQUIRE(body.cmds.size() == 5 + 26);
+    REQUIRE(body.cmds.size() == 2 * (5 + 26));
     CHECK(body.cmds.front() == tvg::PathCommand::MoveTo);
-    CHECK(body.cmds[5] == tvg::PathCommand::MoveTo);
-    CHECK(body.cmds.back() == tvg::PathCommand::Close);
-    CHECK(std::count(body.cmds.begin(), body.cmds.end(), tvg::PathCommand::CubicTo) == 24);
-    REQUIRE(body.pts.size() == 4 + 1 + 24 * 3);
+    CHECK(std::count(body.cmds.begin(), body.cmds.end(), tvg::PathCommand::CubicTo) == 48);
+    CHECK(std::count(body.cmds.begin(), body.cmds.end(), tvg::PathCommand::Close) == 4);
+    REQUIRE(body.pts.size() == 2 * (4 + 1 + 24 * 3));
     CHECK(ReadPath(h.scratcher->ClosedRed()).cmds.empty());
 
-    // Spine rect: 1 px wide (50 ms at px.x = 50) around the slot centre (slot 0..10 ms
-    // -> mid 5), spanning exactly max..min.
+    // Upper-half spine rect: 1 px wide (50 ms at px.x = 50) around the slot centre
+    // (slot 0..10 ms -> mid 5), spanning exactly mean..max.
     for (std::size_t i = 0; i < 4; ++i) {
         CHECK_THAT(std::abs(body.pts[i].x - 5.0f), WithinAbs(25.0, 0.01));
-        CHECK_THAT(body.pts[i].y, WithinAbs(i < 2 ? 8.0 : 4.0, 1e-4));
+        CHECK_THAT(body.pts[i].y, WithinAbs(i == 0 || i == 3 ? 6.0 : 8.0, 1e-4));
     }
 
-    // First contour sample is the pinned high tip at the slot centre.
-    CHECK_THAT(body.pts[4].x, WithinAbs(5.0, 1e-4));
-    CHECK_THAT(body.pts[4].y, WithinAbs(8.0, 1e-4));
-
-    // On-curve extents (the MoveTo point and each CubicTo end — Bezier control points
-    // legitimately overshoot a rounded peak): the vertical span is exactly min..max, the
-    // horizontal span is the calibrated waist half-width (7 px * 50 ms/px) around the centre.
+    // Upper contour starts at the right waist corner — the calibrated half-width
+    // (7 px * 50 ms/px) right of the centre at the mean level — and its on-curve points
+    // (MoveTo + CubicTo ends; control points legitimately overshoot) span exactly
+    // mean..max vertically and the +-waist horizontally, with the tip pinned on-centre.
+    const float waist_ms = 350.f;
+    CHECK_THAT(body.pts[4].x, WithinAbs(5.0 + waist_ms, 0.1));
+    CHECK_THAT(body.pts[4].y, WithinAbs(6.0, 1e-4));
     std::vector<tvg::Point> on_curve{body.pts[4]};
-    for (std::size_t i = 5; i + 2 < body.pts.size(); i += 3)
+    for (std::size_t i = 5; i + 2 < 4 + 1 + 24 * 3; i += 3)
         on_curve.push_back(body.pts[i + 2]);
     REQUIRE(on_curve.size() == 25);
     float min_x = 1e9f, max_x = -1e9f, min_y = 1e9f, max_y = -1e9f;
+    bool tip_on_curve = false;
     for (const auto& p : on_curve) {
         min_x = std::min(min_x, p.x); max_x = std::max(max_x, p.x);
         min_y = std::min(min_y, p.y); max_y = std::max(max_y, p.y);
+        if (std::abs(p.y - 8.f) < 1e-4f && std::abs(p.x - 5.f) < 1e-4f) tip_on_curve = true;
     }
-    CHECK_THAT(min_y, WithinAbs(4.0, 1e-4));
+    CHECK(tip_on_curve);
+    CHECK_THAT(min_y, WithinAbs(6.0, 1e-4));
     CHECK_THAT(max_y, WithinAbs(8.0, 1e-4));
-    CHECK_THAT(max_x, WithinAbs(5.0 + 350.0, 0.1));
-    CHECK_THAT(min_x, WithinAbs(5.0 - 350.0, 0.1));
+    CHECK_THAT(max_x, WithinAbs(5.0 + waist_ms, 0.1));
+    CHECK_THAT(min_x, WithinAbs(5.0 - waist_ms, 0.1));
+
+    // Lower half mirrors below the waist: its spine spans mean..min.
+    const std::size_t lower = 4 + 1 + 24 * 3;
+    CHECK_THAT(body.pts[lower].y, WithinAbs(6.0, 1e-4));
+    CHECK_THAT(body.pts[lower + 1].y, WithinAbs(4.0, 1e-4));
 
     // Waist diamond on top (green), lozenge pool empty, no gray ink (no empty buoy, and
     // the previous close sits inside every following range).
@@ -313,8 +322,8 @@ TEST_CASE("Emitted bell body carries the range spine, pins tips and spans the ca
     CHECK(ReadPath(h.scratcher->ClosedSpecial()).cmds.empty());
     CHECK(ReadPath(h.scratcher->ClosedGray()).cmds.empty());
 
-    // The active buoy (same shape family) emits its own spine + bell into the active pool.
-    CHECK(ReadPath(h.scratcher->ActiveGreen()).cmds.size() == 5 + 26);
+    // The active buoy (same shape family) emits its own half-bells into the active pool.
+    CHECK(ReadPath(h.scratcher->ActiveGreen()).cmds.size() == 2 * (5 + 26));
 }
 
 TEST_CASE("Empty period renders as the gray dash at the carried close", "[quote_scratcher][emission]")
@@ -336,7 +345,24 @@ TEST_CASE("Empty period renders as the gray dash at the carried close", "[quote_
     CHECK_THAT(min_x, WithinAbs(10.0, 1e-4));
     CHECK_THAT(max_x, WithinAbs(20.0, 1e-4));
 
-    CHECK(ReadPath(h.scratcher->ClosedGreen()).cmds.size() == 5 + 26);
+    CHECK(ReadPath(h.scratcher->ClosedGreen()).cmds.size() == 2 * (5 + 26));
+}
+
+TEST_CASE("Halves color independently by their own extreme's growth", "[quote_scratcher][emission]")
+{
+    // Slot 0: range [4, 8]. Slot 1: max 9 grows (upper half green) while min 3 falls
+    // (lower half red) — the per-half channels must split one buoy across both pools.
+    EmissionHarness h{{ {2, 4, 2}, {6, 8, 2}, {12, 9, 2}, {14, 3, 2}, {22, 6, 1} }, 22};
+
+    const PathData green = ReadPath(h.scratcher->ClosedGreen());
+    const PathData red = ReadPath(h.scratcher->ClosedRed());
+    CHECK(green.cmds.size() == 3 * (5 + 26));  // both halves of slot 0 + slot 1's upper
+    CHECK(red.cmds.size() == 1 * (5 + 26));    // slot 1's lower half only
+
+    // The red pool's spine spans slot 1's mean (6) down to its min (3).
+    using Catch::Matchers::WithinAbs;
+    CHECK_THAT(red.pts[0].y, WithinAbs(6.0, 1e-4));
+    CHECK_THAT(red.pts[1].y, WithinAbs(3.0, 1e-4));
 }
 
 TEST_CASE("Single-price periods stamp the bright lozenge instead of a bell", "[quote_scratcher][emission][BUOY_GEOMETRY-010]")
@@ -353,6 +379,57 @@ TEST_CASE("Single-price periods stamp the bright lozenge instead of a bell", "[q
     // previous close (5), so the gray move connector bridges them in the active pool.
     CHECK(ReadPath(h.scratcher->ActiveSpecial()).pts.size() == 4);
     CHECK(ReadPath(h.scratcher->ActiveGray()).cmds.size() == 5);
+}
+
+// Raster regression: renders crafted asymmetric buoys through the real panel and checks
+// actual pixel coverage — fill-rule artifacts (an opposite-winding spine carving a centre
+// slit through the bell) are invisible to path read-back. Also dumps the canvas to
+// /tmp/buoy_raster.ppm for visual inspection.
+TEST_CASE("Buoy bodies rasterize solid across the range spine", "[quote_scratcher][raster]")
+{
+    // Render-scaled geometry: 1 s buoys matching the panel's 1 s candle period so a slot
+    // is the full 60 px candle width; price floor 85 with 10 px/pt so 85..115 spans the
+    // 300 px canvas. Slot 0: heavy volume at 100, lone spike to 110 — long thin upper
+    // taper, sharp lower pinch. Slot 1: mirrored, spike down to 90. Slot 2 (active):
+    // milder asymmetry.
+    HeadlessPanel panel{PanelType::Empty, seconds(1), 60};
+    panel.SetViewLeftTimeMs(0);
+    panel.SetSceneFloor(SceneFloor{0, 85});
+    const tvg::Matrix m = panel.LogicalScene().transform();
+    panel.LogicalScene().transform(tvg::Matrix{m.e11, 0.f, m.e13, 0.f, 10.f, m.e23, 0.f, 0.f, 1.f});
+    auto scratcher = std::make_shared<EmissionScratcher>(milliseconds(1000), 2500);
+    panel.AddScratcher(scratcher);
+    scratcher->IngestTradesAt(ToTrades({ {50, 100, 10}, {100, 95, 10}, {150, 105, 10}, {200, 90, 5}, {250, 110, 5}, {300, 100, 10},
+                                         {1200, 100, 30}, {1250, 99, 30}, {1300, 101, 20}, {1400, 112, 2}, {1500, 100, 30},
+                                         {2200, 100, 30}, {2300, 105, 2}, {2500, 100, 30} }), 2500);
+    panel.AllocatePixelBuffer(400, 300);
+    panel.Render();
+
+    const uint32_t* pixels = panel.PixelBufferData();
+    REQUIRE(pixels != nullptr);
+    std::ofstream out("/tmp/buoy_raster.ppm", std::ios::binary);
+    out << "P6\n400 300\n255\n";
+    for (std::size_t i = 0; i < 400u * 300u; ++i) {
+        const uint32_t p = pixels[i];
+        out.put(static_cast<char>((p >> 16) & 0xff));
+        out.put(static_cast<char>((p >> 8) & 0xff));
+        out.put(static_cast<char>(p & 0xff));
+    }
+
+    // Slot 1 is a waist-low HALF-NORMAL candle (running-mean truncation lands the mean
+    // on min), whose contour winds opposite to a normal bell's — the regression this
+    // guards: an opposite-winding spine used to carve the interior to half coverage
+    // (slit) and annihilate the thin taper entirely. The interior of every body row
+    // must rasterize at the full body green (0, 62, 0).
+    // The notation is fill-only: the body contour must carry no stroke — zero width,
+    // no stroke paint — so the bounded area alone shows the red/green fill.
+    CHECK(scratcher->ClosedGreen().strokeWidth() == 0.f);
+    CHECK(scratcher->ClosedRed().strokeWidth() == 0.f);
+
+    const auto green_at = [&](std::size_t x, std::size_t y) { return (pixels[y * 400 + x] >> 8) & 0xff; };
+    for (std::size_t x = 86; x <= 93; ++x) CHECK(green_at(x, 130) == 62);  // wide half-normal interior incl. spine columns
+    for (std::size_t x : {89u, 90u}) CHECK(green_at(x, 110) == 62);        // thin taper: spine + wall union, not cancellation
+    for (std::size_t x : {29u, 30u}) CHECK(green_at(x, 140) == 62);        // normal bell centre above the diamond
 }
 
 TEST_CASE("Catmull-Rom control points offset segment ends by a sixth of the neighbour vector", "[BUOY_GEOMETRY-008]")

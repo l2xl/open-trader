@@ -11,6 +11,7 @@
 #include <cstdint>
 #include <limits>
 #include <optional>
+#include <span>
 #include <vector>
 
 #include "instrument_panel.hpp"
@@ -84,11 +85,14 @@ struct BuoyShapes
 };
 
 // Emit one buoy into its Shape pools per BUOY_CANDLE.md. Filled geometry only:
-//   * the BODY is a 1 px vertical spine spanning min..max (keeps the range visible
-//     where the 3σ taper thins below a pixel) followed by the Catmull-Rom-smoothed
-//     two-piece Gaussian contour of the fitted candle, waist half-width =
-//     (Wt/2)·WidthRatio px clamped to the slot;
-//   * the waist diamond is candle_width px wide × (candle_width / 2) px tall;
+//   * the BODY is two independently coloured half-bells, each ONE closed contour
+//     (flat waist edge at ±A + that side's Gaussian wall, Catmull-Rom smoothed) plus
+//     a 1 px waist-to-extreme spine keeping the range visible where the 3σ taper
+//     thins below a pixel; waist half-width A = (Wt/2)·WidthRatio px clamped to the
+//     slot; the upper half colours by curr.max vs prev.max, the lower half by
+//     curr.min vs prev.min;
+//   * the waist diamond is candle_width px wide × (candle_width / 2) px tall,
+//     coloured by curr.mean vs prev.mean;
 //   * SPECIAL periods (single-price, or failing the screen-space ASPECT test) draw
 //     only the fixed-size bright lozenge;
 //   * the empty-buoy gray dash is candle_width px wide × 0.5 px tall.
@@ -178,38 +182,56 @@ void AppendBuoy(BuoyShapes shapes,
         return;
     }
 
-    // Range spine first: a 1 px-wide vertical rect from min to max in the body color,
-    // under the bell, so the extremes stay readable where the 3σ taper thins the wall
-    // below a pixel. Full-pixel width for the same anti-aliasing steadiness as the
-    // move connector. Wound in the bell's orientation (top edge left→right, then down
-    // the right side) so the shared nonzero fill rule never carves a hole where the
-    // sub-paths overlap.
-    const float min_y = SubToFloat(curr.min.raw_at(price_decimals), floor.price_points);
-    const float max_y = SubToFloat(curr.max.raw_at(price_decimals), floor.price_points);
+    // Body: each half is ONE closed filled sub-path — the straight waist edge at ±A plus
+    // the Gaussian wall of that side, smoothed as two per-wall Catmull-Rom chains meeting
+    // at the tip so the tip stays a sharp corner. A per-half range spine (1 px rect from
+    // waist to that half's extreme) is emitted first in the SAME traversal order — start
+    // at the right of the waist, out to the extreme, back on the left — so both sub-paths
+    // always share one winding and the nonzero fill rule unions them; composing a buoy
+    // from independent halves is what makes cross-winding cancellation (the carved centre
+    // slit of the retired whole-body path) structurally impossible. Colors per the
+    // notation's channels: the upper half by curr.max vs prev.max, the lower half by
+    // curr.min vs prev.min. A zero-height half (waist ON the extreme) is skipped — the
+    // other half then reads as the flat-waisted half-bell of BUOY_CANDLE.md section 5.
+    const int64_t mean_raw = static_cast<int64_t>(curr.mean.raw_at(price_decimals));
+    const float mean_level_y = SubToFloat(curr.mean.raw_at(price_decimals), floor.price_points);
     const float spine_half_w = 0.5f * px.x;
-    auto& body_shape = (curr.mean >= prev.mean) ? shapes.body_green : shapes.body_red;
-    body_shape.moveTo(mid_x - spine_half_w, max_y);
-    body_shape.lineTo(mid_x + spine_half_w, max_y);
-    body_shape.lineTo(mid_x + spine_half_w, min_y);
-    body_shape.lineTo(mid_x - spine_half_w, min_y);
-    body_shape.close();
+    const auto append_half = [&](bool upper) {
+        const auto& extreme = upper ? curr.max : curr.min;
+        const int64_t extreme_raw = static_cast<int64_t>(extreme.raw_at(price_decimals));
+        if (extreme_raw == mean_raw) return;
+        const bool grown = upper ? !(curr.max < prev.max) : !(curr.min < prev.min);
+        tvg::Shape& shape = grown ? shapes.body_green : shapes.body_red;
+        const float extreme_y = SubToFloat(extreme.raw_at(price_decimals), floor.price_points);
 
-    // Bell body: sample the fitted contour on the price grid, project to scene
-    // coordinates (normalised wall width → a_px canvas pixels via px.x), smooth with
-    // the Catmull-Rom spline. A half-normal contour arrives open; its close() edge is
-    // the straight flat waist with sharp corners.
-    const auto contour = fitted.SampleContour(kContourLevels);
-    std::vector<BuoySplinePoint> outline;
-    outline.reserve(contour.points.size());
-    for (const auto& sample : contour.points)
-        outline.push_back({mid_x + sample.width * a_px * px.x,
-                           SubToFloat(sample.price.raw_at(price_decimals), floor.price_points)});
-    body_shape.moveTo(outline.front().x, outline.front().y);
-    for (const auto& segment : CatmullRomSpline(outline, contour.closed))
-        body_shape.cubicTo(segment.control1.x, segment.control1.y,
-                           segment.control2.x, segment.control2.y,
-                           segment.end.x, segment.end.y);
-    body_shape.close();
+        shape.moveTo(mid_x + spine_half_w, mean_level_y);
+        shape.lineTo(mid_x + spine_half_w, extreme_y);
+        shape.lineTo(mid_x - spine_half_w, extreme_y);
+        shape.lineTo(mid_x - spine_half_w, mean_level_y);
+        shape.close();
+
+        std::vector<BuoySplinePoint> outline;
+        outline.reserve(2 * kContourLevels - 1);
+        for (std::size_t k = 0; k < kContourLevels; ++k) {
+            const int64_t level_raw = mean_raw + (extreme_raw - mean_raw) * static_cast<int64_t>(k) / static_cast<int64_t>(kContourLevels - 1);
+            const float width = (k + 1 == kContourLevels) ? 0.f
+                : fitted.WallWidth(BuoyCandleQuotes::price_t(static_cast<uint64_t>(level_raw), price_decimals));
+            outline.push_back({mid_x + width * a_px * px.x, SubToFloat(static_cast<uint64_t>(level_raw), floor.price_points)});
+        }
+        for (std::size_t k = kContourLevels - 1; k-- > 0;)
+            outline.push_back({2.f * mid_x - outline[k].x, outline[k].y});
+
+        const std::span<const BuoySplinePoint> right_wall(outline.data(), kContourLevels);
+        const std::span<const BuoySplinePoint> left_wall(outline.data() + kContourLevels - 1, kContourLevels);
+        shape.moveTo(outline.front().x, outline.front().y);
+        for (const auto& segment : CatmullRomSpline(right_wall, false))
+            shape.cubicTo(segment.control1.x, segment.control1.y, segment.control2.x, segment.control2.y, segment.end.x, segment.end.y);
+        for (const auto& segment : CatmullRomSpline(left_wall, false))
+            shape.cubicTo(segment.control1.x, segment.control1.y, segment.control2.x, segment.control2.y, segment.end.x, segment.end.y);
+        shape.close();
+    };
+    append_half(true);
+    append_half(false);
 
     // Waist diamond on top of the body. Vertices: left tip at (left, mean), top at
     // (mid, mean+halfH), right tip at (right, mean), bottom at (mid, mean-halfH) —

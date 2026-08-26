@@ -56,17 +56,19 @@ inline std::vector<BuoyBezierSegment> CatmullRomSpline(std::span<const BuoySplin
 // QuoteScratcher maintains a persistent ThorVG sub-scene under panel.LogicalScene().
 // Each buoy renders per BUOY_CANDLE.md as the volume-weighted bell notation:
 //
-//  * The BODY is the two-piece Gaussian contour sampled by the fitted candle
-//    (BuoyCandleData::FitRange + SampleContour) and smoothed with the Catmull-Rom
-//    spline; its waist half-width is the target waist width scaled by the
+//  * The BODY is two half-bells, each emitted as ONE closed filled contour — the
+//    straight waist edge at ±A plus that side's Gaussian wall (BuoyCandleData::
+//    FitRange + WallWidth samples, Catmull-Rom smoothed) — with a per-half 1 px
+//    waist-to-extreme spine keeping the range visible where the 3σ taper thins
+//    below a pixel. Waist half-width A is the target waist width scaled by the
 //    dimensionless BuoyCandleQuotes::WidthRatio against the visible-window
-//    calibration, clamped to the slot so neighbours never overlap. Color follows
-//    curr.mean vs the previous FILLED buoy's mean. A half-normal candle emits the
-//    open waist-to-far-tip path whose straight close() edge is the flat waist.
-//    A 1 px vertical SPINE spanning min..max is emitted into the same shape first,
-//    so the range stays visible where the 3σ taper thins below a pixel.
+//    calibration, clamped to the slot so neighbours never overlap. Colors follow
+//    the notation's per-half channels against the previous FILLED buoy: upper half
+//    by curr.max vs prev.max, lower half by curr.min vs prev.min. A zero-height
+//    half is skipped, leaving the flat-waisted half-bell of the skewed regime.
 //  * The WAIST DIAMOND on top — candle_width px wide × candle_width/2 px tall
-//    (pixel-fixed via InstrumentPanel::PixelSizeOf), color as the body.
+//    (pixel-fixed via InstrumentPanel::PixelSizeOf), colored by curr.mean vs
+//    prev.mean.
 //  * SPECIAL periods — single-price (H == L) or failing the screen-space ASPECT
 //    test (even the longer half shorter than two body widths) — draw only the
 //    fixed-size bright lozenge; the bell cannot be read at that aspect.
