@@ -1,0 +1,11 @@
+header: Requirements tree editor UI
+description: |
+  The requirements toolkit shall provide a locally served browser editor for
+  the tree under req/ -- rendering the DAG with rollup statuses and review
+  stamp freshness, writing item edits through the canonical writer with parent
+  and binding validation, scaffolding and deleting item files, and driving
+  review and clear through the CLI as streamed single-flight subprocess runs --
+  refusing requests that lack the session token or address a non-loopback host.
+parents: [INFRA-041]
+order: 70
+tests: {tree: ~, auth: ~, edit: ~, edit_guard: ~, scaffold: ~, review_stream: ~, single_flight: ~}

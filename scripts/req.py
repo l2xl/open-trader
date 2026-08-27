@@ -218,6 +218,11 @@ def cmd_report(args):
     return 0
 
 
+def cmd_ui(args):
+    import req_ui
+    return req_ui.serve(port=args.port, coverage=args.coverage, build_dir=args.build_dir, open_browser=not args.no_browser)
+
+
 def main():
     parser = argparse.ArgumentParser(prog="req", description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
@@ -248,6 +253,13 @@ def main():
     p.add_argument("--out", default=str(ROOT / "req_status.json"))
     p.add_argument("--html", help="output directory for the static site")
     p.set_defaults(func=cmd_report)
+
+    p = sub.add_parser("ui", help="serve the local tree editor in the browser (loopback + session token)")
+    p.add_argument("--port", type=int, default=8712, help="listen port on 127.0.0.1 (default 8712, 0 = ephemeral)")
+    p.add_argument("--coverage", action="append", default=[], help="req_coverage.jsonl file(s) to color statuses; repeatable (default: well-known local files)")
+    p.add_argument("--build-dir", default="cmake-build-debug-clang", help="build tree with the Catch2 test binaries for review runs")
+    p.add_argument("--no-browser", action="store_true", help="do not open the browser automatically")
+    p.set_defaults(func=cmd_ui)
 
     args = parser.parse_args()
     return args.func(args)

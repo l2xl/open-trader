@@ -77,6 +77,13 @@ file named by `REQ_COVERAGE_FILE` (no emission when unset).
   `ci/gate.sh` (bootstraps `.venv-req`: pyyaml, pytest, jinja2; `GATE_STRICT=1` adds `--strict`).
 - `req report [--coverage FILE …] [--out req_status.json] [--html <dir>]` — recursive status
   rollup + static HTML site.
+- `req ui [--port N] [--coverage FILE …] [--build-dir DIR] [--no-browser]` — serve the local tree
+  editor (`scripts/req_ui.py` + `req_ui.html`, stdlib-only) at `http://127.0.0.1:8712`: browse the
+  DAG with live rollup statuses and stamp freshness, edit item fields through the canonical writer,
+  scaffold/delete items, and run review/clear with output streamed into the page. Buttons shell out
+  to the `req.py review`/`clear` code path, so stamping semantics (user-only, test-gated) are
+  identical to the terminal. Loopback-bound; every request needs the per-session token from the
+  printed URL (Jupyter-style defense for localhost tools that execute commands).
 
 # Status Rollup
 
