@@ -2,8 +2,18 @@ header: Volume colour dimension
 description: |
   Every buoy's fill shall carry a colour component sampled from its traded
   volume — a redundant volume channel for all buoys and the sole remaining
-  volume signal for buoys width-capped by the non-overlap clamp. Colour
-  channel choice, ramp scale and accessibility follow the open research in
-  src/engine/BUOY_CANDLE.md §9.
+  volume signal for buoys width-capped by the non-overlap clamp. On the dark
+  theme the ramp shall run bright and chromatic for high volume and dark and
+  desaturated for low volume, and shall invert if a light theme is added:
+  on a dark background the opaque-is-more and saturated-is-more biases override
+  the dark-is-more bias, and the direction chosen keeps the colour channel
+  redundant with the area channel instead of opposed to it. The ramp shall be
+  built on a perceptually uniform lightness/chroma progression at fixed
+  per-direction hue, driven by the buoy's rank within the visible window's
+  volume distribution rather than by raw volume, and shall keep a constant
+  lightness offset between the bullish and bearish ramps so a red-green
+  dichromat retains a direction cue. Ramp construction, sampled values, the
+  colour-vision-safe hue alternative and the remaining open points follow
+  src/engine/BUOY_CANDLE.md §10.
 parents: [BUOY_RENDER]
 order: 90
