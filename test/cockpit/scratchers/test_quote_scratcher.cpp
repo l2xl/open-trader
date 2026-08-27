@@ -208,14 +208,8 @@ struct EmissionScratcher : QuoteScratcher {
     using QuoteScratcher::IngestTradesAt;
     uint64_t NowMs() const override { return mPinnedNow; }
 
-    tvg::Shape& ClosedGray() const    { return *mClosedGrayShape; }
-    tvg::Shape& ClosedGreen() const   { return *mClosedBodyGreenShape; }
-    tvg::Shape& ClosedRed() const     { return *mClosedBodyRedShape; }
-    tvg::Shape& ClosedDiamondGreen() const { return *mClosedDiamondGreenShape; }
-    tvg::Shape& ClosedSpecial() const { return *mClosedSpecialShape; }
-    tvg::Shape& ActiveGray() const    { return *mActiveGrayShape; }
-    tvg::Shape& ActiveGreen() const   { return *mActiveBodyGreenShape; }
-    tvg::Shape& ActiveSpecial() const { return *mActiveSpecialShape; }
+    tvg::Shape& Closed(BuoyPool which) const { return PoolShape(mClosedShapes, which); }
+    tvg::Shape& Active(BuoyPool which) const { return PoolShape(mActiveShapes, which); }
 };
 
 struct PathData { std::vector<tvg::PathCommand> cmds; std::vector<tvg::Point> pts; };
@@ -268,34 +262,49 @@ TEST_CASE("Emitted half-bells carry per-half spines, pin tips and span the calib
     using Catch::Matchers::WithinAbs;
     EmissionHarness h{{ {2, 4, 2}, {6, 8, 2}, {12, 5, 3}, {16, 9, 1} }, 16};
 
-    // Closed body (green: no filled predecessor, buoy compares to itself). Per half:
-    // the 1 px spine rect (MoveTo + 3 LineTo + Close) then ONE closed contour — the
-    // waist edge closing two 12-segment Catmull-Rom wall chains (MoveTo + 24 CubicTo +
-    // Close). Two halves -> 62 commands, all in the green pool.
-    const PathData body = ReadPath(h.scratcher->ClosedGreen());
+    // Closed body (green: no filled predecessor, buoy compares to itself). Both halves'
+    // prefiltered spine cores come first (MoveTo + 3 LineTo + Close each), then ONE
+    // closed contour per half — the waist edge closing two 12-segment Catmull-Rom wall
+    // chains (MoveTo + 24 CubicTo + Close). Two halves -> 62 commands, all in the green
+    // pool; the spines' half-alpha flanks live in the flank pool below it.
+    const PathData body = ReadPath(h.scratcher->Closed(BuoyPool::BodyGreen));
     REQUIRE(body.cmds.size() == 2 * (5 + 26));
     CHECK(body.cmds.front() == tvg::PathCommand::MoveTo);
     CHECK(std::count(body.cmds.begin(), body.cmds.end(), tvg::PathCommand::CubicTo) == 48);
     CHECK(std::count(body.cmds.begin(), body.cmds.end(), tvg::PathCommand::Close) == 4);
     REQUIRE(body.pts.size() == 2 * (4 + 1 + 24 * 3));
-    CHECK(ReadPath(h.scratcher->ClosedRed()).cmds.empty());
+    CHECK(ReadPath(h.scratcher->Closed(BuoyPool::BodyRed)).cmds.empty());
 
-    // Upper-half spine rect: 1 px wide (50 ms at px.x = 50) around the slot centre
-    // (slot 0..10 ms -> mid 5), spanning exactly mean..max.
+    // Spine cores: kLineCorePx = 2 px wide (2 * 50 ms at px.x = 50, so +-50 ms of the
+    // slot centre at 5 ms), the upper spanning exactly mean..max and the lower mean..min.
     for (std::size_t i = 0; i < 4; ++i) {
-        CHECK_THAT(std::abs(body.pts[i].x - 5.0f), WithinAbs(25.0, 0.01));
+        CHECK_THAT(std::abs(body.pts[i].x - 5.0f), WithinAbs(50.0, 0.01));
         CHECK_THAT(body.pts[i].y, WithinAbs(i == 0 || i == 3 ? 6.0 : 8.0, 1e-4));
+        CHECK_THAT(std::abs(body.pts[4 + i].x - 5.0f), WithinAbs(50.0, 0.01));
+        CHECK_THAT(body.pts[4 + i].y, WithinAbs(i == 0 || i == 3 ? 6.0 : 4.0, 1e-4));
+    }
+
+    // Each spine's prefilter flanks: two more quads per spine in the flank pool, each
+    // one kLineFlankPx = 1 px (50 ms) wide and butted against a core edge, so the flank
+    // pool's x extent runs to 2 px either side of the centre and never inside the core.
+    const PathData flanks = ReadPath(h.scratcher->Closed(BuoyPool::BodyGreenFlank));
+    REQUIRE(flanks.cmds.size() == 4 * 5);
+    REQUIRE(flanks.pts.size() == 4 * 4);
+    for (const auto& p : flanks.pts) {
+        const float d = std::abs(p.x - 5.0f);
+        CHECK((std::abs(d - 50.0f) < 0.01f || std::abs(d - 100.0f) < 0.01f));
     }
 
     // Upper contour starts at the right waist corner — the calibrated half-width
     // (7 px * 50 ms/px) right of the centre at the mean level — and its on-curve points
     // (MoveTo + CubicTo ends; control points legitimately overshoot) span exactly
     // mean..max vertically and the +-waist horizontally, with the tip pinned on-centre.
+    const std::size_t contour = 2 * 4;  // both spine cores precede the first contour
     const float waist_ms = 350.f;
-    CHECK_THAT(body.pts[4].x, WithinAbs(5.0 + waist_ms, 0.1));
-    CHECK_THAT(body.pts[4].y, WithinAbs(6.0, 1e-4));
-    std::vector<tvg::Point> on_curve{body.pts[4]};
-    for (std::size_t i = 5; i + 2 < 4 + 1 + 24 * 3; i += 3)
+    CHECK_THAT(body.pts[contour].x, WithinAbs(5.0 + waist_ms, 0.1));
+    CHECK_THAT(body.pts[contour].y, WithinAbs(6.0, 1e-4));
+    std::vector<tvg::Point> on_curve{body.pts[contour]};
+    for (std::size_t i = contour + 1; i + 2 < contour + 1 + 24 * 3; i += 3)
         on_curve.push_back(body.pts[i + 2]);
     REQUIRE(on_curve.size() == 25);
     float min_x = 1e9f, max_x = -1e9f, min_y = 1e9f, max_y = -1e9f;
@@ -311,19 +320,31 @@ TEST_CASE("Emitted half-bells carry per-half spines, pin tips and span the calib
     CHECK_THAT(max_x, WithinAbs(5.0 + waist_ms, 0.1));
     CHECK_THAT(min_x, WithinAbs(5.0 - waist_ms, 0.1));
 
-    // Lower half mirrors below the waist: its spine spans mean..min.
-    const std::size_t lower = 4 + 1 + 24 * 3;
-    CHECK_THAT(body.pts[lower].y, WithinAbs(6.0, 1e-4));
-    CHECK_THAT(body.pts[lower + 1].y, WithinAbs(4.0, 1e-4));
-
-    // Waist diamond on top (green), lozenge pool empty, no gray ink (no empty buoy, and
-    // the previous close sits inside every following range).
-    CHECK(ReadPath(h.scratcher->ClosedDiamondGreen()).pts.size() == 4);
-    CHECK(ReadPath(h.scratcher->ClosedSpecial()).cmds.empty());
-    CHECK(ReadPath(h.scratcher->ClosedGray()).cmds.empty());
+    // Waist marker on top (green): one core quad spanning the whole slot (0..10 ms) at
+    // the mean, kLineCorePx = 2 px tall — +-0.05 scene points at px.y = 0.05 — and two
+    // 1 px flanks butted onto it. No gray ink (no empty buoy, and the previous close
+    // sits inside every following range) and nothing in the bearish waist pool.
+    const PathData waist = ReadPath(h.scratcher->Closed(BuoyPool::WaistGreen));
+    REQUIRE(waist.pts.size() == 4);
+    float waist_min_x = 1e9f, waist_max_x = -1e9f;
+    for (const auto& p : waist.pts) {
+        waist_min_x = std::min(waist_min_x, p.x);
+        waist_max_x = std::max(waist_max_x, p.x);
+        CHECK_THAT(std::abs(p.y - 6.0f), WithinAbs(0.05, 1e-4));
+    }
+    CHECK_THAT(waist_min_x, WithinAbs(0.0, 1e-4));
+    CHECK_THAT(waist_max_x, WithinAbs(10.0, 1e-4));
+    const PathData waist_flanks = ReadPath(h.scratcher->Closed(BuoyPool::WaistGreenFlank));
+    REQUIRE(waist_flanks.pts.size() == 2 * 4);
+    for (const auto& p : waist_flanks.pts) {
+        const float d = std::abs(p.y - 6.0f);
+        CHECK((std::abs(d - 0.05f) < 1e-4f || std::abs(d - 0.10f) < 1e-4f));
+    }
+    CHECK(ReadPath(h.scratcher->Closed(BuoyPool::WaistRed)).cmds.empty());
+    CHECK(ReadPath(h.scratcher->Closed(BuoyPool::Gray)).cmds.empty());
 
     // The active buoy (same shape family) emits its own half-bells into the active pool.
-    CHECK(ReadPath(h.scratcher->ActiveGreen()).cmds.size() == 2 * (5 + 26));
+    CHECK(ReadPath(h.scratcher->Active(BuoyPool::BodyGreen)).cmds.size() == 2 * (5 + 26));
 }
 
 TEST_CASE("Empty period renders as the gray dash at the carried close", "[quote_scratcher][emission]")
@@ -333,7 +354,7 @@ TEST_CASE("Empty period renders as the gray dash at the carried close", "[quote_
 
     // Closed series: filled slot 0, empty slot 1 (carried close 8), active slot 2.
     // The dash is the only closed gray ink: one rect spanning the empty slot.
-    const PathData gray = ReadPath(h.scratcher->ClosedGray());
+    const PathData gray = ReadPath(h.scratcher->Closed(BuoyPool::Gray));
     REQUIRE(gray.cmds.size() == 5);
     REQUIRE(gray.pts.size() == 4);
     float min_x = 1e9f, max_x = -1e9f;
@@ -345,7 +366,7 @@ TEST_CASE("Empty period renders as the gray dash at the carried close", "[quote_
     CHECK_THAT(min_x, WithinAbs(10.0, 1e-4));
     CHECK_THAT(max_x, WithinAbs(20.0, 1e-4));
 
-    CHECK(ReadPath(h.scratcher->ClosedGreen()).cmds.size() == 2 * (5 + 26));
+    CHECK(ReadPath(h.scratcher->Closed(BuoyPool::BodyGreen)).cmds.size() == 2 * (5 + 26));
 }
 
 TEST_CASE("Halves color independently by their own extreme's growth", "[quote_scratcher][emission]")
@@ -354,8 +375,8 @@ TEST_CASE("Halves color independently by their own extreme's growth", "[quote_sc
     // (lower half red) — the per-half channels must split one buoy across both pools.
     EmissionHarness h{{ {2, 4, 2}, {6, 8, 2}, {12, 9, 2}, {14, 3, 2}, {22, 6, 1} }, 22};
 
-    const PathData green = ReadPath(h.scratcher->ClosedGreen());
-    const PathData red = ReadPath(h.scratcher->ClosedRed());
+    const PathData green = ReadPath(h.scratcher->Closed(BuoyPool::BodyGreen));
+    const PathData red = ReadPath(h.scratcher->Closed(BuoyPool::BodyRed));
     CHECK(green.cmds.size() == 3 * (5 + 26));  // both halves of slot 0 + slot 1's upper
     CHECK(red.cmds.size() == 1 * (5 + 26));    // slot 1's lower half only
 
@@ -365,20 +386,32 @@ TEST_CASE("Halves color independently by their own extreme's growth", "[quote_sc
     CHECK_THAT(red.pts[1].y, WithinAbs(3.0, 1e-4));
 }
 
-TEST_CASE("Single-price periods stamp the bright lozenge instead of a bell", "[quote_scratcher][emission][BUOY_GEOMETRY-010]")
+TEST_CASE("Single-price periods stamp the waist marker instead of a bell", "[quote_scratcher][emission][BUOY_GEOMETRY-010]")
 {
+    using Catch::Matchers::WithinAbs;
     EmissionHarness h{{ {3, 5, 4}, {13, 7, 2} }, 13};
 
-    // Lone-trade closed buoy: special lozenge only — no body, no diamond.
-    CHECK(ReadPath(h.scratcher->ClosedSpecial()).pts.size() == 4);
-    CHECK(ReadPath(h.scratcher->ClosedGreen()).cmds.empty());
-    CHECK(ReadPath(h.scratcher->ClosedRed()).cmds.empty());
-    CHECK(ReadPath(h.scratcher->ClosedDiamondGreen()).cmds.empty());
+    // Lone-trade closed buoy: the degraded marker IS the waist line, emitted into the
+    // ordinary bullish waist pool (no filled predecessor -> compares to itself -> the
+    // `>=` default) rather than a pool of its own, and no bell contour is drawn.
+    const PathData waist = ReadPath(h.scratcher->Closed(BuoyPool::WaistGreen));
+    REQUIRE(waist.pts.size() == 4);
+    for (const auto& p : waist.pts) CHECK_THAT(std::abs(p.y - 5.0f), WithinAbs(0.05, 1e-4));
+    CHECK(ReadPath(h.scratcher->Closed(BuoyPool::WaistRed)).cmds.empty());
+
+    // The range spines are still emitted — a period has tips whether or not its
+    // distribution can be drawn — and with min == max == mean they span zero price, so
+    // they are nominal: two spine cores, no contour, every point on the mean level.
+    const PathData body = ReadPath(h.scratcher->Closed(BuoyPool::BodyGreen));
+    CHECK(body.cmds.size() == 2 * 5);
+    REQUIRE(body.pts.size() == 2 * 4);
+    for (const auto& p : body.pts) CHECK_THAT(p.y, WithinAbs(5.0, 1e-4));
+    CHECK(ReadPath(h.scratcher->Closed(BuoyPool::BodyRed)).cmds.empty());
 
     // The lone-trade active buoy is special too, and its price band (7) excludes the
     // previous close (5), so the gray move connector bridges them in the active pool.
-    CHECK(ReadPath(h.scratcher->ActiveSpecial()).pts.size() == 4);
-    CHECK(ReadPath(h.scratcher->ActiveGray()).cmds.size() == 5);
+    CHECK(ReadPath(h.scratcher->Active(BuoyPool::WaistGreen)).pts.size() == 4);
+    CHECK(ReadPath(h.scratcher->Active(BuoyPool::Gray)).cmds.size() == 5);
 }
 
 // Raster regression: renders crafted asymmetric buoys through the real panel and checks
@@ -423,13 +456,13 @@ TEST_CASE("Buoy bodies rasterize solid across the range spine", "[quote_scratche
     // must rasterize at the full body green (0, 62, 0).
     // The notation is fill-only: the body contour must carry no stroke — zero width,
     // no stroke paint — so the bounded area alone shows the red/green fill.
-    CHECK(scratcher->ClosedGreen().strokeWidth() == 0.f);
-    CHECK(scratcher->ClosedRed().strokeWidth() == 0.f);
+    CHECK(scratcher->Closed(BuoyPool::BodyGreen).strokeWidth() == 0.f);
+    CHECK(scratcher->Closed(BuoyPool::BodyRed).strokeWidth() == 0.f);
 
     const auto green_at = [&](std::size_t x, std::size_t y) { return (pixels[y * 400 + x] >> 8) & 0xff; };
     for (std::size_t x = 86; x <= 93; ++x) CHECK(green_at(x, 130) == 62);  // wide half-normal interior incl. spine columns
     for (std::size_t x : {89u, 90u}) CHECK(green_at(x, 110) == 62);        // thin taper: spine + wall union, not cancellation
-    for (std::size_t x : {29u, 30u}) CHECK(green_at(x, 140) == 62);        // normal bell centre above the diamond
+    for (std::size_t x : {29u, 30u}) CHECK(green_at(x, 140) == 62);        // normal bell centre above the waist marker
 }
 
 TEST_CASE("Catmull-Rom control points offset segment ends by a sixth of the neighbour vector", "[BUOY_GEOMETRY-008]")
@@ -453,4 +486,38 @@ TEST_CASE("Catmull-Rom control points offset segment ends by a sixth of the neig
     CHECK_THAT(open[1].control1.y, WithinAbs(1.0 / 6.0, 1e-6));
     CHECK_THAT(open[1].control2.x, WithinAbs(1.0 + 1.0 / 6.0, 1e-6));
     CHECK_THAT(open[1].control2.y, WithinAbs(1.0 - 1.0 / 6.0, 1e-6));
+}
+
+// A period whose range is real but too short on screen for the bell to be read is
+// *degraded* (BUOY_CANDLE.md §5) — yet it still has tips, so its range spines must be
+// drawn exactly as a readable buoy's are. Only the bell contour is dropped.
+TEST_CASE("Degraded periods keep their range spines", "[quote_scratcher][emission][BUOY_GEOMETRY-010]")
+{
+    using Catch::Matchers::WithinAbs;
+    // Slot 0 spans 4..8 and is readable; slot 1 spans 9..11 around a mean of 10 — too
+    // little height on screen against a waist the calibration makes far wider, so it fails
+    // the ASPECT test and no bell is drawn for it.
+    EmissionHarness h{{ {2, 4, 2}, {6, 8, 2}, {12, 9, 2}, {16, 11, 2}, {26, 9, 1} }, 26};
+
+    // Slot 1's min, max and mean all grew from slot 0's, so both its spines and its waist
+    // marker take the bullish channel — the same pools slot 0's readable bell uses.
+    const PathData body = ReadPath(h.scratcher->Closed(BuoyPool::BodyGreen));
+    // Slot 0: two spine cores + two contours. Slot 1: two spine cores and NO contour.
+    REQUIRE(body.cmds.size() == 2 * (5 + 26) + 2 * 5);
+
+    // Slot 1's spines sit at its slot centre (10..20 ms -> 15) and span mean..max and
+    // mean..min with real extent — this is what a degraded period still shows.
+    const std::size_t slot1 = 2 * (4 + 1 + 24 * 3);
+    for (std::size_t i = 0; i < 4; ++i) {
+        CHECK_THAT(std::abs(body.pts[slot1 + i].x - 15.0f), WithinAbs(50.0, 0.01));
+        CHECK_THAT(std::abs(body.pts[slot1 + 4 + i].x - 15.0f), WithinAbs(50.0, 0.01));
+    }
+    CHECK_THAT(body.pts[slot1 + 0].y, WithinAbs(10.0, 1e-4));  // upper spine: mean
+    CHECK_THAT(body.pts[slot1 + 1].y, WithinAbs(11.0, 1e-4));  //              .. max
+    CHECK_THAT(body.pts[slot1 + 4].y, WithinAbs(10.0, 1e-4));  // lower spine: mean
+    CHECK_THAT(body.pts[slot1 + 5].y, WithinAbs(9.0, 1e-4));   //              .. min
+
+    // Its marker is an ordinary waist line: two of them in the bullish pool, one per slot.
+    CHECK(ReadPath(h.scratcher->Closed(BuoyPool::WaistGreen)).pts.size() == 2 * 4);
+    CHECK(ReadPath(h.scratcher->Closed(BuoyPool::WaistRed)).cmds.empty());
 }

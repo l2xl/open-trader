@@ -5,6 +5,7 @@
 #pragma once
 
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
@@ -53,46 +54,85 @@ inline std::vector<BuoyBezierSegment> CatmullRomSpline(std::span<const BuoySplin
     return segments;
 }
 
+// Fill pools in Z-order (== the add() order under mScene). Every buoy element is
+// emitted into the pool carrying its colour; a *Flank pool holds the half-alpha
+// prefilter skirt of the line elements whose solid core pool follows it, so a flank
+// is always painted under the core it belongs to.
+enum class BuoyPool : std::size_t
+{
+    Gray = 0,           // empty-buoy dashes + the move connector, under everything
+    BodyGreenFlank, BodyGreen,
+    BodyRedFlank,   BodyRed,
+    WaistGreenFlank, WaistGreen,
+    WaistRedFlank,   WaistRed,
+    Count
+};
+
+inline constexpr std::size_t kBuoyPoolCount = static_cast<std::size_t>(BuoyPool::Count);
+
+// One emission target's worth of pooled shapes, indexed by BuoyPool.
+using BuoyShapePool = std::array<tvg_ptr<tvg::Shape>, kBuoyPoolCount>;
+
 // QuoteScratcher maintains a persistent ThorVG sub-scene under panel.LogicalScene().
 // Each buoy renders per BUOY_CANDLE.md as the volume-weighted bell notation:
 //
+//  * The per-half RANGE SPINE is a PREFILTERED vertical line from the waist out to
+//    that half's extreme, emitted for EVERY period — it keeps the range visible
+//    where the 3σ taper thins below a pixel, and it is the only range cue a special
+//    period has. A tip sitting ON the waist still gets its spine; it spans zero
+//    price and so covers no pixel.
 //  * The BODY is two half-bells, each emitted as ONE closed filled contour — the
 //    straight waist edge at ±A plus that side's Gaussian wall (BuoyCandleData::
-//    FitRange + WallWidth samples, Catmull-Rom smoothed) — with a per-half 1 px
-//    waist-to-extreme spine keeping the range visible where the 3σ taper thins
-//    below a pixel. Waist half-width A is the target waist width scaled by the
-//    dimensionless BuoyCandleQuotes::WidthRatio against the visible-window
-//    calibration, clamped to the slot so neighbours never overlap. Colors follow
-//    the notation's per-half channels against the previous FILLED buoy: upper half
-//    by curr.max vs prev.max, lower half by curr.min vs prev.min. A zero-height
-//    half is skipped, leaving the flat-waisted half-bell of the skewed regime.
-//  * The WAIST DIAMOND on top — candle_width px wide × candle_width/2 px tall
-//    (pixel-fixed via InstrumentPanel::PixelSizeOf), colored by curr.mean vs
-//    prev.mean.
-//  * SPECIAL periods — single-price (H == L) or failing the screen-space ASPECT
-//    test (even the longer half shorter than two body widths) — draw only the
-//    fixed-size bright lozenge; the bell cannot be read at that aspect.
+//    FitRange + WallWidth samples, Catmull-Rom smoothed). Waist half-width A is the
+//    target waist width scaled by the dimensionless BuoyCandleQuotes::WidthRatio
+//    against the visible-window calibration, clamped to the slot so neighbours never
+//    overlap. Colors follow the notation's per-half channels against the previous
+//    FILLED buoy — upper half by curr.max vs prev.max, lower half by curr.min vs
+//    prev.min — and each half's spine shares its half's channel. A zero-height half
+//    grows no wall and is skipped, leaving the flat-waisted half-bell of the skewed
+//    regime.
+//  * The WAIST MARKER on top — a PREFILTERED horizontal line spanning the slot at
+//    the VWAP level, pixel-fixed via InstrumentPanel::PixelSizeOf, colored by
+//    curr.mean vs prev.mean.
+//  * SPECIAL (degraded) periods — single-price (H == L) or failing the screen-space
+//    ASPECT test (even the longer half shorter than two body widths) — draw the
+//    waist marker and nothing else, in the very same pool and colour channel a
+//    readable buoy's waist uses; the bell cannot be read at that aspect, so all
+//    that survives is the VWAP level and its direction.
+//
+// Both purely linear elements — the waist marker and the per-half range spine —
+// are PREFILTERED lines rather than hard-edged hairlines (rationale and sources in
+// quote_scratcher.cpp): a solid core at least two device pixels across plus a one
+// pixel half-alpha flank on each side. A hairline exactly one pixel wide alternates
+// between one fully covered column and two half covered ones as the chart scrolls
+// sub-pixel, which the eye reads as the line pulsing between crisp and pale; a two
+// pixel core always keeps one column fully covered and the flanks turn the leftover
+// redistribution into a steady soft edge.
 //
 //  Empty buoys (volume == 0) render as a single gray 0.5 px-tall filled rect at the
 //  carried-forward last price level; the gray "move" connector bridges the previous
 //  close into a buoy whose range it falls outside of.
 //
 // Shape pool layout (Z-order is add() order under mScene):
-//   mClosedGrayShape             — gray dashes for empty buoys + move connectors
-//   mClosedBody{Green,Red}       — range spines + filled bell contours
-//   mClosedDiamond{Green,Red}    — fixed-pixel waist diamonds on top
-//   mClosedSpecialShape          — bright lozenges of special periods
-//   mActive…                     — same six-shape layout, reset every frame
+//   BuoyPool::Gray                — gray dashes for empty buoys + move connectors
+//   BuoyPool::Body{Green,Red}     — range spine cores + filled bell contours
+//   BuoyPool::Waist{Green,Red}    — fixed-pixel waist line cores on top, degraded
+//                                   periods' markers included
+//   BuoyPool::*Flank              — the half-alpha prefilter skirt of the line
+//                                   elements, each directly UNDER its core pool
+//   mActiveShapes                 — same pool layout, reset every frame
 //
 // Closed-pool invalidation triggers — any of:
 //   (a) BuoyCandleQuotes::Reset() (data series rewound) — first-buoy-ts changed;
 //   (b) panel.SetSceneFloor() — floor coords shifted;
-//   (c) Logical-scene Y pixel size changed — diamond half-height, dash half-height
-//       and the ASPECT regime are derived from it;
+//   (c) Logical-scene pixel size changed on either axis — the waist line and range
+//       spine thicknesses, the dash half-height and the ASPECT regime are all
+//       (k * px)-derived. px.x moves only when the candle width does, which is also
+//       what sets the non-overlap slot clamp;
 //   (d) visible-window calibration medians drifted beyond the ~10 % hysteresis —
 //       every closed body width consumes the emitted calibration. A vertical zoom
-//       alone never moves widths (s_y cancels out of the width ratio), so px.y
-//       gates only the pixel-fixed heights and the ASPECT test.
+//       alone never moves the bell widths (s_y cancels out of the width ratio), so
+//       px.y gates only the pixel-fixed heights and the ASPECT test.
 //
 // The candle data model itself (BuoyCandleQuotes) is single-writer (IngestTrades, called
 // from CalculateSize, which runs under panel.mDataMutex) and many-reader; concurrent
@@ -106,27 +146,22 @@ protected:
 
     tvg_ptr<tvg::Scene> mScene;
 
-    tvg_ptr<tvg::Shape> mClosedGrayShape;
-    tvg_ptr<tvg::Shape> mClosedBodyGreenShape;
-    tvg_ptr<tvg::Shape> mClosedBodyRedShape;
-    tvg_ptr<tvg::Shape> mClosedDiamondGreenShape;
-    tvg_ptr<tvg::Shape> mClosedDiamondRedShape;
-    tvg_ptr<tvg::Shape> mClosedSpecialShape;
+    BuoyShapePool mClosedShapes;
+    BuoyShapePool mActiveShapes;
 
-    tvg_ptr<tvg::Shape> mActiveGrayShape;
-    tvg_ptr<tvg::Shape> mActiveBodyGreenShape;
-    tvg_ptr<tvg::Shape> mActiveBodyRedShape;
-    tvg_ptr<tvg::Shape> mActiveDiamondGreenShape;
-    tvg_ptr<tvg::Shape> mActiveDiamondRedShape;
-    tvg_ptr<tvg::Shape> mActiveSpecialShape;
+    static tvg::Shape& PoolShape(const BuoyShapePool& pool, BuoyPool which)
+    { return *pool[static_cast<std::size_t>(which)]; }
 
     std::size_t mEmittedClosedCount = 0;
     std::optional<uint64_t> mEmittedFirstBuoyTs;
     uint64_t mEmittedFloorTimeMs = 0;
     uint64_t mEmittedFloorPricePts = 0;
-    // Pixel-size-Y captured at the last closed-pool emission. The diamond body
-    // half-height, gray-dash half-height and the ASPECT regime are (k * px.y)-derived,
-    // so any change here forces a full re-emit of every closed shape.
+    // Scene pixel size captured at the last closed-pool emission. The waist line and
+    // range spine thicknesses, the gray-dash half-height and the ASPECT regime are all
+    // (k * px)-derived, so any change on either axis forces a full re-emit of every
+    // closed shape. px.x is the inverse of e11, which the panel derives from the candle
+    // width, so tracking it also covers the candle-width-driven slot clamp.
+    float mEmittedPxSizeX = 0.0f;
     float mEmittedPxSizeY = 0.0f;
     // Visible-window calibration the emitted widths consume. Refreshed from the
     // window medians only when either median drifts beyond the ~10 % hysteresis

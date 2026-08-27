@@ -5,6 +5,7 @@
 #include "quote_scratcher.hpp"
 
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cmath>
 #include <cstddef>
@@ -12,6 +13,7 @@
 #include <limits>
 #include <optional>
 #include <span>
+#include <utility>
 #include <vector>
 
 #include "instrument_panel.hpp"
@@ -23,16 +25,27 @@ namespace {
 
 struct Color { uint8_t r, g, b, a; };
 
-// Dark green/red fill the bell body; the waist diamond uses the brighter same-hue
-// derivatives so it pops as a crisp anchor on top of the darker contour. The special
-// lozenge is the deliberately foreign high-contrast amber of the case the bell cannot
-// express.
+// Dark green/red fill the bell body; the waist marker uses the brighter same-hue
+// derivatives so it pops as a crisp anchor on top of the darker contour.
 constexpr Color kBodyGreen{0, 62, 0, 255};      // #003e00
 constexpr Color kBodyRed{62, 0, 0, 255};        // #3e0000
-constexpr Color kDiamondGreen{0, 95, 0, 255};   // #005f00
-constexpr Color kDiamondRed{95, 0, 0, 255};     // #5f0000
-constexpr Color kSpecial{255, 191, 0, 255};     // #ffbf00
+constexpr Color kWaistGreen{0, 95, 0, 255};     // #005f00
+constexpr Color kWaistRed{95, 0, 0, 255};       // #5f0000
 constexpr Color kGray{110, 110, 110, 255};
+
+// Half-alpha derivative of a line's colour, filling its prefilter flanks. Same hue, so a
+// flank landing on same-coloured ink is invisible and one landing on the background or on
+// the darker body reads as the line's soft edge.
+constexpr Color Flank(Color c) { return {c.r, c.g, c.b, static_cast<uint8_t>(c.a / 2)}; }
+
+// Fill per pool, indexed by BuoyPool — the same order the shapes are added to the scene in.
+constexpr std::array<Color, kBuoyPoolCount> kPoolFill{
+    kGray,
+    Flank(kBodyGreen),  kBodyGreen,
+    Flank(kBodyRed),    kBodyRed,
+    Flank(kWaistGreen), kWaistGreen,
+    Flank(kWaistRed),   kWaistRed,
+};
 
 // BUOY_CANDLE.md section 8 render-side tunables: the median-volume buoy's full waist
 // width, the horizontal clearance between neighbouring slots, the contour sample count
@@ -42,6 +55,37 @@ constexpr float kSlotGapPx = 2.f;
 constexpr std::size_t kContourLevels = 13;
 constexpr float kAspect = 2.f;
 
+// PREFILTERED LINES. The buoy's two purely linear elements — the VWAP waist marker and
+// the per-half range spine — sit on geometry that sweeps continuously across the pixel
+// grid as the chart scrolls and rescales, which is the case a hard-edged hairline is
+// worst at. ThorVG rasterises with analytic (box-filtered) coverage, so a rect exactly
+// one pixel wide alternates between ONE fully covered column and TWO half covered ones
+// as its centre crosses a pixel boundary: the ink is conserved but its distribution is
+// not, and the eye reads the line pulsing between crisp-and-dark and soft-and-pale —
+// exactly the "jaggies are especially noticeable when the lines are animated" case
+// Chan & Durand open GPU Gems 2 ch. 22 ("Fast Prefiltered Lines") with.
+//
+// The two escapes from it are mutually exclusive. Snapping the line to the pixel grid is
+// crisp but quantises its motion, which is why animated primitives are anti-aliased and
+// NOT pixel-snapped (SVG's shape-rendering=crispEdges is the static-only counterpart).
+// The other is to PREFILTER: widen the line to at least the filter footprint and let a
+// soft skirt absorb the sub-pixel remainder, the same reasoning behind the "hairline"
+// rule Skia/Direct2D apply below one pixel (clamp the width to one pixel and modulate
+// alpha by the true width rather than shrink the geometry).
+//
+// So each line is emitted as a solid CORE plus a half-alpha FLANK on each side:
+//   * core >= 2 px — at two pixels at least one column is fully covered at EVERY
+//     sub-pixel offset ([1,1] centred, [.5,1,.5] at a half-pixel offset), so peak
+//     intensity and total ink are both invariant under motion; at one pixel the peak
+//     halves twice per pixel of travel;
+//   * a 1 px flank at half alpha is the two-level quantisation of that filter skirt a
+//     flat fill can express, turning the leftover edge redistribution into a steady soft
+//     edge instead of a change in apparent width.
+// Flanks are their line's own hue at half alpha and are painted directly under the core
+// (see the pool Z-order), so they never wash out the line they belong to.
+constexpr float kLineCorePx = 2.f;
+constexpr float kLineFlankPx = 1.f;
+
 inline float SubToFloat(uint64_t value, uint64_t floor)
 {
     return static_cast<float>(static_cast<int64_t>(value) - static_cast<int64_t>(floor));
@@ -50,6 +94,51 @@ inline float SubToFloat(uint64_t value, uint64_t floor)
 void ApplyFill(tvg::Shape& shape, Color c)
 {
     shape.fill(c.r, c.g, c.b, c.a);
+}
+
+// Reset every pooled shape of one emission target and re-apply its fill (reset() drops
+// the paint along with the path).
+void ResetPool(BuoyShapePool& pool)
+{
+    for (std::size_t i = 0; i < kBuoyPoolCount; ++i) {
+        pool[i]->reset();
+        ApplyFill(*pool[i], kPoolFill[i]);
+    }
+}
+
+// Axis-aligned filled quad, traversed (xa,ya) -> (xa,yb) -> (xb,yb) -> (xb,ya). Corners
+// are NOT normalised: the caller's order is kept so a quad that shares a pool with a
+// contour it must union with under the nonzero fill rule can match that contour's winding.
+void AppendQuad(tvg::Shape& shape, float xa, float ya, float xb, float yb)
+{
+    shape.moveTo(xa, ya);
+    shape.lineTo(xa, yb);
+    shape.lineTo(xb, yb);
+    shape.lineTo(xb, ya);
+    shape.close();
+}
+
+// Prefiltered vertical line centred on `cx`, spanning `y_from`..`y_to`: the solid core
+// into `core`, the two flanks into `flank`. `half_core` and `flank_w` are scene-x units.
+// The core starts at the RIGHT of the centre and returns on the left — the traversal the
+// bell wall contours use — so a spine sharing the body pool with its wall always winds
+// with it and the nonzero rule unions them instead of carving a slit.
+void AppendVLine(tvg::Shape& core, tvg::Shape& flank,
+                 float cx, float y_from, float y_to, float half_core, float flank_w)
+{
+    AppendQuad(core,  cx + half_core,            y_from, cx - half_core,            y_to);
+    AppendQuad(flank, cx + half_core + flank_w,  y_from, cx + half_core,            y_to);
+    AppendQuad(flank, cx - half_core,            y_from, cx - half_core - flank_w,  y_to);
+}
+
+// Prefiltered horizontal line centred on `cy`, spanning `x_from`..`x_to`: solid core into
+// `core`, the two flanks into `flank`. `half_core` and `flank_h` are scene-y units.
+void AppendHLine(tvg::Shape& core, tvg::Shape& flank,
+                 float cy, float x_from, float x_to, float half_core, float flank_h)
+{
+    AppendQuad(core,  x_from, cy - half_core,            x_to, cy + half_core);
+    AppendQuad(flank, x_from, cy + half_core,            x_to, cy + half_core + flank_h);
+    AppendQuad(flank, x_from, cy - half_core - flank_h,  x_to, cy - half_core);
 }
 
 // Coloring baseline: the most recent FILLED buoy strictly before `idx` in `closed`.
@@ -72,34 +161,26 @@ const BuoyCandleQuotes::candle_t* PrevFilledBuoy(const BuoyCandleQuotes::quotes_
     return nullptr;
 }
 
-// Color-grouped Shape pools one buoy emits into; references borrow the scratcher's
-// pooled shapes for the duration of a single AppendBuoy call.
-struct BuoyShapes
-{
-    tvg::Shape& gray;
-    tvg::Shape& body_green;
-    tvg::Shape& body_red;
-    tvg::Shape& diamond_green;
-    tvg::Shape& diamond_red;
-    tvg::Shape& special;
-};
-
 // Emit one buoy into its Shape pools per BUOY_CANDLE.md. Filled geometry only:
+//   * the per-half RANGE SPINE is a prefiltered vertical line from the waist to that
+//     half's extreme, drawn for EVERY period — every period has tips, and where the
+//     3σ taper thins below a pixel (or no bell is drawn at all) the spine is what
+//     keeps the range visible;
 //   * the BODY is two independently coloured half-bells, each ONE closed contour
-//     (flat waist edge at ±A + that side's Gaussian wall, Catmull-Rom smoothed) plus
-//     a 1 px waist-to-extreme spine keeping the range visible where the 3σ taper
-//     thins below a pixel; waist half-width A = (Wt/2)·WidthRatio px clamped to the
-//     slot; the upper half colours by curr.max vs prev.max, the lower half by
-//     curr.min vs prev.min;
-//   * the waist diamond is candle_width px wide × (candle_width / 2) px tall,
-//     coloured by curr.mean vs prev.mean;
-//   * SPECIAL periods (single-price, or failing the screen-space ASPECT test) draw
-//     only the fixed-size bright lozenge;
+//     (flat waist edge at ±A + that side's Gaussian wall, Catmull-Rom smoothed);
+//     waist half-width A = (Wt/2)·WidthRatio px clamped to the slot; the upper half
+//     colours by curr.max vs prev.max, the lower half by curr.min vs prev.min — the
+//     spine of a half shares its half's colour channel;
+//   * the WAIST MARKER is a prefiltered horizontal line spanning the slot at the VWAP
+//     level, coloured by curr.mean vs prev.mean;
+//   * SPECIAL (degraded) periods — single-price, or failing the screen-space ASPECT
+//     test — draw the spines and that same waist marker, in the same colour channels,
+//     and no bell;
 //   * the empty-buoy gray dash is candle_width px wide × 0.5 px tall.
 // X dimensions are pixel-stable through the LogicalScene matrix because period_ms
-// maps to candle_width px via e11; Y dimensions that need a fixed pixel count are
-// supplied in scene units as (pixels * px.y).
-void AppendBuoy(BuoyShapes shapes,
+// maps to candle_width px via e11; dimensions that need a fixed pixel count are
+// supplied in scene units as (pixels * px.x) or (pixels * px.y) per axis.
+void AppendBuoy(BuoyShapePool& pool,
                 uint64_t buoy_ts, uint64_t duration,
                 const BuoyCandleQuotes::candle_t& curr,
                 const BuoyCandleQuotes::candle_t& prev,
@@ -117,16 +198,16 @@ void AppendBuoy(BuoyShapes shapes,
     const float mid_x   = 0.5f * (left_x + right_x);
     const float mean_y  = SubToFloat(curr.mean.raw_at(price_decimals), floor.price_points);
 
+    const auto shape = [&pool](BuoyPool which) -> tvg::Shape& {
+        return *pool[static_cast<std::size_t>(which)];
+    };
+
     if (curr.volume.raw() == 0) {
         // Empty buoy — no trades arrived during the period. Carry the previous last
         // price forward as a 0.5 px-tall gray rect; in this state the model has
         // min == max == mean == last_price, so no body would have any visible extent.
         const float half_h = 0.25f * px.y;
-        shapes.gray.moveTo(left_x,  mean_y - half_h);
-        shapes.gray.lineTo(right_x, mean_y - half_h);
-        shapes.gray.lineTo(right_x, mean_y + half_h);
-        shapes.gray.lineTo(left_x,  mean_y + half_h);
-        shapes.gray.close();
+        AppendQuad(shape(BuoyPool::Gray), left_x, mean_y - half_h, right_x, mean_y + half_h);
         return;
     }
 
@@ -146,14 +227,23 @@ void AppendBuoy(BuoyShapes shapes,
         // flickering change in thickness/brightness. At a full pixel the covered ink is
         // constant across sub-pixel offsets, so the connector stays visually steady.
         const float half_w  = 0.5f * px.x;
-        shapes.gray.moveTo(mid_x - half_w, prev_close_y);
-        shapes.gray.lineTo(mid_x + half_w, prev_close_y);
-        shapes.gray.lineTo(mid_x + half_w, mean_y);
-        shapes.gray.lineTo(mid_x - half_w, mean_y);
-        shapes.gray.close();
+        AppendQuad(shape(BuoyPool::Gray), mid_x - half_w, prev_close_y, mid_x + half_w, mean_y);
     }
 
-    const float half_diamond_h = (candle_width_px * 0.25f) * px.y;
+    // Pixel-fixed line geometry. The waist marker is thin across Y and the range spine
+    // across X, so each takes its core/flank extents from that axis' scene-units-per-pixel.
+    const float waist_half_core = 0.5f * kLineCorePx * px.y;
+    const float waist_flank     = kLineFlankPx * px.y;
+    const float spine_half_core = 0.5f * kLineCorePx * px.x;
+    const float spine_flank     = kLineFlankPx * px.x;
+
+    // The waist channel: mean growth against the previous FILLED buoy, bullish by default
+    // (no filled predecessor makes prev == curr, and `>=` paints that green). A degraded
+    // period's marker and a readable buoy's waist share this one channel — degradation is
+    // about the distribution being unreadable, not about the direction being unknown.
+    const bool waist_grown = curr.mean >= prev.mean;
+    tvg::Shape& waist_core  = shape(waist_grown ? BuoyPool::WaistGreen : BuoyPool::WaistRed);
+    tvg::Shape& waist_flank_shape = shape(waist_grown ? BuoyPool::WaistGreenFlank : BuoyPool::WaistRedFlank);
 
     // Peak half-width from the area constraint: the target waist scaled by the
     // dimensionless window ratio, capped by the slot so neighbours never touch.
@@ -166,49 +256,60 @@ void AppendBuoy(BuoyShapes shapes,
         a_px = std::min(0.5f * kTargetWaistWidthPx * BuoyCandleQuotes::WidthRatio(fitted, calibration), a_slot_px);
     }
 
+    // Per-half colour channel, shared by that half's range spine and wall contour: the
+    // upper half tracks curr.max vs prev.max, the lower curr.min vs prev.min.
+    const auto half_pools = [&](bool upper) {
+        const bool grown = upper ? !(curr.max < prev.max) : !(curr.min < prev.min);
+        return grown ? std::pair{BuoyPool::BodyGreen, BuoyPool::BodyGreenFlank}
+                     : std::pair{BuoyPool::BodyRed,   BuoyPool::BodyRedFlank};
+    };
+
+    // Range spines, both halves, BEFORE the regime test and unconditionally: a tip is a
+    // property of the period, not of whether the period's distribution happens to be
+    // drawable, so a degraded buoy shows its range exactly like a readable one. A tip
+    // that coincides with the waist still emits its spine — it is nominally there, it
+    // simply spans zero price and so covers no pixel. Emitted in the SAME traversal
+    // order as the wall contour that may follow it into the same pool (start right of
+    // the waist, out to the extreme, back on the left), so the two always share one
+    // winding and the nonzero fill rule unions them; composing a buoy from independent
+    // halves is what makes cross-winding cancellation (the carved centre slit of the
+    // retired whole-body path) structurally impossible.
+    const auto append_spine = [&](bool upper) {
+        const auto& extreme = upper ? curr.max : curr.min;
+        const auto [core_pool, flank_pool] = half_pools(upper);
+        AppendVLine(shape(core_pool), shape(flank_pool), mid_x, mean_y,
+                    SubToFloat(extreme.raw_at(price_decimals), floor.price_points),
+                    spine_half_core, spine_flank);
+    };
+    append_spine(true);
+    append_spine(false);
+
     // Screen-space regime test (BUOY_CANDLE.md section 5): a single-price period is
     // special by construction; otherwise the buoy is special when even its longer half
     // is shorter than ASPECT body widths on screen — the bell cannot be read at that
-    // aspect, so a fixed-size high-contrast lozenge is stamped instead and nothing
-    // height-scaled is drawn.
+    // aspect, so the fixed-size marker is stamped instead and nothing height-scaled is
+    // drawn. The marker IS the waist line: everything the degraded period still says is
+    // its VWAP level and whether that level grew.
     const float top_px = static_cast<float>((curr.max - curr.mean).raw_at(price_decimals)) / px.y;
     const float bot_px = static_cast<float>((curr.mean - curr.min).raw_at(price_decimals)) / px.y;
     if (single_price || std::max(top_px, bot_px) < kAspect * 2.f * a_px) {
-        shapes.special.moveTo(left_x,  mean_y);
-        shapes.special.lineTo(mid_x,   mean_y + half_diamond_h);
-        shapes.special.lineTo(right_x, mean_y);
-        shapes.special.lineTo(mid_x,   mean_y - half_diamond_h);
-        shapes.special.close();
+        AppendHLine(waist_core, waist_flank_shape, mean_y, left_x, right_x,
+                    waist_half_core, waist_flank);
         return;
     }
 
     // Body: each half is ONE closed filled sub-path — the straight waist edge at ±A plus
     // the Gaussian wall of that side, smoothed as two per-wall Catmull-Rom chains meeting
-    // at the tip so the tip stays a sharp corner. A per-half range spine (1 px rect from
-    // waist to that half's extreme) is emitted first in the SAME traversal order — start
-    // at the right of the waist, out to the extreme, back on the left — so both sub-paths
-    // always share one winding and the nonzero fill rule unions them; composing a buoy
-    // from independent halves is what makes cross-winding cancellation (the carved centre
-    // slit of the retired whole-body path) structurally impossible. Colors per the
-    // notation's channels: the upper half by curr.max vs prev.max, the lower half by
-    // curr.min vs prev.min. A zero-height half (waist ON the extreme) is skipped — the
-    // other half then reads as the flat-waisted half-bell of BUOY_CANDLE.md section 5.
+    // at the tip so the tip stays a sharp corner, wound with (and unioned against) the
+    // spine already in the pool. A zero-height half (waist ON the extreme) grows no wall
+    // and is skipped — the other half then reads as the flat-waisted half-bell of
+    // BUOY_CANDLE.md section 5, and the skipped half keeps its zero-length spine.
     const int64_t mean_raw = static_cast<int64_t>(curr.mean.raw_at(price_decimals));
-    const float mean_level_y = SubToFloat(curr.mean.raw_at(price_decimals), floor.price_points);
-    const float spine_half_w = 0.5f * px.x;
     const auto append_half = [&](bool upper) {
         const auto& extreme = upper ? curr.max : curr.min;
         const int64_t extreme_raw = static_cast<int64_t>(extreme.raw_at(price_decimals));
         if (extreme_raw == mean_raw) return;
-        const bool grown = upper ? !(curr.max < prev.max) : !(curr.min < prev.min);
-        tvg::Shape& shape = grown ? shapes.body_green : shapes.body_red;
-        const float extreme_y = SubToFloat(extreme.raw_at(price_decimals), floor.price_points);
-
-        shape.moveTo(mid_x + spine_half_w, mean_level_y);
-        shape.lineTo(mid_x + spine_half_w, extreme_y);
-        shape.lineTo(mid_x - spine_half_w, extreme_y);
-        shape.lineTo(mid_x - spine_half_w, mean_level_y);
-        shape.close();
+        tvg::Shape& body = shape(half_pools(upper).first);
 
         std::vector<BuoySplinePoint> outline;
         outline.reserve(2 * kContourLevels - 1);
@@ -223,25 +324,24 @@ void AppendBuoy(BuoyShapes shapes,
 
         const std::span<const BuoySplinePoint> right_wall(outline.data(), kContourLevels);
         const std::span<const BuoySplinePoint> left_wall(outline.data() + kContourLevels - 1, kContourLevels);
-        shape.moveTo(outline.front().x, outline.front().y);
+        body.moveTo(outline.front().x, outline.front().y);
         for (const auto& segment : CatmullRomSpline(right_wall, false))
-            shape.cubicTo(segment.control1.x, segment.control1.y, segment.control2.x, segment.control2.y, segment.end.x, segment.end.y);
+            body.cubicTo(segment.control1.x, segment.control1.y, segment.control2.x, segment.control2.y, segment.end.x, segment.end.y);
         for (const auto& segment : CatmullRomSpline(left_wall, false))
-            shape.cubicTo(segment.control1.x, segment.control1.y, segment.control2.x, segment.control2.y, segment.end.x, segment.end.y);
-        shape.close();
+            body.cubicTo(segment.control1.x, segment.control1.y, segment.control2.x, segment.control2.y, segment.end.x, segment.end.y);
+        body.close();
     };
     append_half(true);
     append_half(false);
 
-    // Waist diamond on top of the body. Vertices: left tip at (left, mean), top at
-    // (mid, mean+halfH), right tip at (right, mean), bottom at (mid, mean-halfH) —
-    // full height = candle_width / 2 px regardless of the price-axis scale.
-    auto& diamond_shape = (curr.mean >= prev.mean) ? shapes.diamond_green : shapes.diamond_red;
-    diamond_shape.moveTo(left_x,  mean_y);
-    diamond_shape.lineTo(mid_x,   mean_y + half_diamond_h);
-    diamond_shape.lineTo(right_x, mean_y);
-    diamond_shape.lineTo(mid_x,   mean_y - half_diamond_h);
-    diamond_shape.close();
+    // Waist marker on top of the body: a prefiltered horizontal line spanning the whole
+    // slot at the VWAP level, its core kLineCorePx tall regardless of the price-axis
+    // scale. Axis-aligned on purpose — the retired diamond met the scrolling axis with
+    // four slanted edges, the worst case for horizontal sub-pixel motion, while a
+    // horizontal line presents none at all and only its two short ends ever move across
+    // the grid.
+    AppendHLine(waist_core, waist_flank_shape, mean_y, left_x, right_x,
+                waist_half_core, waist_flank);
 }
 
 // Visible-window calibration (BUOY_CANDLE.md section 4): medians over the buoys inside
@@ -294,53 +394,23 @@ void QuoteScratcher::OnAttach(InstrumentPanel& panel)
 {
     mScene.reset(tvg::Scene::gen());
 
-    mClosedGrayShape.reset(tvg::Shape::gen());
-    mClosedBodyGreenShape.reset(tvg::Shape::gen());
-    mClosedBodyRedShape.reset(tvg::Shape::gen());
-    mClosedDiamondGreenShape.reset(tvg::Shape::gen());
-    mClosedDiamondRedShape.reset(tvg::Shape::gen());
-    mClosedSpecialShape.reset(tvg::Shape::gen());
-
-    mActiveGrayShape.reset(tvg::Shape::gen());
-    mActiveBodyGreenShape.reset(tvg::Shape::gen());
-    mActiveBodyRedShape.reset(tvg::Shape::gen());
-    mActiveDiamondGreenShape.reset(tvg::Shape::gen());
-    mActiveDiamondRedShape.reset(tvg::Shape::gen());
-    mActiveSpecialShape.reset(tvg::Shape::gen());
-
-    ApplyFill(*mClosedGrayShape,         kGray);
-    ApplyFill(*mClosedBodyGreenShape,    kBodyGreen);
-    ApplyFill(*mClosedBodyRedShape,      kBodyRed);
-    ApplyFill(*mClosedDiamondGreenShape, kDiamondGreen);
-    ApplyFill(*mClosedDiamondRedShape,   kDiamondRed);
-    ApplyFill(*mClosedSpecialShape,      kSpecial);
-    ApplyFill(*mActiveGrayShape,         kGray);
-    ApplyFill(*mActiveBodyGreenShape,    kBodyGreen);
-    ApplyFill(*mActiveBodyRedShape,      kBodyRed);
-    ApplyFill(*mActiveDiamondGreenShape, kDiamondGreen);
-    ApplyFill(*mActiveDiamondRedShape,   kDiamondRed);
-    ApplyFill(*mActiveSpecialShape,      kSpecial);
-
-    // Z-order (add() order): gray first so the "move" connector renders UNDER the buoy —
-    // it runs all the way to mean but the body covers its inner segment, leaving only the
+    // Z-order is add() order under mScene, and BuoyPool is declared in exactly that
+    // order: the gray pool first so the "move" connector renders UNDER the buoy — it
+    // runs all the way to mean but the body covers its inner segment, leaving only the
     // part outside [min, max] (previous close → nearest tip) visible as a stem with no
-    // gap. Bell bodies next, then the waist diamonds, and the special lozenges on
-    // top. Empty-buoy dashes also live in the gray pool but sit where
-    // no buoy is drawn, so their layer placement is immaterial. Closed-pool shapes are
+    // gap. Then, per colour family, the half-alpha prefilter flanks immediately below
+    // their solid core so a flank never washes out the line it belongs to: bell bodies
+    // and their range spines first, the waist markers (degraded periods' markers
+    // included) on top. Empty-buoy dashes also live in the gray pool but sit where no
+    // buoy is drawn, so their layer placement is immaterial. Closed-pool shapes are
     // grouped contiguously ahead of all active-pool shapes.
-    mScene->add(mClosedGrayShape.get());
-    mScene->add(mClosedBodyGreenShape.get());
-    mScene->add(mClosedBodyRedShape.get());
-    mScene->add(mClosedDiamondGreenShape.get());
-    mScene->add(mClosedDiamondRedShape.get());
-    mScene->add(mClosedSpecialShape.get());
-
-    mScene->add(mActiveGrayShape.get());
-    mScene->add(mActiveBodyGreenShape.get());
-    mScene->add(mActiveBodyRedShape.get());
-    mScene->add(mActiveDiamondGreenShape.get());
-    mScene->add(mActiveDiamondRedShape.get());
-    mScene->add(mActiveSpecialShape.get());
+    for (BuoyShapePool* pool : {&mClosedShapes, &mActiveShapes}) {
+        for (std::size_t i = 0; i < kBuoyPoolCount; ++i) {
+            (*pool)[i].reset(tvg::Shape::gen());
+            ApplyFill(*(*pool)[i], kPoolFill[i]);
+            mScene->add((*pool)[i].get());
+        }
+    }
 
     panel.LogicalScene().add(mScene.get());
 }
@@ -349,24 +419,14 @@ void QuoteScratcher::OnDetach(InstrumentPanel& /*panel*/)
 {
     mScene.reset();
 
-    mClosedGrayShape.reset();
-    mClosedBodyGreenShape.reset();
-    mClosedBodyRedShape.reset();
-    mClosedDiamondGreenShape.reset();
-    mClosedDiamondRedShape.reset();
-    mClosedSpecialShape.reset();
-
-    mActiveGrayShape.reset();
-    mActiveBodyGreenShape.reset();
-    mActiveBodyRedShape.reset();
-    mActiveDiamondGreenShape.reset();
-    mActiveDiamondRedShape.reset();
-    mActiveSpecialShape.reset();
+    for (BuoyShapePool* pool : {&mClosedShapes, &mActiveShapes})
+        for (auto& shape : *pool) shape.reset();
 
     mEmittedClosedCount = 0;
     mEmittedFirstBuoyTs.reset();
     mEmittedFloorTimeMs = 0;
     mEmittedFloorPricePts = 0;
+    mEmittedPxSizeX = 0.0f;
     mEmittedPxSizeY = 0.0f;
     mEmittedCalibration.reset();
 }
@@ -548,47 +608,28 @@ void QuoteScratcher::OnLayout(InstrumentPanel& panel)
     const BuoyCandleQuotes::Calibration calibration = mEmittedCalibration ? *mEmittedCalibration : BuoyCandleQuotes::Calibration{};
 
     // Closed-pool invalidation: any of (a) series anchor moved, (b) scene floor
-    // repositioned, (c) Y pixel size changed (pixel-fixed heights and the ASPECT
-    // regime are derived from px.y), (d) calibration adopted — every closed width
-    // consumes it. Pan/zoom/resize on X are absorbed by the LogicalScene matrix and
-    // do NOT invalidate.
+    // repositioned, (c) scene pixel size changed on EITHER axis — the prefiltered line
+    // thicknesses, the gray dash half-height and the ASPECT regime are all (k * px)-
+    // derived, and px.x is the inverse of e11, which the panel derives from the candle
+    // width, so tracking it also catches the candle-width-driven slot clamp — (d)
+    // calibration adopted, every closed width consumes it. Pan and vertical resize are
+    // absorbed by the LogicalScene matrix and do NOT invalidate.
     const bool series_changed = !first_ts || mEmittedFirstBuoyTs != first_ts;
     const bool floor_changed  = floor.time_ms != mEmittedFloorTimeMs ||
                                 floor.price_points != mEmittedFloorPricePts;
-    const bool px_changed     = px.y != mEmittedPxSizeY;
+    const bool px_changed     = px.x != mEmittedPxSizeX || px.y != mEmittedPxSizeY;
     if (series_changed || floor_changed || px_changed || calibration_changed) {
-        mClosedGrayShape->reset();
-        mClosedBodyGreenShape->reset();
-        mClosedBodyRedShape->reset();
-        mClosedDiamondGreenShape->reset();
-        mClosedDiamondRedShape->reset();
-        mClosedSpecialShape->reset();
-        ApplyFill(*mClosedGrayShape,         kGray);
-        ApplyFill(*mClosedBodyGreenShape,    kBodyGreen);
-        ApplyFill(*mClosedBodyRedShape,      kBodyRed);
-        ApplyFill(*mClosedDiamondGreenShape, kDiamondGreen);
-        ApplyFill(*mClosedDiamondRedShape,   kDiamondRed);
-        ApplyFill(*mClosedSpecialShape,      kSpecial);
+        ResetPool(mClosedShapes);
         mEmittedClosedCount = 0;
         mEmittedFirstBuoyTs = first_ts;
         mEmittedFloorTimeMs = floor.time_ms;
         mEmittedFloorPricePts = floor.price_points;
+        mEmittedPxSizeX = px.x;
         mEmittedPxSizeY = px.y;
     }
 
-    // Active pool is always replaced — at most one buoy across the seven pooled shapes.
-    mActiveGrayShape->reset();
-    mActiveBodyGreenShape->reset();
-    mActiveBodyRedShape->reset();
-    mActiveDiamondGreenShape->reset();
-    mActiveDiamondRedShape->reset();
-    mActiveSpecialShape->reset();
-    ApplyFill(*mActiveGrayShape,         kGray);
-    ApplyFill(*mActiveBodyGreenShape,    kBodyGreen);
-    ApplyFill(*mActiveBodyRedShape,      kBodyRed);
-    ApplyFill(*mActiveDiamondGreenShape, kDiamondGreen);
-    ApplyFill(*mActiveDiamondRedShape,   kDiamondRed);
-    ApplyFill(*mActiveSpecialShape,      kSpecial);
+    // Active pool is always replaced — at most one buoy across its pooled shapes.
+    ResetPool(mActiveShapes);
 
     if (!first_ts) return;
 
@@ -604,9 +645,7 @@ void QuoteScratcher::OnLayout(InstrumentPanel& panel)
         // (series anchor) compare against itself — paints neutral (green via `>=`).
         const auto* prev_filled = PrevFilledBuoy(closed, i);
         const auto& prev = prev_filled ? *prev_filled : curr;
-        AppendBuoy({*mClosedGrayShape, *mClosedBodyGreenShape, *mClosedBodyRedShape,
-                    *mClosedDiamondGreenShape, *mClosedDiamondRedShape, *mClosedSpecialShape},
-                   ts, duration, curr, prev, calibration, floor, px, candle_w_px, pd);
+        AppendBuoy(mClosedShapes, ts, duration, curr, prev, calibration, floor, px, candle_w_px, pd);
     }
     mEmittedClosedCount = n;
 
@@ -614,9 +653,7 @@ void QuoteScratcher::OnLayout(InstrumentPanel& panel)
     const uint64_t active_ts = *first_ts + n * duration;
     const auto* prev_filled = PrevFilledBuoy(closed, n);
     BuoyCandleQuotes::candle_t prev = prev_filled ? *prev_filled : active;
-    AppendBuoy({*mActiveGrayShape, *mActiveBodyGreenShape, *mActiveBodyRedShape,
-                *mActiveDiamondGreenShape, *mActiveDiamondRedShape, *mActiveSpecialShape},
-               active_ts, duration, active, prev, calibration, floor, px, candle_w_px, pd);
+    AppendBuoy(mActiveShapes, active_ts, duration, active, prev, calibration, floor, px, candle_w_px, pd);
 }
 
 }

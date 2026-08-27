@@ -15,9 +15,10 @@ For a single period the buoy replaces the OHLC candle:
   Both tips are sharp points (the price extremes).
 - The **waist** — the widest horizontal slice, the buoy's waterline — sits at the volume-weighted
   average price (VWAP) `μ`. Because the VWAP is the single most important value
-  of the period, it is additionally marked by a **fixed-size thin horizontal
-  diamond** (one slot wide, half a slot tall, in screen pixels) drawn on top of
-  the body, so the level stays crisply readable at any zoom.
+  of the period, it is additionally marked by a **fixed-size horizontal line**
+  (one slot wide, `LINE` px thick in screen pixels) drawn on top of the body, so
+  the level stays crisply readable at any zoom. That marker is a *prefiltered*
+  line — §9.
 - The **wall** between a tip and the waist follows a Gaussian profile, so the
   body looks like a vertical bell rotated 90°.
 - The buoy is **not vertically symmetric**. The waist sits at the volume-weighted
@@ -160,7 +161,7 @@ keeps the cap rare.
 
 A buoy truncated to `A_slot` no longer shows its full volume and must
 be visually distinguished; the overflow is to be moved onto a **colour
-dimension** — an open design question tracked in §9. Until it is resolved,
+dimension** — an open design question tracked in §10. Until it is resolved,
 implementations apply the width clamp alone.
 
 ### Calibration of K
@@ -218,11 +219,14 @@ longer half is shorter than two body widths,
 $$\max(\text{top}_{px},\,\text{bot}_{px}) < \texttt{ASPECT} \cdot \text{fullWidth},
   \qquad \texttt{ASPECT}=2,$$
 
-the buoy is excluded from the width calibration (§4) and stamped with a
-**fixed-size, high-contrast marker** (a bright lozenge) — it is the case that
-cannot be scaled by height, so it is not scaled at all. A single-price period
-(`H = L`) has zero height on both halves and is therefore special by
-construction, whatever its volume.
+the buoy is excluded from the width calibration (§4) and stamped with the
+**fixed-size marker** — it is the case that cannot be scaled by height, so it is
+not scaled at all. That marker is the waist line itself, in the same colour
+channel a readable buoy's waist carries: what a degraded period still says is its
+VWAP level and whether that level grew. Its **range spines** (§9) are drawn too —
+a period has tips whether or not its distribution can be drawn. A single-price
+period (`H = L`) has zero height on both halves and is therefore special by
+construction, whatever its volume; its spines are then nominal, of zero length.
 
 **Half-normal (skewed waist).** When the waist hugs one extreme,
 
@@ -282,13 +286,14 @@ K            = calibrate(all stats)      # once per window: Wₜ/2 · median(σ�
 for each period:
     A        = min(K * V / (s_y·(σ⁺+σ⁻)), A_slot)   # peak half-width, non-overlap cap
     cls      = classify(s, s_y, A)       # normal | half | special
+    draw range spines                    # both halves, always (§9)
     if special:
-        draw fixed marker                # bright, fixed size
+        draw waist line                  # the fixed-size marker (§5)
     else:
         pts  = sample per-side Gaussian walls (pinned tips; flat side if half)
         path = catmull_rom_to_bezier(pts)
-        draw path + waist diamond + ±1σ ticks
-        # A truncated to A_slot → saturation colour cue (§9, open)
+        draw path + waist line + ±1σ ticks
+        # A truncated to A_slot → saturation colour cue (§10, open)
 ```
 
 Per period the cost is one `O(n)` pass over ticks for the raw statistics (a
@@ -308,6 +313,8 @@ structure required.
 | `ASPECT` | 2 | aspect ratio below which a buoy becomes *special* |
 | `SKEW` | 0.15 | waist-to-extreme fraction below which it becomes *half-normal* |
 | `N` (contour samples) | 12 | wall smoothness |
+| `LINE` (line core) | 2 px | solid core of every prefiltered line (§9) |
+| `FLANK` | 1 px | half-alpha prefilter flank on each side of a line (§9) |
 | `σ` floor | 1 raw price unit | per side; the fixed-point floor at the instrument's smallest tick — guards `w(y)` and the width division for empty sides and near-single-price periods; the §4 range fit never clamps below it |
 
 All thresholds are screen-space and dataset-relative, so the encoding stays
@@ -315,7 +322,54 @@ legible across instruments, timeframes, and zoom levels.
 
 ---
 
-## 9. Further research
+## 9. Prefiltered lines
+
+Two of the notation's elements are pure lines: the **waist marker** at `μ`, and
+the per-half **range spine** from the waist out to that half's tip, which keeps
+the range visible where the 3σ taper thins below a pixel and is the only range
+cue a *special* (§5) period has. Both sit on geometry that sweeps continuously
+across the pixel grid as the chart scrolls and rescales, and that is precisely
+the case a hard-edged hairline handles worst.
+
+Under analytic (box-filtered) coverage a rect exactly one pixel wide alternates
+between **one fully covered column** and **two half covered ones** as its centre
+crosses a pixel boundary. The ink is conserved; its distribution is not, and the
+eye reads the line pulsing between crisp-and-dark and soft-and-pale — the
+"especially noticeable when the lines are animated" case *Fast Prefiltered Lines*
+(Chan & Durand, GPU Gems 2 ch. 22) opens with.
+
+The two escapes are mutually exclusive. **Snapping** the line to the pixel grid
+is crisp but quantises its motion, so it belongs to static rendering (SVG's
+`shape-rendering="crispEdges"`), not to an animated one. **Prefiltering** is the
+other: widen the line to at least the filter footprint and let a soft skirt
+absorb the sub-pixel remainder — the same reasoning as the *hairline* rule Skia
+and Direct2D apply below one pixel, where the width is clamped to one pixel and
+the *alpha* modulated by the true width rather than the geometry shrunk.
+
+So each line is drawn as a solid **core** plus a half-alpha **flank** on each
+side:
+
+- the core is `LINE` = 2 px across. At two pixels at least one column is fully
+  covered at *every* sub-pixel offset — `[1, 1]` centred, `[½, 1, ½]` at a
+  half-pixel offset — so peak intensity and total ink are both invariant under
+  motion. At one pixel the peak halves twice per pixel of travel;
+- the flank is `FLANK` = 1 px at half the core's alpha: the two-level
+  quantisation of the filter skirt a flat fill can express. It turns the leftover
+  edge redistribution into a steady soft edge rather than a change in apparent
+  width.
+
+A flank carries its line's own hue and is painted directly under its core, so it
+never washes out the line it belongs to, and where it lands on same-coloured ink
+it is invisible.
+
+The waist marker is **axis-aligned for the same reason**. It replaced a diamond
+of the same footprint, which met the scrolling axis with four slanted edges — the
+worst case for horizontal sub-pixel motion — where a horizontal line presents
+none at all and only its two short ends ever cross the grid.
+
+---
+
+## 10. Further research
 
 **Volume colour dimension.** Beyond the area encoding, every buoy's fill is to
 carry a colour component sampled from its traded volume — a redundant channel
