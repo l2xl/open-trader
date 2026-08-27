@@ -16,6 +16,7 @@
 #include "datahub/data_sink.hpp"
 #include "entities/orderbookdata.hpp"
 #include "common/hex.hpp"
+#include "log.hpp"
 
 namespace scratcher::bybit {
 namespace {
@@ -116,20 +117,20 @@ void ByBitDataManager::HandleError(std::weak_ptr<ByBitDataManager> ref, std::exc
     try {
         std::rethrow_exception(eptr);
     } catch (const std::exception& ex) {
-        std::cerr << "ByBit data error: " << ex.what() << std::endl;
+        cex::log::at(cex::log::error) << "ByBit data error: " << ex.what() << std::endl;
     }
 }
 
 void ByBitDataManager::SetupInstrumentDataSource()
 {
     const std::string url = http_base(m_config) + API_INSTRUMENTS;
-    std::clog << "setupInstrumentDataSource: " << url << std::endl;
+    cex::log::at(cex::log::log) << "setupInstrumentDataSource: " << url << std::endl;
 
     auto data_sink = m_instrument_sink->data_acceptor<std::deque<InstrumentInfoAPI>>();
 
     auto resp_adapter = datahub::make_data_adapter<ApiResponse<ListResult<InstrumentInfoAPI>>>(
         [data_sink = std::move(data_sink)](ApiResponse<ListResult<InstrumentInfoAPI>>&& response) mutable {
-            std::clog << "Received " << response.result.list.size() << " instruments from server" << std::endl;
+            cex::log::at(cex::log::log) << "Received " << response.result.list.size() << " instruments from server" << std::endl;
             data_sink(std::move(response.result.list));
         }
     );
@@ -188,7 +189,7 @@ void ByBitDataManager::SetupPublicDataSource()
 
             datahub::make_data_adapter<WsOpResponse>(
                 [](WsOpResponse&& resp) {
-                    std::clog << "WebSocket [" << resp.conn_id << "] op=" << resp.op << " " << resp.ret_msg.value_or("") << std::endl;
+                    cex::log::at(cex::log::log) << "WebSocket [" << resp.conn_id << "] op=" << resp.op << " " << resp.ret_msg.value_or("") << std::endl;
                 })),
 
                 error_cb);
@@ -198,7 +199,7 @@ void ByBitDataManager::SetupPublicDataSource()
 void ByBitDataManager::SetupPrivateDataSource()
 {
     if (!m_credentials) {
-        std::clog << "No API credentials, skipping private pipeline" << std::endl;
+        cex::log::at(cex::log::log) << "No API credentials, skipping private pipeline" << std::endl;
         return;
     }
 
@@ -223,7 +224,7 @@ void ByBitDataManager::SetupPrivateDataSource()
 
     m_cancel_order.emplace(datahub::make_json_body_encoder<CancelOrderRequest>(
         signed_query::create(m_context, connect::http::verb::post, api_base + API_ORDER_CANCEL, rest_signer{*m_credentials},
-            [](std::string&& response_json) { std::clog << "CancelOrder response: " << response_json << std::endl; },
+            [](std::string&& response_json) { cex::log::at(cex::log::log) << "CancelOrder response: " << response_json << std::endl; },
             error_cb)));
 
     m_query_open_orders.emplace(datahub::make_url_query_encoder<OrderFilter>(
@@ -259,7 +260,7 @@ void ByBitDataManager::SetupPrivateDataSource()
             datahub::make_data_adapter<WsPrivatePayload<std::deque<WalletBalance>>>([wallet_acceptor](WsPrivatePayload<std::deque<WalletBalance>>&& payload) mutable
                 { wallet_acceptor(std::move(payload.data)); }),
             datahub::make_data_adapter<WsOpResponse>([](WsOpResponse&& resp) {
-                std::clog << "Private WebSocket [" << resp.conn_id << "] op=" << resp.op << " success=" << resp.success << " " << resp.ret_msg.value_or("") << std::endl;
+                cex::log::at(cex::log::log) << "Private WebSocket [" << resp.conn_id << "] op=" << resp.op << " success=" << resp.success << " " << resp.ret_msg.value_or("") << std::endl;
             })),
         error_cb);
 

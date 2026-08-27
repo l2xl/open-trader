@@ -58,7 +58,7 @@ public:
     template<typename DataAcceptor, typename ErrorHandler>
     static std::shared_ptr<http_query> create(std::shared_ptr<context> ctx, http::verb verb, const std::string& url, RequestPolicy policy, DataAcceptor&& data_handler, ErrorHandler&& error_handler)
     {
-        return std::static_pointer_cast<http_query>(std::make_shared<generic_handler<std::string&&, http_query, DataAcceptor, ErrorHandler, std::shared_ptr<context>, http::verb, const std::string&, RequestPolicy>>(std::forward<DataAcceptor>(data_handler), std::forward<ErrorHandler>(error_handler), std::move(ctx), std::move(verb), url, std::move(policy)));
+        return std::static_pointer_cast<http_query>(std::make_shared<cex::generic_handler<std::string&&, http_query, DataAcceptor, ErrorHandler, std::shared_ptr<context>, http::verb, const std::string&, RequestPolicy>>(std::forward<DataAcceptor>(data_handler), std::forward<ErrorHandler>(error_handler), std::move(ctx), std::move(verb), url, std::move(policy)));
     }
 
     template<typename DataAcceptor, typename ErrorHandler>

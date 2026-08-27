@@ -21,6 +21,7 @@
 
 
 #include "connection_context.hpp"
+#include "log.hpp"
 #include "generic_handler.hpp"
 
 namespace scratcher::connect {
@@ -96,7 +97,7 @@ public:
     static std::shared_ptr<websock_connection> create(std::shared_ptr<context> ctx, const std::string& url, SessionPolicy policy, DataAcceptor&& data_handler, ErrorHandler&& error_handler)
     {
         auto ws = std::static_pointer_cast<websock_connection>(
-            std::make_shared<generic_handler<std::string, websock_connection, DataAcceptor, ErrorHandler, std::shared_ptr<context>, const std::string&, SessionPolicy>>(
+            std::make_shared<cex::generic_handler<std::string, websock_connection, DataAcceptor, ErrorHandler, std::shared_ptr<context>, const std::string&, SessionPolicy>>(
                 std::forward<DataAcceptor>(data_handler),
                 std::forward<ErrorHandler>(error_handler),
                 std::move(ctx), url, std::move(policy)));
@@ -180,15 +181,15 @@ boost::asio::awaitable<void> websock_connection<SessionPolicy>::co_enqueue(std::
     }
     catch (boost::system::system_error& e) {
         self->m_status = status::STALE;
-        std::cerr << "WebSocket send-channel failed: " << e.what() << std::endl;
+        cex::log::at(cex::log::error) << "WebSocket send-channel failed: " << e.what() << std::endl;
     }
     catch (std::exception& e) {
         self->m_status = status::STALE;
-        std::cerr << "WebSocket send-channel failed: " << e.what() << std::endl;
+        cex::log::at(cex::log::error) << "WebSocket send-channel failed: " << e.what() << std::endl;
     }
     catch (...) {
         self->m_status = status::STALE;
-        std::cerr << "WebSocket send-channel failed (unknown error)" << std::endl;
+        cex::log::at(cex::log::error) << "WebSocket send-channel failed (unknown error)" << std::endl;
     }
 }
 
@@ -219,13 +220,13 @@ boost::asio::awaitable<void> websock_connection<SessionPolicy>::co_heartbeat_loo
             else co_return;
         }
         catch (boost::system::system_error& e) {
-            std::cerr << "Heartbeat error: " << e.what() << std::endl;
+            cex::log::at(cex::log::error) << "Heartbeat error: " << e.what() << std::endl;
         }
         catch (std::exception& e) {
-            std::cerr << "Heartbeat error: " << e.what() << std::endl;
+            cex::log::at(cex::log::error) << "Heartbeat error: " << e.what() << std::endl;
         }
         catch (...) {
-            std::cerr << "Heartbeat unknown error" << std::endl;
+            cex::log::at(cex::log::error) << "Heartbeat unknown error" << std::endl;
         }
     }
 }
@@ -235,7 +236,7 @@ boost::asio::awaitable<void> websock_connection<SessionPolicy>::co_write(std::we
 {
     std::shared_ptr<websocket_stream> stream;
     if (auto self = ref.lock()) {
-        std::clog << "WebSocket write: " << payload << " ... " << std::flush;
+        cex::log::at(cex::log::log) << "WebSocket write: " << payload << " ... " << std::flush;
         stream = self->m_websocket;
     }
     else co_return;
@@ -243,7 +244,7 @@ boost::asio::awaitable<void> websock_connection<SessionPolicy>::co_write(std::we
     co_await stream->async_write(boost::asio::buffer(payload), boost::asio::use_awaitable);
 
     if (auto self = ref.lock()) {
-        std::clog << "ok" << std::endl;
+        cex::log::at(cex::log::log) << "ok" << std::endl;
         self->m_last_heartbeat = std::chrono::steady_clock::now();
     }
 }
@@ -292,14 +293,14 @@ boost::asio::awaitable<void> websock_connection<SessionPolicy>::co_send_loop(std
         catch (boost::system::error_code& ec) {
             if (auto self = ref.lock()) {
                 self->m_status = status::STALE;
-                std::cerr << "WebSocket write error: " << ec.message() << std::endl;
+                cex::log::at(cex::log::error) << "WebSocket write error: " << ec.message() << std::endl;
             }
             co_return;
         }
         catch (std::exception& e) {
             if (auto self = ref.lock()) {
                 self->m_status = status::STALE;
-                std::cerr << "WebSocket write unknown error: " << e.what() << std::endl;
+                cex::log::at(cex::log::error) << "WebSocket write unknown error: " << e.what() << std::endl;
             }
             co_return;
         }
@@ -321,10 +322,10 @@ boost::asio::awaitable<void> websock_connection<SessionPolicy>::co_exec_loop(std
                 co_return;
             }
             catch (boost::system::error_code& ec) {
-                std::cerr << "Connection error: " << ec.message() << std::endl;
+                cex::log::at(cex::log::error) << "Connection error: " << ec.message() << std::endl;
             }
             catch (std::exception& e) {
-                std::cerr << "Connection error: " << e.what() << std::endl;
+                cex::log::at(cex::log::error) << "Connection error: " << e.what() << std::endl;
             }
             co_await boost::asio::steady_timer(co_await this_coro::executor, std::chrono::milliseconds(250)).async_wait(boost::asio::use_awaitable);
         }
@@ -342,21 +343,21 @@ boost::asio::awaitable<void> websock_connection<SessionPolicy>::co_exec_loop(std
     catch (boost::system::error_code& ec) {
         if (auto self = ref.lock()) {
             self->m_status = status::STALE;
-            std::cerr << "WebSocket error: " << ec.message() << std::endl;
+            cex::log::at(cex::log::error) << "WebSocket error: " << ec.message() << std::endl;
             std::rethrow_exception(std::current_exception());
         }
     }
     catch (std::exception& e) {
         if (auto self = ref.lock()) {
             self->m_status = status::STALE;
-            std::cerr << "WebSocket unknown error: " << e.what() << std::endl;
+            cex::log::at(cex::log::error) << "WebSocket unknown error: " << e.what() << std::endl;
             std::rethrow_exception(std::current_exception());
         }
     }
     catch (...) {
         if (auto self = ref.lock()) {
             self->m_status = status::STALE;
-            std::cerr << "WebSocket unknown error" << std::endl;
+            cex::log::at(cex::log::error) << "WebSocket unknown error" << std::endl;
             throw std::runtime_error("WebSocket unknown error");
         }
     }
@@ -405,7 +406,7 @@ boost::asio::awaitable<void> websock_connection<SessionPolicy>::co_open(std::sha
 
         std::string host_port = self->m_host + ":" + std::to_string(connect_result.port());
 
-        std::clog << "WebSocket handshake: " << host_port << " " << self->m_path_query << std::endl;
+        cex::log::at(cex::log::log) << "WebSocket handshake: " << host_port << " " << self->m_path_query << std::endl;
 
         co_await websock->async_handshake(host_port, self->m_path_query, boost::asio::use_awaitable);
 
@@ -416,7 +417,7 @@ boost::asio::awaitable<void> websock_connection<SessionPolicy>::co_open(std::sha
 
         self->m_status = status::READY;
 
-        std::clog << "WebSocket connection established" << std::endl;
+        cex::log::at(cex::log::log) << "WebSocket connection established" << std::endl;
     }
 }
 

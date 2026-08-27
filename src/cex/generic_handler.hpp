@@ -7,7 +7,7 @@
 #include <utility>
 #include <stdexcept>
 
-namespace scratcher {
+namespace cex {
 
 template<typename PARENT, typename ERROR_CALLABLE, typename ... ARGS>
 class error_handler: public PARENT

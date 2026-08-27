@@ -3,6 +3,7 @@
 // Distributed under the Intellectual Property Reserve License, v2 (IPRL)
 
 #include "connection_context.hpp"
+#include "log.hpp"
 #include <iostream>
 
 namespace scratcher::connect {
@@ -28,17 +29,17 @@ context::co_resolve(std::shared_ptr<context> self, std::string host, std::string
     auto it = self->m_resolution_cache.find(key);
     if (it != self->m_resolution_cache.end())
     {
-        std::clog << "Using cached resolution for " << key << std::endl;
+        cex::log::at(cex::log::log) << "Using cached resolution for " << key << std::endl;
         co_return it->second;
     }
 
     // Perform resolution
-    std::clog << "Starting name resolution for " << key << std::endl;
+    cex::log::at(cex::log::log) << "Starting name resolution for " << key << std::endl;
     boost::asio::ip::tcp::resolver resolver(self->io());
     auto results = co_await resolver.async_resolve(host, port, use_awaitable);
 
     self->m_resolution_cache.emplace(move(key), results);
-    std::clog << "name resolution completed for " << key << std::endl;
+    cex::log::at(cex::log::log) << "name resolution completed for " << key << std::endl;
 
     co_return results;
 }

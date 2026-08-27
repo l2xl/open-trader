@@ -89,6 +89,8 @@ endif()
 include(cmake/ThorvgBuild.cmake)
 
 set(core_SOURCES
+        src/cex/generic_handler.hpp
+        src/cex/log.hpp
         src/common/config_helper.hpp
         src/data/bybit/bybit_config.hpp
         src/cockpit/trade_cockpit_config.hpp
@@ -97,7 +99,6 @@ set(core_SOURCES
         src/common/hex.hpp
         src/common/timedef.hpp
         src/common/data_rectangle.hpp
-        src/core/generic_handler.hpp
         src/core/scheduler.cpp
         src/core/scheduler.hpp
         src/engine/buoy_candle.cpp
@@ -192,6 +193,7 @@ add_custom_command(
 include_directories(
         contrib
         src
+        src/cex
         src/common
         src/connect
         src/core

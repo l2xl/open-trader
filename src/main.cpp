@@ -12,13 +12,14 @@
 #include "scheduler.hpp"
 #include "config.hpp"
 #include "config_helper.hpp"
+#include "log.hpp"
 
 namespace SQLite {
 
 void assertion_failed(const char* apFile, int apLine, const char* apFunc, const char* apExpr, const char* apMsg) {
-    std::cerr << "SQLite assertion failed: " << apFile << ":" << apLine << " in " << apFunc << "() - " << apExpr;
-    if (apMsg) std::cerr << " (" << apMsg << ")";
-    std::cerr << std::endl;
+    cex::log::at(cex::log::error) << "SQLite assertion failed: " << apFile << ":" << apLine << " in " << apFunc << "() - " << apExpr;
+    if (apMsg) cex::log::at(cex::log::error) << " (" << apMsg << ")";
+    cex::log::at(cex::log::error) << std::endl;
     std::abort();
 }
 
@@ -28,6 +29,8 @@ int main(int argc, char* argv[])
 {
     try {
         auto config = std::make_shared<Config>(argc, argv);
+        cex::log::set_verbose(config->Verbose() > 0);
+
         auto sched = scratcher::scheduler::create(1);
         auto database = std::make_shared<SQLite::Database>(config->DataDir() + "/market_data.sqlite", SQLite::OPEN_READWRITE | SQLite::OPEN_CREATE);
 
@@ -39,19 +42,19 @@ int main(int argc, char* argv[])
         return window.Run();
     }
     catch (std::system_error& e) {
-        std::cerr << "System error: " << e.what() << " (" << e.code() << ')' << std::endl;
+        cex::log::at(cex::log::error) << "System error: " << e.what() << " (" << e.code() << ')' << std::endl;
         return -1;
     }
     catch (boost::system::system_error& e) {
-        std::cerr << "System error: " << e.what() << " (" << e.code() << ')' << std::endl;
+        cex::log::at(cex::log::error) << "System error: " << e.what() << " (" << e.code() << ')' << std::endl;
         return -1;
     }
     catch (std::exception& e) {
-        std::cerr << "Error: " << e.what() << std::endl;
+        cex::log::at(cex::log::error) << "Error: " << e.what() << std::endl;
         return -1;
     }
     catch (...) {
-        std::cerr << "Unknown error" << std::endl;
+        cex::log::at(cex::log::error) << "Unknown error" << std::endl;
         return -1;
     }
 }

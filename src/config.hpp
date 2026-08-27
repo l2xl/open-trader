@@ -14,8 +14,8 @@ class Config
 {
     CLI::App mApp;
 
-    size_t mVerbose;
-    bool mTrace;
+    size_t mVerbose = 0;
+    bool mTrace = false;
 
     std::string mDataDir;
 

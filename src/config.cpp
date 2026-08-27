@@ -76,6 +76,7 @@ Config::Config(int argc, const char *const argv[])
     mApp.set_version_flag("--version", []{ return std::string("BScratcher Wallet v.0.1"); });
     mApp.set_config(CONFIG, conf_path, "Configuration file");
     mApp.add_option(DATADIR, mDataDir, "Directory path to store wallet data")->default_val(home/".scratcher")->configurable(false);
+    mApp.add_flag(VERBOSE, mVerbose, "Print verbose traces to log")->configurable(true);
     mApp.add_flag(TRACE, mTrace, "Print debug traces to log");
 
     auto* bybit = mApp.add_subcommand(bybit_keys::section, "ByBit exchange options")->configurable()->group("Config File Sections");
