@@ -57,14 +57,6 @@ constexpr std::array<Color, kBuoyPoolCount> kPoolFill{
     Flank(kWaistRed),   kWaistRed,
 };
 
-// BUOY_CANDLE.md section 8 render-side tunables: the median-volume buoy's full waist
-// width, the horizontal clearance between neighbouring slots, the contour sample count
-// (N = 12 wall levels), and the aspect ratio below which a period becomes special.
-constexpr float kTargetWaistWidthPx = 14.f;
-constexpr float kSlotGapPx = 2.f;
-constexpr std::size_t kContourLevels = 13;
-constexpr float kAspect = 2.f;
-
 // PREFILTERED LINES. The buoy's two purely linear elements — the VWAP waist marker and
 // the per-half range spine — sit on geometry that sweeps continuously across the pixel
 // grid as the chart scrolls and rescales, which is the case a hard-edged hairline is
@@ -95,6 +87,22 @@ constexpr float kAspect = 2.f;
 // (see the pool Z-order), so they never wash out the line they belong to.
 constexpr float kLineCorePx = 2.f;
 constexpr float kLineFlankPx = 1.f;
+
+// BUOY_CANDLE.md section 8 render-side tunables: the median-volume buoy's full waist
+// width, the horizontal clearance between neighbouring slots, the contour sample count
+// (N = 12 wall levels), and the aspect ratio below which a period becomes special.
+constexpr float kTargetWaistWidthPx = 14.f;
+constexpr std::size_t kContourLevels = 13;
+constexpr float kAspect = 2.f;
+
+// The slot gap is the SAME anti-flicker width as the line core above, and for the same
+// reason read inside out: a gap is a strip of background between two neighbours, and a
+// strip narrower than two device pixels is not guaranteed one fully UNCOVERED column at
+// every sub-pixel offset — it would thin and blink shut as the chart scrolls, exactly
+// the pulsing a one-pixel line does. Every slot-spanning element is inset by half of it
+// per side: the bell through the A_slot clamp, the waist marker and the empty-buoy dash
+// through the slot inset in AppendBuoy.
+constexpr float kSlotGapPx = kLineCorePx;
 
 inline float SubToFloat(uint64_t value, uint64_t floor)
 {
@@ -181,12 +189,15 @@ const BuoyCandleQuotes::candle_t* PrevFilledBuoy(const BuoyCandleQuotes::quotes_
 //     waist half-width A = (Wt/2)·WidthRatio px clamped to the slot; the upper half
 //     colours by curr.max vs prev.max, the lower half by curr.min vs prev.min — the
 //     spine of a half shares its half's colour channel;
-//   * the WAIST MARKER is a prefiltered horizontal line spanning the slot at the VWAP
-//     level, coloured by curr.mean vs prev.mean;
+//   * the WAIST MARKER is a prefiltered horizontal line at the VWAP level spanning
+//     the slot less the gap inset, coloured by curr.mean vs prev.mean;
 //   * SPECIAL (degraded) periods — single-price, or failing the screen-space ASPECT
 //     test — draw the spines and that same waist marker, in the same colour channels,
 //     and no bell;
-//   * the empty-buoy gray dash is candle_width px wide × 0.5 px tall.
+//   * the empty-buoy gray dash is (candle_width - gap) px wide × 0.5 px tall.
+// Every slot-spanning element is inset kSlotGapPx/2 per side so neighbouring buoys
+// keep a gap of background between them — see kSlotGapPx for why that gap is the
+// same width as a prefiltered line's core.
 // X dimensions are pixel-stable through the LogicalScene matrix because period_ms
 // maps to candle_width px via e11; dimensions that need a fixed pixel count are
 // supplied in scene units as (pixels * px.x) or (pixels * px.y) per axis.
@@ -203,10 +214,19 @@ void AppendBuoy(BuoyShapePool& pool,
     // Candle prices are currency carried verbatim from the wire; the scene works in integer
     // "points" on the instrument's price grid, so project each currency to that grid here via
     // raw_at(price_decimals) — the one place wire scale becomes scene coordinates.
-    const float left_x  = SubToFloat(buoy_ts, floor.time_ms);
-    const float right_x = SubToFloat(buoy_ts + duration, floor.time_ms);
-    const float mid_x   = 0.5f * (left_x + right_x);
-    const float mean_y  = SubToFloat(curr.mean.raw_at(price_decimals), floor.price_points);
+    const float slot_left  = SubToFloat(buoy_ts, floor.time_ms);
+    const float slot_right = SubToFloat(buoy_ts + duration, floor.time_ms);
+    const float mid_x      = 0.5f * (slot_left + slot_right);
+    const float mean_y     = SubToFloat(curr.mean.raw_at(price_decimals), floor.price_points);
+
+    // Slot inset: every element that spans the period horizontally stops half a gap
+    // short of the slot edge, so neighbouring buoys are separated by a full kSlotGapPx
+    // of background rather than butting into one continuous band. Clamped so a slot
+    // narrower than the gap still leaves a 1 px mark instead of inverting.
+    const float inset  = std::min(0.5f * kSlotGapPx * px.x,
+                                  std::max(0.f, 0.5f * (slot_right - slot_left) - 0.5f * px.x));
+    const float left_x  = slot_left + inset;
+    const float right_x = slot_right - inset;
 
     const auto shape = [&pool](BuoyPool which) -> tvg::Shape& {
         return *pool[static_cast<std::size_t>(which)];
@@ -216,6 +236,8 @@ void AppendBuoy(BuoyShapePool& pool,
         // Empty buoy — no trades arrived during the period. Carry the previous last
         // price forward as a 0.5 px-tall gray rect; in this state the model has
         // min == max == mean == last_price, so no body would have any visible extent.
+        // Inset like every other slot-spanning element, which is what makes a run of
+        // empty periods read as the dashes it is named for rather than one flat rule.
         const float half_h = 0.25f * px.y;
         AppendQuad(shape(BuoyPool::Gray), left_x, mean_y - half_h, right_x, mean_y + half_h);
         return;
@@ -344,9 +366,9 @@ void AppendBuoy(BuoyShapePool& pool,
     append_half(true);
     append_half(false);
 
-    // Waist marker on top of the body: a prefiltered horizontal line spanning the whole
-    // slot at the VWAP level, its core kLineCorePx tall regardless of the price-axis
-    // scale. Axis-aligned on purpose — the retired diamond met the scrolling axis with
+    // Waist marker on top of the body: a prefiltered horizontal line spanning the slot
+    // (less the gap inset) at the VWAP level, its core kLineCorePx tall regardless of
+    // the price-axis scale. Axis-aligned on purpose — the retired diamond met the scrolling axis with
     // four slanted edges, the worst case for horizontal sub-pixel motion, while a
     // horizontal line presents none at all and only its two short ends ever move across
     // the grid.

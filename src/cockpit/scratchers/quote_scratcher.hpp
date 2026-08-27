@@ -91,9 +91,9 @@ using BuoyShapePool = std::array<tvg_ptr<tvg::Shape>, kBuoyPoolCount>;
 //    prev.min — and each half's spine shares its half's channel. A zero-height half
 //    grows no wall and is skipped, leaving the flat-waisted half-bell of the skewed
 //    regime.
-//  * The WAIST MARKER on top — a PREFILTERED horizontal line spanning the slot at
-//    the VWAP level, pixel-fixed via InstrumentPanel::PixelSizeOf, colored by
-//    curr.mean vs prev.mean.
+//  * The WAIST MARKER on top — a PREFILTERED horizontal line spanning the slot
+//    less the kSlotGapPx inset, at the VWAP level, pixel-fixed via
+//    InstrumentPanel::PixelSizeOf, colored by curr.mean vs prev.mean.
 //  * SPECIAL (degraded) periods — single-price (H == L) or failing the screen-space
 //    ASPECT test (even the longer half shorter than two body widths) — draw the
 //    waist marker and nothing else, in the very same pool and colour channel a

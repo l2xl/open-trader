@@ -465,6 +465,19 @@ TEST_CASE("Buoy bodies rasterize solid across the range spine", "[quote_scratche
     for (std::size_t x = 86; x <= 93; ++x) CHECK(green_at(x, 130) == kBodyG);  // wide half-normal interior incl. spine columns
     for (std::size_t x : {89u, 90u}) CHECK(green_at(x, 110) == kBodyG);        // thin taper: spine + wall union, not cancellation
     for (std::size_t x : {29u, 30u}) CHECK(green_at(x, 140) == kBodyG);        // normal bell centre above the waist marker
+
+    // Slot gap: every slot-spanning element stops half a kSlotGapPx short of the slot
+    // edge, so neighbouring buoys never fuse into one continuous band. Slot 2 runs
+    // x = 120..180; its waist marker's solid core (kWaistGreen #3fa548) covers 121..178
+    // and leaves the boundary column at each end as background — which pairs with the
+    // neighbour's own inset into the full 2 px gap.
+    const auto rgb_at = [&](std::size_t x, std::size_t y) { return pixels[y * 400 + x] & 0x00ffffffu; };
+    CHECK(rgb_at(119, 149) == 0u);
+    CHECK(rgb_at(120, 149) == 0u);
+    CHECK(rgb_at(121, 149) == 0x3fa548u);
+    CHECK(rgb_at(178, 149) == 0x3fa548u);
+    CHECK(rgb_at(179, 149) == 0u);
+    CHECK(rgb_at(180, 149) == 0u);
 }
 
 TEST_CASE("Catmull-Rom control points offset segment ends by a sixth of the neighbour vector", "[BUOY_GEOMETRY-008]")

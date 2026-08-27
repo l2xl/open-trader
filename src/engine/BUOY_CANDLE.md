@@ -16,9 +16,9 @@ For a single period the buoy replaces the OHLC candle:
 - The **waist** — the widest horizontal slice, the buoy's waterline — sits at the volume-weighted
   average price (VWAP) `μ`. Because the VWAP is the single most important value
   of the period, it is additionally marked by a **fixed-size horizontal line**
-  (one slot wide, `LINE` px thick in screen pixels) drawn on top of the body, so
-  the level stays crisply readable at any zoom. That marker is a *prefiltered*
-  line — §9.
+  (one slot wide less the `gap`, `LINE` px thick in screen pixels) drawn on top
+  of the body, so the level stays crisply readable at any zoom. That marker is a
+  *prefiltered* line — §9.
 - The **wall** between a tip and the waist follows a Gaussian profile, so the
   body looks like a vertical bell rotated 90°.
 - The buoy is **not vertically symmetric**. The waist sits at the volume-weighted
@@ -308,7 +308,7 @@ structure required.
 | Symbol | Default | Effect |
 | --- | --- | --- |
 | `Wₜ` (target waist width) | 14 px | median-volume buoy's full waist width via `K` |
-| `gap` | 2 px | horizontal clearance between neighbours; `A_slot = (slot − gap)/2` |
+| `gap` | = `LINE` | horizontal clearance between neighbours; `A_slot = (slot − gap)/2`, and every slot-spanning element is inset `gap/2` per side (§9) |
 | `TAIL` | 3 | σ-multiple treated as the bell's zero; clamps `σ±` to `tip±/TAIL` (§4) |
 | `ASPECT` | 2 | aspect ratio below which a buoy becomes *special* |
 | `SKEW` | 0.15 | waist-to-extreme fraction below which it becomes *half-normal* |
@@ -366,6 +366,28 @@ The waist marker is **axis-aligned for the same reason**. It replaced a diamond
 of the same footprint, which met the scrolling axis with four slanted edges — the
 worst case for horizontal sub-pixel motion — where a horizontal line presents
 none at all and only its two short ends ever cross the grid.
+
+### The gap is the same rule, read inside out
+
+A gap between neighbouring buoys is a strip of *background*, and it obeys the
+identical constraint: a strip narrower than two device pixels is not guaranteed
+one fully **uncovered** column at every sub-pixel offset, so it thins and blinks
+shut as the chart scrolls — the same pulsing a one-pixel line does, in negative.
+So `gap = LINE = 2` px, and every element that spans the period horizontally is
+inset `gap/2` per side:
+
+- the **bell**, through the `A_slot = (slot − gap)/2` clamp of §4 — this one was
+  always inset;
+- the **waist marker**, including the degraded period's;
+- the **empty-buoy dash**, which is what makes a run of empty periods read as the
+  dashes it is named for rather than as one flat rule.
+
+The **range spine** needs no inset: it is centred in its slot and only
+`LINE + 2·FLANK` px wide, so it cannot reach a neighbour.
+
+Where a slot is narrower than the gap the inset is clamped, leaving a 1 px mark
+rather than inverting the geometry — at that zoom the periods have merged into a
+band anyway and the gap has no room to exist.
 
 ---
 
