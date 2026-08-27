@@ -1,0 +1,6 @@
+header: Policy invoked once per request
+description: |
+  The request policy shall be invoked exactly once per request with the pending connect-level request record (verb, target, body, headers), so the headers it adds there reach the server.
+parents: [CONNECT-030]
+order: 20
+tests: ~

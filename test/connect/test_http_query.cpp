@@ -52,7 +52,7 @@ TEST_CASE("http_query", "[connect][http][CONNECT-011]")
         response_promise.set_exception(e);
     };
 
-    auto query = http_query::create(context, server.http_url("/time"), data_handler, error_handler);
+    auto query = http_query<>::create(context, server.http_url("/time"), data_handler, error_handler);
 
     REQUIRE_NOTHROW((*query)());
 
@@ -77,7 +77,7 @@ TEST_CASE("http_query bad host", "[connect][http][CONNECT-012]")
     };
 
     // .invalid TLD is reserved by RFC 2606 and guaranteed to never resolve
-    auto query = http_query::create(context, "https://api.bybit.invalid/v5/market/time", data_handler, error_handler);
+    auto query = http_query<>::create(context, "https://api.bybit.invalid/v5/market/time", data_handler, error_handler);
 
     REQUIRE_NOTHROW((*query)());
 
@@ -103,7 +103,7 @@ TEST_CASE("http_query_404", "[connect][http][CONNECT-013]")
         response_promise.set_exception(e);
     };
 
-    auto query = http_query::create(context, server.http_url("/no/such/path"), data_handler, error_handler);
+    auto query = http_query<>::create(context, server.http_url("/no/such/path"), data_handler, error_handler);
 
     REQUIRE_NOTHROW((*query)());
 
@@ -133,7 +133,7 @@ TEST_CASE("http_query_bybit_trades", "[connect][http][CONNECT-014]")
         response_promise.set_exception(e);
     };
 
-    auto query = http_query::create(context, server.http_url("/v5/market/recent-trade?category=spot&symbol=BTCUSDC"), data_handler, error_handler);
+    auto query = http_query<>::create(context, server.http_url("/v5/market/recent-trade?category=spot&symbol=BTCUSDC"), data_handler, error_handler);
 
     REQUIRE_NOTHROW((*query)());
 

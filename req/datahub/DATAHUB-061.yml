@@ -1,0 +1,6 @@
+header: JSON body emission
+description: |
+  json_body_encoder shall serialise the entity to JSON and hand it to the acceptor as the body with an empty query string.
+parents: [DATAHUB-060]
+order: 10
+tests: ~

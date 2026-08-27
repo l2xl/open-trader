@@ -1,0 +1,6 @@
+header: Empty entity yields an empty request
+description: |
+  An entity whose fields are all empty optionals shall yield an empty query string and an empty body.
+parents: [DATAHUB-060]
+order: 90
+tests: ~

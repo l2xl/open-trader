@@ -8,11 +8,13 @@
 #include <string>
 #include <memory>
 #include <functional>
+#include <optional>
 #include <boost/container/flat_map.hpp>
 
 #include "data_controller.hpp"
 #include "orderbook.hpp"
 #include "scheduler.hpp"
+#include "bybit/auth.hpp"
 #include "bybit/entities/response.hpp"
 #include "bybit/entities/instrument.hpp"
 #include "bybit/entities/public_trade.hpp"
@@ -24,6 +26,7 @@
 #include "websocket.hpp"
 #include "datahub/data_sink.hpp"
 #include "datahub/data_feed.hpp"
+#include "datahub/data_encoder.hpp"
 #include "cli11/CLI11.hpp"
 
 #include <vector>
@@ -51,6 +54,11 @@ public:
     using pubtrade_feed_ptr        = std::shared_ptr<pubtrade_feed_type>;
     using private_order_feed_type  = datahub::sorted_data_feed<Order, &Order::updatedTime, &Order::orderId>;
     using private_trade_feed_type  = datahub::sorted_data_feed<Trade, &Trade::execTime, &Trade::execId>;
+    using order_ack_feed_type      = IDataController::order_ack_feed_type;
+    using wallet_feed_type         = IDataController::wallet_feed_type;
+
+    using signed_query        = connect::http_query<rest_signer>;
+    using private_stream_type = connect::websock_connection<ws_authenticator>;
 
 private:
     static const std::string BYBIT;
@@ -58,16 +66,19 @@ private:
     std::shared_ptr<connect::context>          m_context;
     std::shared_ptr<SQLite::Database>          m_db;
     CLI::App&                                  m_config;
+    std::optional<credentials>                 m_credentials;
     db_strand_type                             m_db_strand;
 
     std::shared_ptr<instrument_feed_type>        m_instrument_feed;
     std::shared_ptr<private_order_feed_type>     m_private_order_feed;
     std::shared_ptr<private_trade_feed_type>     m_private_trade_feed;
+    std::shared_ptr<order_ack_feed_type>         m_order_ack_feed;
+    std::shared_ptr<wallet_feed_type>            m_wallet_feed;
 
-    std::shared_ptr<connect::http_query>         m_instruments_query;
+    std::shared_ptr<connect::http_query<>>       m_instruments_query;
     std::shared_ptr<instrument_sink_type>        m_instrument_sink;
 
-    std::shared_ptr<connect::websock_connection> m_public_stream;
+    std::shared_ptr<connect::websock_connection<>> m_public_stream;
 
     // Per-symbol public stream state: the orderbook + public-trade sinks/feeds the manager owns.
     // Public-trade consumers are owned by their subscribers (the panel), not here — the feed keeps
@@ -85,7 +96,14 @@ private:
 
     std::shared_ptr<private_order_sink_type>     m_private_order_sink;
     std::shared_ptr<private_trade_sink_type>     m_private_trade_sink;
-    std::shared_ptr<connect::websock_connection> m_private_stream;
+
+    std::optional<datahub::json_body_encoder<OrderRequest,       std::shared_ptr<signed_query>>> m_place_order;
+    std::optional<datahub::json_body_encoder<CancelOrderRequest, std::shared_ptr<signed_query>>> m_cancel_order;
+    std::optional<datahub::url_query_encoder<OrderFilter,        std::shared_ptr<signed_query>>> m_query_open_orders;
+    std::optional<datahub::url_query_encoder<ExecutionFilter,    std::shared_ptr<signed_query>>> m_query_executions;
+    std::optional<datahub::url_query_encoder<WalletFilter,       std::shared_ptr<signed_query>>> m_query_wallet;
+
+    std::shared_ptr<private_stream_type>         m_private_stream;
 
     void SetupInstrumentDataSource();
     void SetupPublicDataSource();
@@ -106,6 +124,8 @@ public:
     void SubscribeInstrument(std::string symbol, std::weak_ptr<public_trades_feed_type::subscription_type> trade_sub) override;
     void SubscribeOrders(std::weak_ptr<IDataController::private_orders_feed_type::subscription_type> sub) override;
     void SubscribeTrades(std::weak_ptr<IDataController::private_trades_feed_type::subscription_type> sub) override;
+    void SubscribeOrderAcks(std::weak_ptr<order_ack_feed_type::subscription_type> sub) override;
+    void SubscribeWallet(std::weak_ptr<wallet_feed_type::subscription_type> sub) override;
 
     const instruments_feed_type& getInstrumentsFeed() const override
     { return *m_instrument_feed; }
@@ -117,8 +137,8 @@ public:
         return it->second.pt_feed;
     }
 
-    void PlaceOrder(OrderRequest request, std::function<void(std::string orderId)> callback) override;
-    void CancelOrder(const std::string& orderId, const std::string& symbol) override;
+    std::string PlaceOrder(OrderRequest request) override;
+    void CancelOrder(std::string orderId, std::string symbol) override;
 };
 
 } // scratcher::bybit

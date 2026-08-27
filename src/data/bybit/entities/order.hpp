@@ -88,15 +88,33 @@ struct OrderRequest {
 };
 
 
+// Rejections answer HTTP 200 with retCode != 0 and "result":{}, so the echoed ids are optional
 struct PlaceOrderResult
 {
-    std::string orderId;
+    std::optional<std::string> orderId;
+    std::optional<std::string> orderLinkId;
 };
+
 struct CancelOrderRequest
 {
     std::string category;
     std::string symbol;
     std::string orderId;
+};
+
+struct OrderFilter
+{
+    Category category;
+    std::optional<std::string> symbol;
+    std::optional<int> openOnly;
+};
+
+struct OrderAck
+{
+    std::string orderLinkId;
+    std::optional<std::string> orderId;
+    int retCode{0};
+    std::string retMsg;
 };
 
 

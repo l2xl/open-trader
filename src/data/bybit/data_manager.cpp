@@ -4,13 +4,12 @@
 
 #include <iostream>
 #include <sstream>
-#include <iomanip>
-#include <chrono>
+#include <array>
+#include <algorithm>
+#include <random>
 #include <ranges>
 
 #include <glaze/glaze.hpp>
-#include <openssl/hmac.h>
-#include <openssl/evp.h>
 
 #include "data_manager.hpp"
 #include "bybit_config.hpp"
@@ -23,7 +22,11 @@ namespace {
     constexpr auto STREAM_PUBLIC_SPOT = "/v5/public/spot";
     constexpr auto STREAM_PRIVATE     = "/v5/private";
     constexpr auto API_INSTRUMENTS    = "/v5/market/instruments-info?category=spot";
-    constexpr auto API_RECENT_TRADE   = "/v5/market/recent-trade?category=spot&limit=60";
+    constexpr auto API_ORDER_CREATE   = "/v5/order/create";
+    constexpr auto API_ORDER_CANCEL   = "/v5/order/cancel";
+    constexpr auto API_ORDER_LIST     = "/v5/order/realtime";
+    constexpr auto API_EXECUTION_LIST = "/v5/execution/list";
+    constexpr auto API_WALLET_BALANCE = "/v5/account/wallet-balance";
 
     std::string ping_message(size_t counter)
     {
@@ -37,52 +40,35 @@ namespace {
         return R"({"op":"subscribe","args":[")" + topic + R"("]})";
     }
 
-    std::string unsubscribe_message(const std::string& topic)
-    {
-        return R"({"op":"unsubscribe","args":[")" + topic + R"("]})";
-    }
-
     std::string extract_symbol(const std::string& topic)
     {
         auto pos = topic.rfind('.');
         return (pos != std::string::npos) ? topic.substr(pos + 1) : topic;
     }
 
-    std::string current_timestamp_ms()
+    std::string http_base(CLI::App& config)
     {
-        auto now = std::chrono::system_clock::now();
-        return std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count());
+        return "https://" + config.get_option(config_keys::http_host)->as<std::string>() + ":" + config.get_option(config_keys::http_port)->as<std::string>();
     }
 
-    std::string hmac_sha256(const std::string& key, const std::string& data)
+    std::string stream_base(CLI::App& config)
     {
-        unsigned char result[EVP_MAX_MD_SIZE];
-        unsigned int result_len = 0;
-        HMAC(EVP_sha256(), key.data(), static_cast<int>(key.size()), reinterpret_cast<const unsigned char*>(data.data()), data.size(), result, &result_len);
-        return hex(std::span(result, result_len));
+        return "wss://" + config.get_option(config_keys::stream_host)->as<std::string>() + ":" + config.get_option(config_keys::stream_port)->as<std::string>();
     }
 
-    connect::http_headers sign_rest_request(const std::string& api_key, const std::string& api_secret, const std::string& recv_window, const std::string& payload)
+    std::optional<credentials> read_credentials(CLI::App& config)
     {
-        std::string timestamp = current_timestamp_ms();
-        std::string signature = hmac_sha256(api_secret, timestamp + api_key + recv_window + payload);
-        return {
-            {"X-BAPI-API-KEY",     api_key},
-            {"X-BAPI-TIMESTAMP",   timestamp},
-            {"X-BAPI-SIGN",        signature},
-            {"X-BAPI-RECV-WINDOW", recv_window}
-        };
+        auto keyfile = config.get_option(config_keys::api_keyfile)->as<std::string>();
+        if (keyfile.empty()) return std::nullopt;
+        return load_credentials(keyfile);
     }
 
-    std::string ws_auth_message(const std::string& api_key, const std::string& api_secret)
+    std::string generate_order_link_id()
     {
-        auto now        = std::chrono::system_clock::now();
-        auto expires_ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count() + 10000;
-        std::string expires   = std::to_string(expires_ms);
-        std::string signature = hmac_sha256(api_secret, "GET/realtime" + expires);
-        std::ostringstream msg;
-        msg << R"({"op":"auth","args":[")" << api_key << R"(",)" << expires << R"(,")" << signature << R"("]})";
-        return msg.str();
+        std::random_device entropy;
+        std::array<unsigned char, 16> bytes;
+        std::ranges::generate(bytes, [&entropy] { return static_cast<unsigned char>(entropy()); });
+        return hex(bytes);
     }
 
 } // anonymous namespace
@@ -93,10 +79,13 @@ ByBitDataManager::ByBitDataManager(std::shared_ptr<scheduler> scheduler, CLI::Ap
     : m_context(connect::context::create(scheduler->io()))
     , m_db(std::move(db))
     , m_config(config)
+    , m_credentials(read_credentials(config))
     , m_db_strand(boost::asio::make_strand(m_context->io().get_executor()))
     , m_instrument_feed(instrument_feed_type::create())
     , m_private_order_feed(private_order_feed_type::create())
     , m_private_trade_feed(private_trade_feed_type::create())
+    , m_order_ack_feed(order_ack_feed_type::create())
+    , m_wallet_feed(wallet_feed_type::create())
     { }
 
 std::shared_ptr<ByBitDataManager> ByBitDataManager::Create(std::shared_ptr<scheduler> scheduler, CLI::App& config, std::shared_ptr<SQLite::Database> db)
@@ -124,18 +113,16 @@ std::shared_ptr<ByBitDataManager> ByBitDataManager::Create(std::shared_ptr<sched
 
 void ByBitDataManager::HandleError(std::weak_ptr<ByBitDataManager> ref, std::exception_ptr eptr)
 {
-//    if (auto self = ref.lock()) {
-        try {
-            std::rethrow_exception(eptr);
-        } catch (const std::exception& ex) {
-            std::cerr << "ByBit data error: " << ex.what() << std::endl;
-        }
-//    }
+    try {
+        std::rethrow_exception(eptr);
+    } catch (const std::exception& ex) {
+        std::cerr << "ByBit data error: " << ex.what() << std::endl;
+    }
 }
 
 void ByBitDataManager::SetupInstrumentDataSource()
 {
-    const std::string url = "https://" + m_config.get_option(config_keys::http_host)->as<std::string>() + ":" + m_config.get_option(config_keys::http_port)->as<std::string>() + API_INSTRUMENTS;
+    const std::string url = http_base(m_config) + API_INSTRUMENTS;
     std::clog << "setupInstrumentDataSource: " << url << std::endl;
 
     auto data_sink = m_instrument_sink->data_acceptor<std::deque<InstrumentInfoAPI>>();
@@ -150,7 +137,7 @@ void ByBitDataManager::SetupInstrumentDataSource()
     auto ref = weak_from_this();
     auto dispatcher = datahub::make_data_dispatcher(m_context->io().get_executor(), std::move(resp_adapter));
 
-    m_instruments_query = connect::http_query::create(m_context, url, std::move(dispatcher),
+    m_instruments_query = connect::http_query<>::create(m_context, url, std::move(dispatcher),
         [ref](std::exception_ptr e) { HandleError(ref, e); }
     );
 }
@@ -160,8 +147,7 @@ void ByBitDataManager::SetupPublicDataSource()
     auto ref = weak_from_this();
     auto error_cb = [ref](std::exception_ptr e){ HandleError(ref, e); };
 
-    m_public_stream = connect::websock_connection::create(m_context,
-        "wss://" + m_config.get_option(config_keys::stream_host)->as<std::string>() + ":" + m_config.get_option(config_keys::stream_port)->as<std::string>() + STREAM_PUBLIC_SPOT,
+    m_public_stream = connect::websock_connection<>::create(m_context, stream_base(m_config) + STREAM_PUBLIC_SPOT,
         datahub::make_data_dispatcher(m_context->io().get_executor(),
 
             datahub::make_data_adapter<WsApiPayload<std::deque<WsPublicTrade>>>(
@@ -211,31 +197,75 @@ void ByBitDataManager::SetupPublicDataSource()
 
 void ByBitDataManager::SetupPrivateDataSource()
 {
-    const auto api_key = m_config.get_option(config_keys::api_key)->as<std::string>();
-    const auto api_secret = m_config.get_option(config_keys::api_secret)->as<std::string>();
-    if (api_key.empty() || api_secret.empty()) {
-        std::clog << "No API credentials, skipping private stream" << std::endl;
+    if (!m_credentials) {
+        std::clog << "No API credentials, skipping private pipeline" << std::endl;
         return;
     }
 
     auto ref = weak_from_this();
     auto error_cb = [ref](std::exception_ptr e){ HandleError(ref, e); };
+    auto executor = m_context->io().get_executor();
+    const std::string api_base = http_base(m_config);
 
-    auto order_acceptor = m_private_order_sink->data_acceptor<std::deque<Order>>();
-    auto trade_acceptor = m_private_trade_sink->data_acceptor<std::deque<Trade>>();
+    auto order_acceptor  = m_private_order_sink->data_acceptor<std::deque<Order>>();
+    auto trade_acceptor  = m_private_trade_sink->data_acceptor<std::deque<Trade>>();
+    auto wallet_acceptor = m_wallet_feed->data_acceptor<std::deque<WalletBalance>>();
+    auto ack_acceptor    = m_order_ack_feed->data_acceptor<std::deque<OrderAck>>();
 
-    m_private_stream = connect::websock_connection::create(m_context,
-        "wss://" + m_config.get_option(config_keys::stream_host)->as<std::string>() + ":" + m_config.get_option(config_keys::stream_port)->as<std::string>() + STREAM_PRIVATE,
-        datahub::make_data_dispatcher(m_context->io().get_executor(),
-            datahub::make_data_adapter<WsApiPayload<std::deque<Order>>>([order_acceptor = std::move(order_acceptor)](WsApiPayload<std::deque<Order>>&& payload) mutable
-                { order_acceptor(std::move(payload.data));}),
-            datahub::make_data_adapter<WsApiPayload<std::deque<Trade>>>([trade_acceptor = std::move(trade_acceptor)](WsApiPayload<std::deque<Trade>>&& payload) mutable
-                { trade_acceptor(std::move(payload.data));})),
+    m_place_order.emplace(datahub::make_json_body_encoder<OrderRequest>(
+        signed_query::create(m_context, connect::http::verb::post, api_base + API_ORDER_CREATE, rest_signer{*m_credentials},
+            datahub::make_data_dispatcher(executor,
+                datahub::make_data_adapter<ApiResponse<PlaceOrderResult>>([ack_acceptor](ApiResponse<PlaceOrderResult>&& response) mutable {
+                    OrderAck ack{.orderLinkId = response.result.orderLinkId.value_or(std::string{}), .orderId = std::move(response.result.orderId), .retCode = response.retCode, .retMsg = std::move(response.retMsg)};
+                    ack_acceptor(std::deque<OrderAck>{std::move(ack)});
+                })),
+            error_cb)));
+
+    m_cancel_order.emplace(datahub::make_json_body_encoder<CancelOrderRequest>(
+        signed_query::create(m_context, connect::http::verb::post, api_base + API_ORDER_CANCEL, rest_signer{*m_credentials},
+            [](std::string&& response_json) { std::clog << "CancelOrder response: " << response_json << std::endl; },
+            error_cb)));
+
+    m_query_open_orders.emplace(datahub::make_url_query_encoder<OrderFilter>(
+        signed_query::create(m_context, connect::http::verb::get, api_base + API_ORDER_LIST, rest_signer{*m_credentials},
+            datahub::make_data_dispatcher(executor,
+                datahub::make_data_adapter<ApiResponse<ListResult<Order>>>([order_acceptor](ApiResponse<ListResult<Order>>&& response) mutable {
+                    order_acceptor(std::move(response.result.list));
+                })),
+            error_cb)));
+
+    m_query_executions.emplace(datahub::make_url_query_encoder<ExecutionFilter>(
+        signed_query::create(m_context, connect::http::verb::get, api_base + API_EXECUTION_LIST, rest_signer{*m_credentials},
+            datahub::make_data_dispatcher(executor,
+                datahub::make_data_adapter<ApiResponse<ListResult<Trade>>>([trade_acceptor](ApiResponse<ListResult<Trade>>&& response) mutable {
+                    trade_acceptor(std::move(response.result.list));
+                })),
+            error_cb)));
+
+    m_query_wallet.emplace(datahub::make_url_query_encoder<WalletFilter>(
+        signed_query::create(m_context, connect::http::verb::get, api_base + API_WALLET_BALANCE, rest_signer{*m_credentials},
+            datahub::make_data_dispatcher(executor,
+                datahub::make_data_adapter<ApiResponse<ListResult<WalletBalance>>>([wallet_acceptor](ApiResponse<ListResult<WalletBalance>>&& response) mutable {
+                    wallet_acceptor(std::move(response.result.list));
+                })),
+            error_cb)));
+
+    m_private_stream = private_stream_type::create(m_context, stream_base(m_config) + STREAM_PRIVATE, ws_authenticator{*m_credentials},
+        datahub::make_data_dispatcher(executor,
+            datahub::make_data_adapter<WsPrivatePayload<std::deque<Order>>>([order_acceptor](WsPrivatePayload<std::deque<Order>>&& payload) mutable
+                { order_acceptor(std::move(payload.data)); }),
+            datahub::make_data_adapter<WsPrivatePayload<std::deque<Trade>>>([trade_acceptor](WsPrivatePayload<std::deque<Trade>>&& payload) mutable
+                { trade_acceptor(std::move(payload.data)); }),
+            datahub::make_data_adapter<WsPrivatePayload<std::deque<WalletBalance>>>([wallet_acceptor](WsPrivatePayload<std::deque<WalletBalance>>&& payload) mutable
+                { wallet_acceptor(std::move(payload.data)); }),
+            datahub::make_data_adapter<WsOpResponse>([](WsOpResponse&& resp) {
+                std::clog << "Private WebSocket [" << resp.conn_id << "] op=" << resp.op << " success=" << resp.success << " " << resp.ret_msg.value_or("") << std::endl;
+            })),
         error_cb);
 
-    (*m_private_stream)(ws_auth_message(api_key, api_secret));
     (*m_private_stream)(subscribe_message("order"));
     (*m_private_stream)(subscribe_message("execution"));
+    (*m_private_stream)(subscribe_message("wallet"));
     m_private_stream->set_heartbeat(std::chrono::seconds(20), ping_message);
 }
 
@@ -285,61 +315,43 @@ void ByBitDataManager::SubscribeInstrument(std::string symbol, std::weak_ptr<pub
 void ByBitDataManager::SubscribeOrders(std::weak_ptr<IDataController::private_orders_feed_type::subscription_type> sub)
 {
     m_private_order_feed->subscribe(std::move(sub));
+    if (m_query_open_orders) (*m_query_open_orders)(OrderFilter{.category = Category::Spot});
 }
 
 void ByBitDataManager::SubscribeTrades(std::weak_ptr<IDataController::private_trades_feed_type::subscription_type> sub)
 {
     m_private_trade_feed->subscribe(std::move(sub));
+    if (m_query_executions) (*m_query_executions)(ExecutionFilter{.category = Category::Spot});
+}
+
+void ByBitDataManager::SubscribeOrderAcks(std::weak_ptr<order_ack_feed_type::subscription_type> sub)
+{
+    m_order_ack_feed->subscribe(std::move(sub));
+}
+
+void ByBitDataManager::SubscribeWallet(std::weak_ptr<wallet_feed_type::subscription_type> sub)
+{
+    m_wallet_feed->subscribe(std::move(sub));
+    if (m_query_wallet) (*m_query_wallet)(WalletFilter{.accountType = AccountType::UNIFIED});
 }
 
 // ─── Order management ─────────────────────────────────────────────────────────
 
-void ByBitDataManager::PlaceOrder(OrderRequest request, std::function<void(std::string orderId)> callback)
+std::string ByBitDataManager::PlaceOrder(OrderRequest request)
 {
-    const auto api_key = m_config.get_option(config_keys::api_key)->as<std::string>();
-    const auto api_secret = m_config.get_option(config_keys::api_secret)->as<std::string>();
-    if (api_key.empty() || api_secret.empty()) {
-        std::cerr << "PlaceOrder: no API credentials configured" << std::endl;
-        return;
-    }
+    if (!m_place_order) throw std::runtime_error("PlaceOrder: no API credentials configured");
 
-    std::string body  = glz::write_json(request).value_or("{}");
-    auto headers      = sign_rest_request(api_key, api_secret, "5000", body);
-    auto ref          = weak_from_this();
-
-    auto query = connect::http_query::create(m_context, boost::beast::http::verb::post,
-        "https://" + m_config.get_option(config_keys::http_host)->as<std::string>() + ":" + m_config.get_option(config_keys::http_port)->as<std::string>() + "/v5/order/create",
-        [callback](std::string&& response_json) {
-            ApiResponse<PlaceOrderResult> resp;
-            if (!glz::read<glz::opts{.error_on_unknown_keys = false}>(resp, response_json) && resp.retCode == 0) {
-                if (callback) callback(std::move(resp.result.orderId));
-            } else {
-                std::cerr << "PlaceOrder failed: " << response_json << std::endl;
-            }
-        },
-        [ref](std::exception_ptr e){ HandleError(ref, e); });
-    (*query)({}, std::move(headers), std::move(body));
+    if (!request.orderLinkId) request.orderLinkId = generate_order_link_id();
+    std::string order_link_id = *request.orderLinkId;
+    (*m_place_order)(std::move(request));
+    return order_link_id;
 }
 
-void ByBitDataManager::CancelOrder(const std::string& orderId, const std::string& symbol)
+void ByBitDataManager::CancelOrder(std::string orderId, std::string symbol)
 {
-    const auto api_key = m_config.get_option(config_keys::api_key)->as<std::string>();
-    const auto api_secret = m_config.get_option(config_keys::api_secret)->as<std::string>();
-    if (api_key.empty() || api_secret.empty()) {
-        std::cerr << "CancelOrder: no API credentials configured" << std::endl;
-        return;
-    }
+    if (!m_cancel_order) throw std::runtime_error("CancelOrder: no API credentials configured");
 
-    CancelOrderRequest req{.category = "spot", .symbol = symbol, .orderId = orderId};
-    std::string body  = glz::write_json(req).value_or("{}");
-    auto headers      = sign_rest_request(api_key, api_secret, "5000", body);
-    auto ref          = weak_from_this();
-
-    auto query = connect::http_query::create(m_context, boost::beast::http::verb::post,
-        "https://" + m_config.get_option(config_keys::http_host)->as<std::string>() + ":" + m_config.get_option(config_keys::http_port)->as<std::string>() + "/v5/order/cancel",
-        [](std::string&& response_json) { std::clog << "CancelOrder response: " << response_json << std::endl; },
-        [ref](std::exception_ptr e){ HandleError(ref, e); });
-    (*query)({}, std::move(headers), std::move(body));
+    (*m_cancel_order)(CancelOrderRequest{.category = "spot", .symbol = std::move(symbol), .orderId = std::move(orderId)});
 }
 
 } // scratcher::bybit

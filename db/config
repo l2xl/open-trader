@@ -3,6 +3,7 @@ http-host=api.bybit.com
 http-port=443
 stream-host=stream.bybit.com
 stream-port=443
+api-keyfile=bybitkey.txt
 [application]
 default-instrument=BTCUSDT
 default-candle-period=60

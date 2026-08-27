@@ -1,0 +1,5 @@
+header: Request policy injection (http_query<RequestPolicy>)
+description: |
+  http_query is a class template parameterized on a request policy carried by value and befriended by the query, which the query invokes on its own pending request record (verb, target, body, headers) before the transport-level request is built and sent (src/connect/http_query.hpp).
+parents: [CONNECT-001]
+order: 30

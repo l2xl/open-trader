@@ -1,0 +1,6 @@
+header: Session opening hook precedes queued messages
+description: |
+  The message written by the session policy opening hook shall reach the server after the websocket handshake and before every message queued by the caller.
+parents: [CONNECT-040]
+order: 10
+tests: ~

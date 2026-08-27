@@ -18,7 +18,7 @@ struct WsOpResponse {
     bool success{false};
     std::optional<std::string> ret_msg;
     std::string conn_id;
-    std::string req_id;
+    std::optional<std::string> req_id;  // absent on the private-stream auth ack
     std::string op;
 };
 
@@ -34,6 +34,16 @@ struct WsApiPayload {
     std::optional<uint64_t> cts;       // Cross-server timestamp (ms), only present in some payloads
                                        // (e.g. orderbook). publicTrade omits it; declaring this
                                        // required would fail glz's error_on_missing_keys parse.
+};
+
+// Private topics (order / execution / wallet) use a different envelope from the market topics:
+// {"id":"...","topic":"order","creationTime":1672364262474,"data":[...]} — no ts/type fields
+template<typename T>
+struct WsPrivatePayload {
+    std::string id;
+    std::string topic;
+    uint64_t creationTime{0};
+    T data;
 };
 
 struct RetExtInfo

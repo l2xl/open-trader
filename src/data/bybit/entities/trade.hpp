@@ -51,6 +51,12 @@ struct Trade {
     std::optional<std::string> extraFees;       // Trading fee rate information
 };
 
+struct ExecutionFilter
+{
+    Category category;
+    std::optional<std::string> symbol;
+    std::optional<int> limit;
+};
 
 
 } // namespace scratcher::bybit

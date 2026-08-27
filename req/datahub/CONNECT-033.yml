@@ -1,0 +1,6 @@
+header: Policy value carried by the query
+description: |
+  The policy value passed to create shall be the one invoked, so per-query state such as credentials survives into every request.
+parents: [CONNECT-030]
+order: 30
+tests: ~

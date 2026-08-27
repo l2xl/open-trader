@@ -25,8 +25,7 @@ class Config
     std::string m_stream_host;
     std::string m_stream_port;
 
-    std::string m_api_key;
-    std::string m_api_secret;
+    std::string m_api_keyfile;
 
     std::string mDefaultInstrument;
     uint32_t mDefaultCandlePeriodSeconds = 60;

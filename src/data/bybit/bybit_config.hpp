@@ -12,7 +12,6 @@ inline constexpr const char* http_host    = "--http-host";
 inline constexpr const char* http_port    = "--http-port";
 inline constexpr const char* stream_host  = "--stream-host";
 inline constexpr const char* stream_port  = "--stream-port";
-inline constexpr const char* api_key      = "--api-key";
-inline constexpr const char* api_secret   = "--api-secret";
+inline constexpr const char* api_keyfile  = "--api-keyfile";
 
 } // namespace scratcher::bybit::config_keys

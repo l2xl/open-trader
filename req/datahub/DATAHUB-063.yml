@@ -1,0 +1,6 @@
+header: Projection applied before serialisation
+description: |
+  A json_body_encoder constructed with a projection shall serialise the projection result rather than the entity itself.
+parents: [DATAHUB-060]
+order: 30
+tests: ~

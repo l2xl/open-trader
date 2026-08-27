@@ -38,6 +38,8 @@ struct IDataController
     using public_trades_feed_type = datahub::sorted_data_feed<bybit::PublicTrade, &bybit::PublicTrade::time, &bybit::PublicTrade::execId>;
     using private_orders_feed_type = datahub::sorted_data_feed<bybit::Order, &bybit::Order::updatedTime, &bybit::Order::orderId>;
     using private_trades_feed_type = datahub::sorted_data_feed<bybit::Trade, &bybit::Trade::execTime, &bybit::Trade::execId>;
+    using order_ack_feed_type = datahub::keyed_snapshot_data_feed<bybit::OrderAck, &bybit::OrderAck::orderLinkId>;
+    using wallet_feed_type = datahub::keyed_snapshot_data_feed<bybit::WalletBalance, &bybit::WalletBalance::accountType>;
 
     virtual ~IDataController() = default;
     virtual const std::string& Name() const = 0;
@@ -53,6 +55,8 @@ struct IDataController
     virtual void SubscribeInstrument(std::string symbol, std::weak_ptr<public_trades_feed_type::subscription_type> trade_sub) = 0;
     virtual void SubscribeOrders(std::weak_ptr<private_orders_feed_type::subscription_type> sub) = 0;
     virtual void SubscribeTrades(std::weak_ptr<private_trades_feed_type::subscription_type> sub) = 0;
+    virtual void SubscribeOrderAcks(std::weak_ptr<order_ack_feed_type::subscription_type> sub) = 0;
+    virtual void SubscribeWallet(std::weak_ptr<wallet_feed_type::subscription_type> sub) = 0;
 
     virtual const instruments_feed_type& getInstrumentsFeed() const = 0;
 
@@ -63,8 +67,10 @@ struct IDataController
     // subscription sink instead and never need this accessor.
     virtual std::shared_ptr<const public_trades_feed_type> getPublicTradesFeed(const std::string& symbol) const = 0;
 
-    virtual void PlaceOrder(bybit::OrderRequest request, std::function<void(std::string orderId)> callback) = 0;
-    virtual void CancelOrder(const std::string& orderId, const std::string& symbol) = 0;
+    // Returns the orderLinkId the order was submitted under (generated when the request carries none);
+    // the exchange verdict arrives on the order-ack feed keyed by that id.
+    virtual std::string PlaceOrder(bybit::OrderRequest request) = 0;
+    virtual void CancelOrder(std::string orderId, std::string symbol) = 0;
 };
 
 } // scratcher

@@ -1,0 +1,6 @@
+header: Default policy leaves the request untouched
+description: |
+  A query instantiated with the default request policy shall issue the same request as an unparameterized query, adding no headers of its own.
+parents: [CONNECT-030]
+order: 10
+tests: ~

@@ -1,0 +1,6 @@
+header: Empty optionals omitted from the query
+description: |
+  Entity fields holding an empty std::optional shall contribute no key=value pair to the query string.
+parents: [DATAHUB-060]
+order: 60
+tests: ~

@@ -108,6 +108,7 @@ set(core_SOURCES
         src/data/entities/instrument.hpp
         src/data/entities/trade.hpp
         src/data/entities/orderbook_level.hpp
+        src/data/bybit/auth.hpp
         src/data/bybit/data_manager.cpp
         src/data/bybit/data_manager.hpp
         src/data/orderbook.hpp
@@ -116,9 +117,7 @@ set(core_SOURCES
         src/connect/connection_context.hpp
         src/connect/connection_context.cpp
         src/connect/http_query.hpp
-        src/connect/http_query.cpp
         src/connect/websocket.hpp
-        src/connect/websocket.cpp
         src/datahub/data_model.hpp
         src/datahub/operations.hpp
         src/datahub/query_builder.hpp
@@ -128,6 +127,7 @@ set(core_SOURCES
         src/datahub/data_subscription.hpp
         src/datahub/data_feed.hpp
         src/datahub/data_condition.hpp
+        src/datahub/data_encoder.hpp
         src/cockpit/tvg_ptr.hpp
         src/cockpit/scratcher.hpp
         src/cockpit/scratchers/time_ruler.hpp
@@ -260,11 +260,15 @@ if(NOT ANDROID)
     add_unit_test(test_dao test/datahub/test_dao.cpp)
     add_unit_test(test_http_query test/connect/test_http_query.cpp)
     add_unit_test(test_websocket test/connect/test_websocket.cpp)
+    add_unit_test(test_request_policy test/connect/test_request_policy.cpp)
+    add_unit_test(test_session_policy test/connect/test_session_policy.cpp)
     add_unit_test(test_data_sink test/datahub/test_data_sink.cpp)
     add_unit_test(test_data_model test/bybit/test_data_model.cpp)
     add_unit_test(test_sorted_data_feed test/datahub/test_sorted_data_feed.cpp)
     add_unit_test(test_sorted_snapshot_data_feed test/datahub/test_sorted_snapshot_data_feed.cpp)
     add_unit_test(test_keyed_snapshot_data_feed test/datahub/test_keyed_snapshot_data_feed.cpp)
+    add_unit_test(test_data_encoder test/datahub/test_data_encoder.cpp)
+    add_unit_test(test_auth test/bybit/test_auth.cpp)
     add_unit_test(test_data_manager test/bybit/test_data_manager.cpp LIVE)
     add_unit_test(test_orderbook test/data/test_orderbook.cpp)
     add_unit_test(test_bybit_orderbook test/bybit/test_orderbook.cpp)

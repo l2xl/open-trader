@@ -1,0 +1,6 @@
+header: Query and body placement
+description: |
+  Invoking the query with a query string and a body shall place the query string into the request target and the body into the request payload.
+parents: [CONNECT-030]
+order: 40
+tests: ~
