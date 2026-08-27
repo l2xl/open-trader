@@ -25,12 +25,22 @@ namespace {
 
 struct Color { uint8_t r, g, b, a; };
 
-// Dark green/red fill the bell body; the waist marker uses the brighter same-hue
-// derivatives so it pops as a crisp anchor on top of the darker contour.
-constexpr Color kBodyGreen{0, 62, 0, 255};      // #003e00
-constexpr Color kBodyRed{62, 0, 0, 255};        // #3e0000
-constexpr Color kWaistGreen{0, 95, 0, 255};     // #005f00
-constexpr Color kWaistRed{95, 0, 0, 255};       // #5f0000
+// Green/red fill the bell body; the waist marker uses the brighter same-hue
+// derivative so it pops as a crisp anchor on top of the contour.
+//
+// These four are the MIDPOINT stop of the volume ramp specified in BUOY_CANDLE.md
+// section 10.3 — the flat stand-in until BUOY_RENDER-001 lands, at which point the
+// body takes the stop its own volume rank selects and the marker follows +0.13 L
+// above it. Built in OKLCH at 80 % of the sRGB gamut edge, bullish hue 145 deg on a
+// lightness lane 0.08 above bearish hue 30 deg (that lane offset is the only cue a
+// red-green dichromat keeps; see section 10.4). The retired pair sat at L 0.32/0.23,
+// so dark on a black ground that a bearish body cleared it by a contrast ratio of
+// only 1.2 and its waist marker by 1.23; these clear the background by 3.8 and 2.6
+// and the markers clear their bodies by ~1.7 on both sides.
+constexpr Color kBodyGreen{44, 120, 51, 255};   // #2c7833  OKLCH(0.51, 0.128, 145)
+constexpr Color kBodyRed{140, 39, 28, 255};     // #8c271c  OKLCH(0.43, 0.138, 30)
+constexpr Color kWaistGreen{63, 165, 72, 255};  // #3fa548  OKLCH(0.64, 0.162, 145)
+constexpr Color kWaistRed{200, 60, 44, 255};    // #c83c2c  OKLCH(0.56, 0.179, 30)
 constexpr Color kGray{110, 110, 110, 255};
 
 // Half-alpha derivative of a line's colour, filling its prefilter flanks. Same hue, so a

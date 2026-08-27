@@ -426,12 +426,48 @@ end of any green or red ramp on near-black necessarily reads as fading toward
 transparent. The corollary is that **a light theme must invert the mapping**
 (dark = more), because on white the two biases agree again.
 
-### 10.2 The colour set
+### 10.2 More on the chroma / saturation cue
+
+The saturation half of the encoding deserves its own note, because it is the
+part that is easiest to get wrong and the part the literature has moved on
+most recently.
+
+- Chroma carries magnitude **on its own**. The opaque-is-more bias was
+  originally explained as a lightness-against-background effect, but it fires
+  even when a ramp has little lightness variation — which is what exposed a
+  separate **saturated-is-more** (equivalently **high-chroma-is-more**) bias:
+  readers infer that regions greater in saturation map to larger magnitudes
+  (Schloss lab, JOV 2022 and Atten Percept Psychophys 2025).
+- It is **not** a bare contrast effect. Background colour has little to no
+  effect when the colours in a visualisation do not appear to vary in opacity,
+  so what drives the inference is apparent opacity/solidity, not raw
+  luminance distance from the ground. Practically: a ramp that keeps its chroma
+  high along its whole length is *less* background-sensitive than one that fades
+  to grey at one end.
+- Chroma and lightness must move **together and in the same direction**. A
+  single-hue sequential palette varies from dark-and-colourful to
+  light-and-greyish (or the reverse) at constant hue; the monotone co-variation
+  is what makes steps read as ordered rather than as separate categories. Ramping
+  chroma *against* lightness produces a scale readers order inconsistently.
+- Chroma cannot carry the fine end of the scale. Lightness is the channel with
+  the discrimination bandwidth; chroma reinforces it. Around **five** steps is
+  the practical limit for reading magnitude off a lightness ramp on marks this
+  small, and distinguishability degrades further as soon as the lightness
+  progression stops being perceptually linear — which is the whole argument for
+  building the ramp in a uniform space rather than in HSL or sRGB.
+- The gamut ceiling is not flat. Maximum available chroma rises steeply with
+  lightness and differs per hue: at `L = 0.32` the sRGB ceiling is `C ≈ 0.10` for
+  hue 145° but `C ≈ 0.13` for hue 30°; by `L = 0.62` it is `0.20` and `0.25`.
+  A ramp with a *fixed* chroma slope therefore drifts away from the gamut edge
+  and looks progressively duller than the retired flat pair (which sat at 100 %
+  of the edge, being pure single-channel sRGB). Expressing chroma as a
+  **fraction of the per-`(L, hue)` ceiling** keeps the vividness constant
+  instead.
+
+### 10.3 The colour set
 
 Built in OKLCH, which is perceptually uniform enough that a fixed step in `L` is
-a fixed perceived step. A single-hue sequential ramp varies lightness *and*
-chroma monotonically at constant hue; that co-variation is what makes the steps
-read as ordered rather than as different categories.
+a fixed perceived step.
 
 Let `q ∈ [0, 1]` be the buoy's **rank in the visible window's volume
 distribution** — the same window §4's width calibration is taken over. Rank, not
@@ -443,62 +479,164 @@ the median the width calibration already computes.
 | | bullish | bearish |
 | --- | --- | --- |
 | hue | 145° | 30° |
-| body lightness | `L = 0.32 + 0.34·q` | `L = 0.24 + 0.34·q` |
-| body chroma | `C = 0.060 + 0.100·q` | `C = 0.060 + 0.100·q` |
-| waist marker / range spine | body `L + 0.13`, `C × 1.1` | body `L + 0.13`, `C × 1.1` |
+| body lightness | `L = 0.34 + 0.34·q` | `L = 0.26 + 0.34·q` |
+| chroma (both) | `C = 0.80 · Cmax(L, hue)` | `C = 0.80 · Cmax(L, hue)` |
+| waist marker / range spine | body `L + 0.13`, same chroma rule | body `L + 0.13`, same chroma rule |
 
-Sampled at five steps (sRGB, chroma clamped to gamut):
+`Cmax(L, hue)` is the largest chroma that stays inside sRGB at that lightness and
+hue — found by bisection, since OKLCH has no closed-form gamut boundary. The
+0.80 fraction is what keeps the ramp as vivid as the retired flat pair while
+leaving enough headroom that gamut clipping never flattens a step.
+
+Sampled at five steps:
 
 | `q` | bull body | bull marker | bear body | bear marker |
 | --- | --- | --- | --- | --- |
-| 0.00 | `#1e3b1f` | `#3d5f3e` | `#37120d` | `#5e312a` |
-| 0.25 | `#28552b` | `#487b4a` | `#582018` | `#834036` |
-| 0.50 | `#327036` | `#539957` | `#7b2e24` | `#aa5043` |
-| 0.75 | `#3c8d43` | `#5db863` | `#a03d30` | `#d25f4f` |
-| 1.00 | `#47ab4f` | `#67d76f` | `#c74c3d` | `#fc6f5c` |
+| 0.00 | `#154319` | `#266b2d` | `#440e08` | `#7a2117` |
+| 0.25 | `#205d26` | `#32873a` | `#671a12` | `#a02e21` |
+| **0.50** | **`#2c7833`** | **`#3fa548`** | **`#8c271c`** | **`#c83c2c`** |
+| 0.75 | `#389541` | `#4cc357` | `#b33426` | `#ec523f` |
+| 1.00 | `#45b34f` | `#59e266` | `#db4231` | `#f08575` |
+
+**The `q = 0.5` row is what the renderer ships today** as its flat, volume-blind
+default pair — so when the ramp lands it slots in continuously, the midpoint
+buoy keeping exactly the colour it had.
+
+Measured properties of that ramp (sRGB relative-luminance contrast ratios):
+
+| `q` | body vs black | marker vs its body | deuteranope `ΔL` |
+| --- | --- | --- | --- |
+| 0.00 | 1.85 / 1.31 | 1.74 / 1.57 | 0.075 |
+| 0.25 | 2.66 / 1.73 | 1.76 / 1.68 | 0.071 |
+| 0.50 | 3.84 / 2.42 | 1.74 / 1.71 | 0.068 |
+| 0.75 | 5.54 / 3.44 | 1.67 / 1.70 | 0.069 |
+| 1.00 | 7.81 / 4.84 | 1.60 / 1.72 | 0.067 |
+
+(bullish / bearish; the retired flat pair scored 1.69 / 1.20 against black and
+1.56 / 1.23 for marker-over-body — the bearish body barely cleared the
+background at all, which is what made the old palette read as too dark.)
 
 Notes on the construction:
 
 - the marker offset is a *relative* one, so the waist line and the range spines
-  keep the same contrast against their own body at every volume, exactly as the
-  flat pair does today;
+  keep the same contrast against their own body at every volume;
 - the two directions ride **offset lightness lanes** — bullish 0.08 `L` above
   bearish at equal volume. Within one direction lightness is monotone in volume;
   across directions the constant offset is the only cue a red-green dichromat
-  has left. It is deliberately sized to reproduce the ≈0.075 lightness
-  separation today's `#003e00` / `#3e0000` pair happens to carry, measured
-  through a Machado et al. (2009) severity-1.0 deuteranope simulation;
-- around **five** steps is the practical discrimination limit for a lightness
-  ramp on marks this small, so a HUD legend should show five stops even though
-  the fill itself can vary continuously.
+  has left. It is deliberately sized to reproduce the ≈0.078 lightness
+  separation the retired `#003e00` / `#3e0000` pair happened to carry, measured
+  through a Machado et al. (2009) severity-1.0 deuteranope simulation; the ramp
+  holds 0.067–0.075 across its whole length;
+- five steps is the discrimination limit of §10.2, so a HUD legend should show
+  five stops even though the fill itself can vary continuously.
 
-### 10.3 Colour-vision caveat
+### 10.4 Colour-vision caveat
 
 Red against green is the worst possible pair for the ~8 % of men with deuter- or
-protanopia, and §10.2's lanes leave them a lightness cue but no hue cue. A
+protanopia, and §10.3's lanes leave them a lightness cue but no hue cue. A
 genuinely colour-universal alternative, worth a settings toggle, keeps the same
-lanes and ramp and swaps only the hues for an Okabe-Ito-style pair — bullish
-`h ≈ 245°` (blue), bearish `h ≈ 45°` (vermillion):
+lanes, the same chroma rule and the same marker offset, and swaps only the hues
+for an Okabe-Ito-style pair — bullish `h = 245°` (blue), bearish `h = 45°`
+(vermillion):
 
-| `q` | bull body | bear body | deuteranope simulation |
-| --- | --- | --- | --- |
-| 0.00 | `#15364f` | `#361404` | `#23314f` vs `#262103` |
-| 0.50 | `#1b659a` | `#79320a` | `#3a5c99` vs `#584d07` |
-| 1.00 | `#1899ec` | `#c4530f` | `#538bea` vs `#8f7f06` |
+| `q` | bull body | bull marker | bear body | bear marker |
+| --- | --- | --- | --- | --- |
+| 0.00 | `#143b59` | `#245f8c` | `#3b1909` | `#6b3317` |
+| 0.25 | `#1e527a` | `#3079b0` | `#5a2a12` | `#8d4522` |
+| 0.50 | `#2a6b9d` | `#3c93d5` | `#7b3b1c` | `#b0582d` |
+| 0.75 | `#3685c1` | `#5eadee` | `#9d4e27` | `#d56c38` |
+| 1.00 | `#429fe7` | `#94c7f3` | `#c16132` | `#f08858` |
 
-Those two stay plainly apart under simulation, where green and red collapse onto
-each other.
+Under a deuteranope simulation those stay plainly apart — `#2a6b9d` → `#3a5c99`
+against `#7b3b1c` → `#584d07` at the midpoint — where green and red collapse
+onto each other (`#2c7833` → `#706738` against `#8c271c` → `#5e5418`, a hue
+difference of ~1°). The reference qualitative set to draw hues from is
+Okabe-Ito: blue `#0072B2`, bluish green `#009E73`, vermillion `#D55E00`, orange
+`#E69F00`, reddish purple `#CC79A7`.
 
-### 10.4 Still open
+### 10.5 Reproducing the numbers
+
+Everything above is derived, not eyeballed, so it can be regenerated when the
+implementation lands:
+
+1. **OKLCH ↔ sRGB.** Björn Ottosson's Oklab: `OKLCH(L, C, h)` → `Oklab(L, C·cos h,
+   C·sin h)` → the LMS cube-root matrices → linear RGB → the sRGB transfer
+   function. Perceptually uniform in `L`, so a fixed `ΔL` is a fixed perceived
+   step.
+2. **`Cmax(L, hue)`.** Bisect `C` on "does the result stay inside `[0, 1]` on all
+   three linear channels".
+3. **Colour-vision simulation.** Machado, Oliveira & Fernandes (2009)
+   severity-1.0 matrices applied in *linear* RGB — deuteranopia
+   `((0.367322, 0.860646, −0.227968), (0.280085, 0.672501, 0.047413), (−0.011820,
+   0.042940, 0.968881))`, with protanopia and tritanopia alongside it in the
+   paper.
+4. **Contrast ratios.** WCAG relative luminance `0.2126 R + 0.7152 G + 0.0722 B`
+   on linearised channels, `(L₁ + 0.05) / (L₂ + 0.05)`.
+
+### 10.6 Still open
 
 - validation against a live feed: whether rank-in-window or log-over-median
   gives the steadier picture while the window scrolls, and how much hysteresis
   the ramp needs so a buoy does not shimmer between shades as its neighbours
-  come and go;
+  come and go — the width calibration's ~10 % median band is the obvious model;
 - whether the waist marker should carry volume at all, or hold one fixed pair so
   the VWAP level stays a constant anchor while only the body ramps;
 - the HUD legend: where the five stops live and whether they are labelled in
-  volume units or as window quantiles.
+  volume units or as window quantiles;
+- whether the empty-buoy gray and the move connector should sit on the same
+  lightness scale, or stay deliberately outside it as "no volume at all".
+
+### 10.7 Sources
+
+Perception of colour-to-magnitude mappings:
+
+- Schloss, Gramazio, Silverman, Parker & Wang, *Mapping Color to Meaning in
+  Colormap Data Visualizations*, IEEE TVCG 2019 — the dark-is-more bias.
+  <https://schlosslab.discovery.wisc.edu/wp-content/uploads/2018/09/SchlossGramazioSilvermanParkerWanginPress.pdf>
+  · <https://pubmed.ncbi.nlm.nih.gov/30188827/>
+- Sibrel, Rathore, Lessard & Schloss, *The relation between color and spatial
+  structure for interpreting colormap data visualizations*, Journal of Vision
+  2020 — background colour, spatial structure, and where dark-is-more breaks.
+  <https://www.ncbi.nlm.nih.gov/pmc/articles/PMC7683863/>
+- Schloss et al., *Understanding the opaque-is-more bias and saturated-is-more
+  bias for colormap data visualizations*, Attention, Perception & Psychophysics
+  2025 — the biases conflict on dark backgrounds and opaque-is-more can
+  supersede dark-is-more; introduces saturated-is-more.
+  <https://link.springer.com/article/10.3758/s13414-025-03172-w>
+  · <https://www.ncbi.nlm.nih.gov/pmc/articles/PMC12929228/>
+- *Investigation of the opaque-is-more bias reveals a high chroma-is-more bias
+  for colormap data visualizations*, Journal of Vision 2022.
+  <https://jov.arvojournals.org/article.aspx?articleid=2791962>
+- *The dark is more (Dark+) bias in colormap data visualizations with legends*,
+  Journal of Vision — the bias survives an explicit legend.
+  <https://jov.arvojournals.org/article.aspx?articleid=2550611>
+- *Effects of data distribution and granularity on color semantics for colormap
+  data visualizations*, arXiv 2309.00131 — why the ramp should follow the data's
+  distribution rather than its raw range.
+  <https://arxiv.org/abs/2309.00131>
+- Schloss Visual Reasoning Lab publication index.
+  <https://schlosslab.discovery.wisc.edu/category/publication/>
+
+Colour space and palette construction:
+
+- Sequential colour palette generation using OKLCH (Chris Henrick, Observable) —
+  the single-hue lightness+chroma ramp recipe.
+  <https://observablehq.com/@clhenrick/sequential-color-palette-generation-using-oklch>
+- Zhou & Hansen, *A Survey of Colormaps in Visualization*, IEEE TVCG 2016 —
+  monotone luminance as the ordering channel, and step distinguishability.
+  <https://pmc.ncbi.nlm.nih.gov/articles/PMC4959790/>
+- seaborn, *Choosing color palettes* — practical single-hue sequential guidance.
+  <https://seaborn.pydata.org/tutorial/color_palettes.html>
+
+Colour-vision deficiency:
+
+- Tableau, *Examining data viz rules: don't use red/green together*.
+  <https://www.tableau.com/blog/examining-data-viz-rules-dont-use-red-green-together>
+- EU data-visualisation guide, accessible colour palettes (Okabe-Ito values).
+  <https://data.europa.eu/apps/data-visualisation-guide/accessible-colour-palettes>
+- Machado, Oliveira & Fernandes, *A physiologically-based model for simulation of
+  color vision deficiency*, IEEE TVCG 2009 — the simulation matrices used above.
+  <https://www.inf.ufrgs.br/~oliveira/pubs_files/CVD_Simulation/CVD_Simulation.html>
 
 ---
 

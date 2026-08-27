@@ -459,10 +459,12 @@ TEST_CASE("Buoy bodies rasterize solid across the range spine", "[quote_scratche
     CHECK(scratcher->Closed(BuoyPool::BodyGreen).strokeWidth() == 0.f);
     CHECK(scratcher->Closed(BuoyPool::BodyRed).strokeWidth() == 0.f);
 
+    // kBodyGreen #2c7833 -> 0x78 on the green channel; anything less is a coverage hole.
+    constexpr uint32_t kBodyG = 0x78;
     const auto green_at = [&](std::size_t x, std::size_t y) { return (pixels[y * 400 + x] >> 8) & 0xff; };
-    for (std::size_t x = 86; x <= 93; ++x) CHECK(green_at(x, 130) == 62);  // wide half-normal interior incl. spine columns
-    for (std::size_t x : {89u, 90u}) CHECK(green_at(x, 110) == 62);        // thin taper: spine + wall union, not cancellation
-    for (std::size_t x : {29u, 30u}) CHECK(green_at(x, 140) == 62);        // normal bell centre above the waist marker
+    for (std::size_t x = 86; x <= 93; ++x) CHECK(green_at(x, 130) == kBodyG);  // wide half-normal interior incl. spine columns
+    for (std::size_t x : {89u, 90u}) CHECK(green_at(x, 110) == kBodyG);        // thin taper: spine + wall union, not cancellation
+    for (std::size_t x : {29u, 30u}) CHECK(green_at(x, 140) == kBodyG);        // normal bell centre above the waist marker
 }
 
 TEST_CASE("Catmull-Rom control points offset segment ends by a sixth of the neighbour vector", "[BUOY_GEOMETRY-008]")
