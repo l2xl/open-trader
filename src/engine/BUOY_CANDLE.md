@@ -293,7 +293,7 @@ for each period:
         pts  = sample per-side Gaussian walls (pinned tips; flat side if half)
         path = catmull_rom_to_bezier(pts)
         draw path + waist line + ±1σ ticks
-        # A truncated to A_slot → saturation colour cue (§10, open)
+        # A truncated to A_slot → saturation colour cue (§11, open)
 ```
 
 Per period the cost is one `O(n)` pass over ticks for the raw statistics (a
@@ -369,19 +369,143 @@ none at all and only its two short ends ever cross the grid.
 
 ---
 
-## 10. Further research
+## 10. The volume colour dimension
 
-**Volume colour dimension.** Beyond the area encoding, every buoy's fill is to
-carry a colour component sampled from its traded volume — a redundant channel
-for all buoys that survives where geometry cannot: a buoy clamped to `A_slot`
-shows the cap's width, not its volume, so colour becomes its only remaining
-volume signal. Open questions:
+Beyond the area encoding, every buoy's fill is to carry a colour component
+sampled from its traded volume — a redundant channel for all buoys that survives
+where geometry cannot: a buoy clamped to `A_slot` shows the cap's width, not its
+volume, so colour becomes its only remaining volume signal.
 
-- which colour channel encodes volume (fill luminance/saturation ramp, outline
-  emphasis, gradient toward the flanks) without fighting the up/down trend
-  colouring already used by the implementation;
-- whether the ramp should be perceptually linear or logarithmic in volume;
-- colour-vision accessibility of the chosen ramp.
+The design below resolves the direction of the ramp and its construction.
+Declared as requirement `BUOY_RENDER-001` and still unimplemented; until it
+lands, the geometry encoding alone applies (§4) and the fills stay the flat
+per-direction pair the renderer uses today.
 
-Declared as requirement `BUOY_RENDER-001`, deliberately unimplemented until
-this research resolves. Until then the geometry encoding alone applies (§4).
+### 10.1 Which end means "more"
+
+The perception literature gives three competing priors readers bring to a
+colour-to-magnitude mapping when no legend pins it down:
+
+- **dark-is-more.** Readers assume darker colours map to larger quantities, and
+  a visualisation that violates the mapping they inferred is measurably slower
+  and harder to read (Schloss, Gramazio, Silverman, Parker & Wang, *Mapping
+  Color to Meaning in Colormap Data Visualizations*, IEEE TVCG 2019).
+- **opaque-is-more.** Readers assume the end that looks *more opaque* — the end
+  furthest from the background — is the larger one (Sibrel, Rathore, Lessard &
+  Schloss, *The relation between color and spatial structure for interpreting
+  colormap data visualizations*, Journal of Vision 2020; Schloss et al.,
+  *Understanding the opaque-is-more bias and saturated-is-more bias for colormap
+  data visualizations*, Attention, Perception & Psychophysics 2025).
+- **saturated-is-more / high-chroma-is-more.** More chroma reads as more, and it
+  fires even without much lightness variation (same 2025 paper).
+
+The decisive result is how the first two interact. **They agree on a light
+background — dark is both darker and more opaque — and conflict on a dark one,
+where opaque-is-more can negate or even supersede dark-is-more.** On black, the
+*lighter*, more solid-looking end is what reads as "more".
+
+The buoy chart is dark-themed, so:
+
+> **bright and chromatic = high volume; dark and desaturated = low volume.**
+
+Three things converge on that direction:
+
+1. on a dark ground both opaque-is-more and saturated-is-more point that way,
+   and they are what override dark-is-more there;
+2. the geometry channel already gives a high-volume buoy *more* area. Encoding
+   it with *less* ink would set the two channels fighting; ramping brightness
+   upward makes colour redundant with area, which is the whole point of a
+   redundant channel;
+3. a low-volume period *should* recede — a dark, low-chroma buoy is quiet on
+   screen, which is the correct visual weight for a period nothing traded in.
+
+The published background-robust advice — prefer a ramp that never *looks* like
+it varies in opacity, and put "more" at the dark end — is written for colormaps
+that must survive a background swap. It does not apply here unchanged: the dark
+end of any green or red ramp on near-black necessarily reads as fading toward
+transparent. The corollary is that **a light theme must invert the mapping**
+(dark = more), because on white the two biases agree again.
+
+### 10.2 The colour set
+
+Built in OKLCH, which is perceptually uniform enough that a fixed step in `L` is
+a fixed perceived step. A single-hue sequential ramp varies lightness *and*
+chroma monotonically at constant hue; that co-variation is what makes the steps
+read as ordered rather than as different categories.
+
+Let `q ∈ [0, 1]` be the buoy's **rank in the visible window's volume
+distribution** — the same window §4's width calibration is taken over. Rank, not
+raw volume: traded volume is heavy-tailed, so a ramp linear in volume parks
+almost every buoy at the bottom and a single large print at the top.
+`log(V / median V)` clamped to a fixed span is an equivalent choice, and reuses
+the median the width calibration already computes.
+
+| | bullish | bearish |
+| --- | --- | --- |
+| hue | 145° | 30° |
+| body lightness | `L = 0.32 + 0.34·q` | `L = 0.24 + 0.34·q` |
+| body chroma | `C = 0.060 + 0.100·q` | `C = 0.060 + 0.100·q` |
+| waist marker / range spine | body `L + 0.13`, `C × 1.1` | body `L + 0.13`, `C × 1.1` |
+
+Sampled at five steps (sRGB, chroma clamped to gamut):
+
+| `q` | bull body | bull marker | bear body | bear marker |
+| --- | --- | --- | --- | --- |
+| 0.00 | `#1e3b1f` | `#3d5f3e` | `#37120d` | `#5e312a` |
+| 0.25 | `#28552b` | `#487b4a` | `#582018` | `#834036` |
+| 0.50 | `#327036` | `#539957` | `#7b2e24` | `#aa5043` |
+| 0.75 | `#3c8d43` | `#5db863` | `#a03d30` | `#d25f4f` |
+| 1.00 | `#47ab4f` | `#67d76f` | `#c74c3d` | `#fc6f5c` |
+
+Notes on the construction:
+
+- the marker offset is a *relative* one, so the waist line and the range spines
+  keep the same contrast against their own body at every volume, exactly as the
+  flat pair does today;
+- the two directions ride **offset lightness lanes** — bullish 0.08 `L` above
+  bearish at equal volume. Within one direction lightness is monotone in volume;
+  across directions the constant offset is the only cue a red-green dichromat
+  has left. It is deliberately sized to reproduce the ≈0.075 lightness
+  separation today's `#003e00` / `#3e0000` pair happens to carry, measured
+  through a Machado et al. (2009) severity-1.0 deuteranope simulation;
+- around **five** steps is the practical discrimination limit for a lightness
+  ramp on marks this small, so a HUD legend should show five stops even though
+  the fill itself can vary continuously.
+
+### 10.3 Colour-vision caveat
+
+Red against green is the worst possible pair for the ~8 % of men with deuter- or
+protanopia, and §10.2's lanes leave them a lightness cue but no hue cue. A
+genuinely colour-universal alternative, worth a settings toggle, keeps the same
+lanes and ramp and swaps only the hues for an Okabe-Ito-style pair — bullish
+`h ≈ 245°` (blue), bearish `h ≈ 45°` (vermillion):
+
+| `q` | bull body | bear body | deuteranope simulation |
+| --- | --- | --- | --- |
+| 0.00 | `#15364f` | `#361404` | `#23314f` vs `#262103` |
+| 0.50 | `#1b659a` | `#79320a` | `#3a5c99` vs `#584d07` |
+| 1.00 | `#1899ec` | `#c4530f` | `#538bea` vs `#8f7f06` |
+
+Those two stay plainly apart under simulation, where green and red collapse onto
+each other.
+
+### 10.4 Still open
+
+- validation against a live feed: whether rank-in-window or log-over-median
+  gives the steadier picture while the window scrolls, and how much hysteresis
+  the ramp needs so a buoy does not shimmer between shades as its neighbours
+  come and go;
+- whether the waist marker should carry volume at all, or hold one fixed pair so
+  the VWAP level stays a constant anchor while only the body ramps;
+- the HUD legend: where the five stops live and whether they are labelled in
+  volume units or as window quantiles.
+
+---
+
+## 11. Further research
+
+**Colour saturation cue for the width clamp.** A buoy whose waist is truncated
+to `A_slot` shows the cap's width rather than its volume (§4). Once §10 lands,
+that buoy's colour carries its true volume and the cue is covered; until then
+the clamp is silent, and whether it deserves a separate marking of its own is
+open.
