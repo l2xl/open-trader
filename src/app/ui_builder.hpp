@@ -17,11 +17,16 @@
 namespace scratcher::elements {
 
 class InstrumentPanelNode;
+class ScenePanelNode;
 
 class UiBuilder
 {
 public:
     std::shared_ptr<InstrumentPanelNode> MakeInstrumentPanel(std::shared_ptr<cycfi::elements::view> root_view, cockpit::PanelType type, std::function<void()> onClose, std::function<void(cockpit::PanelType, SplitDirection)> onSplit);
+
+    // Chrome for a scene panel without an instrument selector: title header, work-area deck parked
+    // on the waiting indicator, footer. The content is installed later via ScenePanelNode::InstallContent.
+    std::shared_ptr<ScenePanelNode> MakeScenePanel(std::shared_ptr<cycfi::elements::view> root_view, cockpit::PanelType type, std::function<void()> onClose, std::function<void(cockpit::PanelType, SplitDirection)> onSplit);
 
     cycfi::elements::element_ptr MakeAppBar(cycfi::elements::element_ptr tab_bar_area, cycfi::elements::element_ptr menu_items, std::function<void(bool)> onHamburger);
 
@@ -41,6 +46,7 @@ private:
     cycfi::elements::element_ptr MakePanelHeader(cockpit::PanelType type, std::function<void(cockpit::PanelType)> onChangeType, std::function<void()> onClose, std::function<void(cockpit::PanelType, SplitDirection)> onSplit);
     cycfi::elements::element_ptr MakePanelFooter(std::function<void(cockpit::PanelType, SplitDirection)> onSplit);
     cycfi::elements::element_ptr MakeWaitingIndicator();
+    std::shared_ptr<cycfi::elements::deck_composite> MakeWorkArea();
 };
 
 } // namespace scratcher::elements

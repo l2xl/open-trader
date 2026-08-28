@@ -4,25 +4,21 @@
 
 #pragma once
 
-#include <atomic>
 #include <chrono>
 #include <cstdint>
 #include <deque>
 #include <memory>
-#include <mutex>
 #include <optional>
 #include <shared_mutex>
-#include <span>
 #include <string>
-#include <vector>
 
 #include "bybit/entities/instrument.hpp"
-#include "content_panel.hpp"
 #include "data_controller.hpp"
 #include "data_rectangle.hpp"
 #include "scratcher.hpp"
 #include "scratchers/quote_scratcher.hpp"
 #include "tvg_ptr.hpp"
+#include "vector_scene_panel.hpp"
 
 namespace scratcher::cockpit {
 
@@ -57,7 +53,7 @@ struct ScenePixelSize
     float y;
 };
 
-class InstrumentPanel : public ContentPanel
+class InstrumentPanel : public VectorScenePanel
 {
 public:
     InstrumentPanel(PanelType type, seconds candle_period, uint32_t candle_width_pixels);
@@ -66,15 +62,12 @@ public:
     const bybit::InstrumentInfo& Instrument() const { return mInstrument; }
     const std::string& Symbol() const { return mInstrument.symbol; }
 
-    // Two-scene layered model: mHudScene carries pixel-space widgets (rulers, labels)
-    // in HUD-Y-up coords (Y=0 at canvas bottom), achieved via a Y-flip-about-canvas_h on
-    // the scene itself. mLogicalScene nests inside and adds M_view · scale · -floor to
-    // map (timestamp_ms, price_points) into the inner data rect; HUD's flip carries it
-    // down to canvas pixels. Both scenes live for the panel's lifetime.
-    tvg::Scene& HudScene() const { return *mHudScene; }
+    // Two-scene layered model: HudScene() carries pixel-space widgets (rulers, labels) in
+    // HUD-Y-up coords. mLogicalScene nests inside and adds M_view · scale · -floor to map
+    // (timestamp_ms, price_points) into the inner data rect; HUD's flip carries it down to
+    // canvas pixels. Both scenes live for the panel's lifetime.
     tvg::Scene& LogicalScene() const { return *mLogicalScene; }
 
-    Rectangle OuterCanvasRect() const { return Rectangle{0, 0, mCanvasWidth, mCanvasHeight}; }
     Rectangle& MutableInnerDataRect() { return mInnerDataRect; }
     const Rectangle& InnerDataRect() const { return mInnerDataRect; }
 
@@ -90,9 +83,6 @@ public:
     // SetViewLeftTimeMs. Snapped to the candle period.
     int64_t ViewLeftTimeMs() const;
     void SetViewLeftTimeMs(std::optional<int64_t> t_ms);
-
-    const std::string& DefaultFontName() const;
-    float DefaultFontSize() const { return mFontSize; }
 
     seconds CandlePeriod() const { return mCandlePeriod; }
     uint32_t CandleWidth() const { return mCandleWidthPixels; }
@@ -113,13 +103,6 @@ public:
     void SetTradeSubscription(std::shared_ptr<IDataController::public_trades_feed_type::subscription_type> sub)
     { mTradeSubscription = std::move(sub); }
 
-    // Damage tracking. Scratchers call this BEFORE mutating a paint; the panel captures
-    // the paint's pre-mutation bounds (valid from the previous frame's sync) and adds
-    // them to the damage union for the next Render(). If bounds() fails — e.g. on the
-    // very first frame, or after a full redraw — the panel falls back to full-canvas
-    // redraw on the next Render(), so missing pre-bounds never produces a stale frame.
-    void MarkDirty(tvg::Paint* paint);
-
     // HUD-X projection of a model timestamp under the current view transform. Read
     // directly from mLogicalScene's matrix so callers get the live composition of
     // scale + view offset without duplicating any state. The inverse is TimeOfHudX,
@@ -137,85 +120,32 @@ public:
     uint64_t PriceOfHudY(float hud_y) const;
 
     // Returns the canvas-pixel size measured in `scene`'s local coordinates. Resolves
-    // mHudScene → (1, 1) (HUD applies only a Y-flip-about-canvas_h, no axis scaling)
+    // HudScene → (1, 1) (HUD applies only a Y-flip-about-canvas_h, no axis scaling)
     // and mLogicalScene → (1/|e11|, 1/|e22|) from the live LogicalScene transform.
     // Sub-scenes added directly under either as identity inherit the parent's value;
     // any unknown scene falls back to (1, 1) so callers never silently scale by zero.
     ScenePixelSize PixelSizeOf(const tvg::Scene& scene) const;
 
-    // Allocate (or reallocate) the render buffer at the given dimensions and bind it
-    // as the ThorVG canvas target as a single action. The new buffer replaces any
-    // previous one atomically: the canvas is rebound to the fresh storage BEFORE the
-    // previous buffer is freed, so the canvas target never points at freed memory.
-    // After allocation the layout is recomputed for the new size. The buffer is laid
-    // out as ARGB8888 with a tight stride of `width` pixels per row.
-    void AllocatePixelBuffer(uint32_t width, uint32_t height);
-
-    // Raw access to the render buffer for callers that need to wrap it in a
-    // platform-specific surface (e.g. a cairo image surface for cycfi/elements).
-    // Returns nullptr until AllocatePixelBuffer has been called. The wrapper must
-    // not outlive the panel — the panel owns the storage.
-    uint32_t* PixelBufferData() noexcept { return mPixels.data(); }
-
-    // Circuit B (worker-safe, blocking): take the data lock, run DoUpdate, stamp the
-    // monotonic timestamp, release. Subclasses post the UI redraw via Refresh().
-    void Update() override;
-
-    // Circuit A (UI-thread paint hook): cheap try-lock + frame-throttle gate. If the
-    // throttle window has not elapsed OR another thread holds the data lock, returns
-    // immediately and the caller proceeds to Render() with the previously published
-    // scene state. Otherwise runs DoUpdate() and stamps the timestamp.
-    void OnUpdate();
-
-    // Damage-tracked render. Returns the rect that was repainted, in canvas-pixel coords;
-    // an empty rect means no draw happened this frame and the host should NOT call
-    // cairo_surface_mark_dirty_rectangle (the buffer is unchanged from the previous frame).
-    // Holds mDataMutex across the whole viewport→update→draw→sync sequence — workers
-    // wait one frame's rasterisation latency, which the 100 ms worker tick absorbs.
-    Rectangle Render();
-
-    //virtual void PostToUi(std::function<void()> fn) = 0;
+    CanvasExtent MinimalCanvasSize() const override { return CanvasExtent{380, 240}; }
 
 protected:
-    // Pure scene/scratcher recalculation. PRECONDITION: caller holds mDataMutex.
-    void DoUpdate();
-
-    // Tunable; default 16 ms (~60 Hz). Set to 0 to disable throttling (useful in tests
-    // where deterministic single-frame rendering is required).
-    void SetUpdateThrottle(std::chrono::nanoseconds dt) noexcept { mUpdateThrottleNs = dt.count(); }
+    // Reseeds the inner rect to the full canvas (each ruler's CalculateSize subtracts its strip),
+    // runs the scratcher layout phases around the logical-scene transform refresh. Always a full
+    // redraw: the live view edge moves with wall-clock time on every tick.
+    bool DoLayout() override;
 
 private:
-    struct ThorvgRuntimeRef
-    {
-        ThorvgRuntimeRef();
-        ~ThorvgRuntimeRef();
-        ThorvgRuntimeRef(const ThorvgRuntimeRef&) = delete;
-        ThorvgRuntimeRef& operator=(const ThorvgRuntimeRef&) = delete;
-    };
-
-    void ApplyOuterSceneTransforms();
     void ApplyLogicalSceneTransform();
     void EnsureViewAnchor();
 
     bybit::InstrumentInfo mInstrument;
 
-    ThorvgRuntimeRef mRuntime;
-
-    // Render buffer; declared BEFORE mCanvas so that reverse-of-declaration member
-    // destruction tears down the canvas (which holds mPixels.data() as its target
-    // pointer) BEFORE the buffer storage is released.
-    std::vector<uint32_t> mPixels;
-
-    std::unique_ptr<tvg::SwCanvas> mCanvas;
-    tvg_ptr<tvg::Scene> mHudScene;
     tvg_ptr<tvg::Scene> mLogicalScene;
 
     Rectangle mInnerDataRect{};
-    uint32_t mCanvasWidth = 0;
-    uint32_t mCanvasHeight = 0;
 
     SceneFloor mSceneFloor{};
-    int  mRightPadPx = 0;                        // live-edge right inset; recomputed each DoUpdate in EnsureViewAnchor
+    int  mRightPadPx = 0;                        // live-edge right inset; recomputed each DoLayout in EnsureViewAnchor
     std::optional<int64_t> mPinnedViewLeftMs;    // set: pinned (tests / scrolling); unset: live wall clock
 
     std::size_t mPriceDecimals = 0;
@@ -227,31 +157,6 @@ private:
 
     std::shared_ptr<IDataController::public_trades_feed_type::subscription_type> mTradeSubscription;
 
-    // Serialises Circuit A (UI paint hook) and Circuit B (worker Update) against each
-    // other and against Render()'s viewport+canvas->update() phase. Distinct from
-    // mScratcherMutex (which only protects the scratcher deque structure) — the data
-    // mutex covers the whole DoUpdate critical section AND the ThorVG scene-tree walk
-    // that follows in Render().
-    mutable std::mutex mDataMutex;
-
-    // Monotonic ns-since-steady_clock-epoch of the last DoUpdate completion. Read by
-    // OnUpdate() to gate the throttle without locking. int64_t over std::atomic guarantees
-    // is_always_lock_free on every supported platform; std::atomic<time_point> does not.
-    std::atomic<int64_t> mLastUpdateNs{0};
-
-    // 16 ms = 60 Hz. Updated via SetUpdateThrottle(); 0 disables throttling.
-    int64_t mUpdateThrottleNs = 16'000'000;
-
-    // Damage-tracking state.
-    struct DirtyEntry
-    {
-        tvg_ptr<tvg::Paint> paint;
-        float x = 0.0f, y = 0.0f, w = 0.0f, h = 0.0f;
-    };
-    std::vector<DirtyEntry> mDirtyPaints;
-    bool mLayoutDirty = true;  // true on first frame and after every OnSize
-
-    float mFontSize = 12.0f;
     const seconds mCandlePeriod;
     const uint32_t mCandleWidthPixels;
 };

@@ -21,6 +21,7 @@
 #include "bybit/data_manager.hpp"
 #include "content_panel.hpp"
 #include "instrument_panel.hpp"
+#include "wallet_panel.hpp"
 
 namespace SQLite {
 class Database;
@@ -62,6 +63,10 @@ public:
     // Other panel types use the generic RegisterPanel.
     panel_id RegisterPanel(std::shared_ptr<ContentPanel> panel);
     panel_id RegisterInstrumentPanel(const std::string& symbol, std::shared_ptr<InstrumentPanel> panel);
+
+    // Wires the panel-owned wallet subscription to the data controller's wallet feed (snapshot
+    // delivered synchronously if already cached), then registers the panel for the heartbeat.
+    panel_id RegisterWalletPanel(std::shared_ptr<WalletPanel> panel);
 
     // Reactive instrument-list channel. Delivery happens on the data-manager thread
     // (caller marshals to UI). The current snapshot, if any, is delivered synchronously

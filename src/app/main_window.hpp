@@ -49,6 +49,10 @@ private:
     // instrument list arrives (or symbol selection changes).
     std::shared_ptr<InstrumentPanelNode> MakeInstrumentLeaf(cockpit::PanelType type);
 
+    // Build the wallet leaf: scene chrome + a WalletPanelElement registered with the cockpit,
+    // installed into the work area right away (the panel shows its own waiting state).
+    std::shared_ptr<ScenePanelNode> MakeWalletLeaf();
+
     // Build a chart panel for `symbol` and install it inside the existing leaf's
     // work-area deck (deck-switch from waiting indicator to chart). The cockpit
     // owns the symbol→InstrumentInfo lookup performed at registration time.

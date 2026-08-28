@@ -145,6 +145,19 @@ panel_id TradeCockpit::RegisterInstrumentPanel(const std::string& symbol, std::s
     return RegisterPanel(std::move(panel));
 }
 
+panel_id TradeCockpit::RegisterWalletPanel(std::shared_ptr<WalletPanel> panel)
+{
+    using wallet_feed = IDataController::wallet_feed_type;
+    auto wallet_sub = datahub::make_subscription<wallet_feed::cache_type>(
+        [weak_panel = std::weak_ptr(panel)](datahub::update_kind kind, const wallet_feed::cache_type& wallets) {
+            if (auto p = weak_panel.lock()) p->OnWallet(kind, wallets);
+        });
+    panel->SetWalletSubscription(wallet_sub);
+    mDataManager->SubscribeWallet(wallet_sub);
+
+    return RegisterPanel(std::move(panel));
+}
+
 TradeCockpit::subscription_id TradeCockpit::SubscribeInstruments(InstrumentsCallback cb)
 {
     subscription_id id;

@@ -65,50 +65,58 @@ protected:
     panel_id mPanelId = 0;
 };
 
-// Leaf for instrument-bearing panels. The chrome (header with title + dropdown,
-// work area, footer) is created once; the work-area is a 2-child deck whose
-// child 0 is a waiting indicator and child 1 is the chart pixel buffer.
-// Switching `select(0|1)` flips what's shown without mutating the cycfi tree
-// shape — that avoids the layout glitch we hit when the leaf was wholesale-
-// replaced on data arrival (a stripe of the previous bounds remained on the
-// next paint).
-//
-// Symbol re-selection is implemented as InstallChart(new_chart) on the SAME
-// leaf — the chrome stays mounted, only the chart child swaps in-place.
+// Leaf whose chrome (header, work area, footer) is created once; the work area is a
+// 2-child deck whose child 0 is a waiting indicator and child 1 the panel content.
+// Switching `select(0|1)` flips what's shown without mutating the cycfi tree shape —
+// that avoids the layout glitch we hit when the leaf was wholesale-replaced on data
+// arrival (a stripe of the previous bounds remained on the next paint). Content
+// re-installation swaps only the content child in-place, the chrome stays mounted.
+class ScenePanelNode : public LeafPanelNode
+{
+public:
+    ScenePanelNode(std::shared_ptr<el::view> root_view, PanelType type, std::shared_ptr<el::deck_composite> work_area)
+    : LeafPanelNode(std::move(root_view), type) , mWorkArea(std::move(work_area))
+    {}
+    ~ScenePanelNode() override = default;
+
+    bool HasContent() const { return mHasContent; }
+
+    // Mount `content` as the work-area's content child and switch the deck to it.
+    void InstallContent(el::element_ptr content, cockpit::panel_id pid);
+
+    // Drop the current content. Restores the waiting indicator; HasContent() == false afterwards.
+    void UninstallContent();
+
+private:
+    std::shared_ptr<el::deck_composite> mWorkArea;
+    bool mHasContent = false;
+};
+
+// Scene leaf for instrument-bearing panels: adds the symbol dropdown and title to
+// the chrome. Symbol re-selection is InstallContent(new_chart) on the SAME leaf.
 //
 // The node is deliberately ignorant of bybit::InstrumentInfo: it only knows
 // about symbol strings. Symbol→InstrumentInfo resolution and the cockpit
 // registration that consumes the InstrumentInfo are MainWindow's job.
-class InstrumentPanelNode : public LeafPanelNode
+class InstrumentPanelNode : public ScenePanelNode
 {
 public:
     InstrumentPanelNode(std::shared_ptr<el::view> root_view, PanelType type, std::shared_ptr<el::text_writer> title_label, std::shared_ptr<el::basic_button_menu> instrument_button, std::shared_ptr<el::deck_composite> work_area)
-    : LeafPanelNode(std::move(root_view), type) , mTitleLabel(std::move(title_label)) , mInstrumentButton(std::move(instrument_button)) , mWorkArea(std::move(work_area))
+    : ScenePanelNode(std::move(root_view), type, std::move(work_area)) , mTitleLabel(std::move(title_label)) , mInstrumentButton(std::move(instrument_button))
     {}
     ~InstrumentPanelNode() override = default;
 
-    bool HasChart() const { return mHasChart; }
-
     // Push the latest instrument symbols to the chrome dropdown. `onSelect`
     // fires when the user picks a symbol; MainWindow turns that into an
-    // InstallChart on this leaf.
+    // InstallContent on this leaf.
     void SetInstruments(const std::vector<std::string>& symbols, std::function<void(std::string)> onSelect);
 
     // Update the title text shown next to the dropdown.
     void SetTitle(const std::string& text);
 
-    // Mount `chart_element` as the work-area's chart child and switch the deck to it.
-    void InstallChart(el::element_ptr chart_element, cockpit::panel_id pid);
-
-    // Drop the current chart binding. Restores the waiting indicator and runs
-    // the previously-stored cleanup. After this, HasChart() == false.
-    void UninstallChart();
-
 private:
     std::shared_ptr<el::text_writer> mTitleLabel;
     std::shared_ptr<el::basic_button_menu> mInstrumentButton;
-    std::shared_ptr<el::deck_composite> mWorkArea;
-    bool mHasChart = false;
 };
 
 class SplitPanelNode : public PanelNode

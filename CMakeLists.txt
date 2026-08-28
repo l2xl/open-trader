@@ -141,8 +141,14 @@ set(core_SOURCES
         src/cockpit/scratchers/quote_scratcher.cpp
         src/cockpit/content_panel.hpp
         src/cockpit/content_panel.cpp
+        src/cockpit/vector_scene_panel.hpp
+        src/cockpit/vector_scene_panel.cpp
         src/cockpit/instrument_panel.hpp
         src/cockpit/instrument_panel.cpp
+        src/cockpit/svg_template.hpp
+        src/cockpit/svg_template.cpp
+        src/cockpit/wallet_panel.hpp
+        src/cockpit/wallet_panel.cpp
         src/cockpit/trade_cockpit.hpp
         src/cockpit/trade_cockpit.cpp
 )
@@ -161,8 +167,8 @@ add_executable(trader
             src/app/ui_builder.hpp
             src/app/ui_builder.cpp
             src/app/split_direction.hpp
-            src/app/instrument_panel_element.hpp
-            src/app/instrument_panel_element.cpp
+            src/app/vector_scene_panel_element.hpp
+            src/app/vector_scene_panel_element.cpp
             src/app/tab_bar.hpp
             src/app/tab_bar.cpp
             src/app/panel_node.hpp
@@ -186,8 +192,9 @@ add_custom_command(
         "${ELEMENTS_FONT_DIR}/OpenSans-Light.ttf"
         "${ELEMENTS_FONT_DIR}/OpenSans-Bold.ttf"
         "${ELEMENTS_FONT_DIR}/Roboto-Regular.ttf"
+        "${CMAKE_SOURCE_DIR}/src/cockpit/templates/wallet_panel.svg"
         ${TRADER_RESOURCES_DIR}
-    COMMENT "Copying Elements font resources for trader"
+    COMMENT "Copying font and panel template resources for trader"
 )
 
 include_directories(
@@ -275,6 +282,8 @@ if(NOT ANDROID)
     add_unit_test(test_orderbook test/data/test_orderbook.cpp)
     add_unit_test(test_bybit_orderbook test/bybit/test_orderbook.cpp)
     add_unit_test(test_quote_scratcher test/cockpit/scratchers/test_quote_scratcher.cpp)
+    add_unit_test(test_wallet_panel test/cockpit/test_wallet_panel.cpp)
+    add_dependencies(test_wallet_panel trader)  # the wallet SVG template is copied next to trader
 
     # ThorVG render test — links only Catch2 + ThorVG (+ cairo for the bridge test)
     if(THORVG_AVAILABLE AND CAIRO_FOUND)
