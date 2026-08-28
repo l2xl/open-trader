@@ -127,10 +127,11 @@ class SB:
 
     def raw(s, t): s.b.append(t)
 
-    def R(s, x, y, w, h, fill, rx=0, stroke=None, sw=1, op=None):
+    def R(s, x, y, w, h, fill, rx=0, stroke=None, sw=1, op=None, dash=None):
         a = f'<rect x="{x:g}" y="{y:g}" width="{w:g}" height="{h:g}" fill="{fill}"'
         if rx: a += f' rx="{rx:g}"'
         if stroke: a += f' stroke="{stroke}" stroke-width="{sw:g}"'
+        if dash: a += f' stroke-dasharray="{dash}"'
         if op is not None: a += f' opacity="{op:g}"'
         s.b.append(a + "/>")
 
@@ -435,95 +436,32 @@ def draft_a():
 # =====================================================================
 # Draft B — master–detail: account rail + detail pane (560 x 640)
 # =====================================================================
-def draft_b():
-    PW, PH = 560, 574
-    NOTES = [
-        "Rail = persistent scope selector: All / per-wallet / per-subaccount; selection drives the whole right pane.",
-        "Rail rows show per-account equity and an MM-band health dot " + MINUS + " triage before drill-down.",
-        "Detail pane repeats the Draft A anatomy (hero " + "→" + " KPIs " + "→" + " margin " + "→" + " coins) for the selected scope.",
-        "Costs ~190 px of width; best when the wallet leaf gets a wide dock or its own split half.",
-    ]
-    LINES = wrap_notes(NOTES, PW + 24)
-    W, H = PW + 80, PH + 58 + notes_h(LINES)
-    s = SB(W, H)
-    s.R(0, 0, W, H, CANVAS)
-    caption(s, 40, 26, "Draft B " + MINUS + " Master" + "–" + "detail " + DOT + " account rail",
-            "persistent account tree on the left, scoped detail on the right " + DOT + " needs a wider dock " + DOT + " shown 560" + "×" + "574")
-    px, py = 40, 58
-    s.R(px - 1, py - 1, PW + 2, PH + 2, "none", stroke=PANEL_BR)
-    s.R(px, py, PW, PH, BG)
-    s.g(tr=f"translate({px},{py})")
+def wallet_card(s, ix, xr, y0, scroll_x=None, scope="All accounts"):
+    """The SVG-template "wallet card": scope title + hero + coin list.
 
-    panel_header(s, 0, 0, PW, "Wallet")
-    RW = 186                              # rail width
-    s.R(0, 26, RW, PH - 26, FTR_BG)
-    s.L(RW, 26, RW, PH, stroke=HAIR)
-
-    # ---- rail ----
-    y = 26 + 12
-    # all accounts (selected)
-    s.R(0, y - 4, RW, 34, CARD_HI)
-    s.R(0, y - 4, 3, 34, ACC)
-    s.T(12, y + 9, "All accounts", size=11.5, fill=BRIGHT)
-    s.T(RW - 10, y + 24, "$" + num(TOTAL_EQ), size=10.5, fill=LAB, anchor="end", cls="v-acct-equity")
-    y += 42
-    for group in ("Main", "Subaccounts"):
-        s.T(12, y + 8, group.upper(), size=8.5, fill=DIM, spacing=1.2)
-        y += 16
-        for key, grp, name, badge, deriv in ACCTS:
-            if grp != group:
-                continue
-            s.badge(12, y + 3, badge)
-            s.T(31, y + 13, name, size=11, fill=LAB)
-            if key in ACCT_RISK:
-                s.dot(RW - 10, y + 9, band_col(ACCT_RISK[key][0]), r=2.5)
-            s.T(RW - 10, y + 28, num(acct_equity[key]), size=10, fill=DIM, anchor="end", cls="v-acct-equity")
-            y += 36
-        y += 8
-    s.L(8, y, RW - 8, y, stroke=HAIR)
-    y += 16
-    s.T(12, y, "MM health", size=9, fill=DIM)
-    s.dot(70, y - 3, POS, r=2.5); s.T(76, y, "ok", size=9, fill=DIM)
-    s.dot(96, y - 3, WRN, r=2.5); s.T(102, y, "50–70", size=9, fill=DIM)
-    s.dot(140, y - 3, NEG, r=2.5); s.T(146, y, "≥70", size=9, fill=DIM)
-
-    # ---- detail pane ----
-    ix = RW + 14
-    iw = PW - ix - 14
-    xr = ix + iw
-    y = 26 + 20
-    s.T(ix, y, "All accounts", size=13, fill=BRIGHT, weight="bold")
+    Decision 2026-08-28: this is the whole template. The account selector, panel
+    chrome and dust footer are native elements widgets; the KPI strip and the
+    margin-usage section were removed from the card per review. The eye, search
+    box and hide-toggle are interactive and therefore native overlays at runtime;
+    they are drawn here for layout only. Returns the y just below the last row.
+    """
+    y = y0 + 14
+    s.T(ix, y, scope, size=13, fill=BRIGHT, weight="bold", cls="v-scope-title")
     s.T(xr - 24, y, "updated " + UPDATED, size=9.5, fill=DIM, anchor="end", cls="v-updated")
     s.eye(xr - 8, y - 4)
-    y += 26
+    y += 30
     s.T(ix, y, "$", size=18, fill=DIM, weight="bold")
     s.T(ix + 14, y, num(TOTAL_EQ), size=24, fill=BRIGHT, weight="bold", cls="v-total-equity")
-    y += 16
-    s.T(ix, y, "≈ " + f"{BTC_EQ:.4f} BTC", size=10.5, fill=DIM)
-    s.T(ix + 82, y, signed(TOTAL_UPL) + " unrealised", size=10.5, fill=POS, cls="v-total-upl")
-    y += 12
+    y += 17
+    s.T(ix, y, "≈ " + f"{BTC_EQ:.4f} BTC", size=10.5, fill=DIM, cls="v-btc-equiv")
+    s.T(ix + 84, y, signed(TOTAL_UPL) + " unrealised", size=10.5, fill=POS, cls="v-total-upl")
+    y += 11
     s.L(ix, y, xr, y, stroke=HAIR)
 
-    # KPI strip
-    y += 16
-    for i, (k, v, c) in enumerate((("Available", num(TOTAL_AVAIL), LAB),
-                                   ("Wallet balance", num(TOTAL_WALLET), LAB),
-                                   ("Unrealised PnL", signed(TOTAL_UPL), pnl_col(TOTAL_UPL)))):
-        cxk = ix + i * (iw / 3)
-        s.T(cxk, y, k, size=9.5, fill=DIM)
-        s.T(cxk, y + 16, v, size=12, fill=c, cls="v-kpi")
-    y += 28
-    s.L(ix, y, xr, y, stroke=HAIR)
-
-    # margin rows
-    y += 16
-    y = risk_rows(s, 0, ix, iw, y)
-    s.L(ix, y, xr, y, stroke=HAIR)
-
-    # coin table
     y += 10
     s.searchbox(ix, y, 150)
     s.checkbox(ix + 162, y + 5, "hide < $1", on=True)
+    s.T(xr, y + 15, "9 / 12", size=9.5, fill=DIM, anchor="end", cls="v-coin-count")
     y += 32
     cA, cV, cU = ix + 158, ix + 258, xr
     s.T(ix, y, "COIN", size=9, fill=DIM, spacing=0.8)
@@ -536,14 +474,75 @@ def draft_b():
     for sym in ORDER:
         s.L(ix, y, xr, y, stroke="#26262B")
         s.coin(ix + 8, y + rh / 2, sym, r=7)
-        s.T(ix + 21, y + rh / 2 + 3.6, sym, size=10.5, fill=LAB)
-        s.T(cA, y + rh / 2 + 3.6, amt(sym), size=10.5, fill=LAB, anchor="end")
-        s.T(cV, y + rh / 2 + 3.6, num(coin_usd[sym]), size=10.5, fill=LAB, anchor="end")
+        s.T(ix + 21, y + rh / 2 + 3.6, sym, size=10.5, fill=LAB, cls="v-coin-sym")
+        s.T(cA, y + rh / 2 + 3.6, amt(sym), size=10.5, fill=LAB, anchor="end", cls="v-coin-amount")
+        s.T(cV, y + rh / 2 + 3.6, num(coin_usd[sym]), size=10.5, fill=LAB, anchor="end", cls="v-coin-usd")
         u = coin_upl[sym]
         s.T(cU, y + rh / 2 + 3.6, signed(u) if u else "—", size=10.5,
-            fill=pnl_col(u) if u else DIM, anchor="end")
+            fill=pnl_col(u) if u else DIM, anchor="end", cls="v-coin-upl")
         y += rh
-    s.scrollhint(PW - 5, rows_top, y - rows_top)
+    if scroll_x is not None:
+        s.scrollhint(scroll_x, rows_top, y - rows_top)
+    return y
+
+
+def draft_b():
+    PW, PH = 560, 396
+    NOTES = [
+        "Account rail = common elements widget, OUT of the SVG template; it owns selection (All / per-wallet / per-subaccount) and feeds scope + data into the card.",
+        "Dashed region = the SVG template (wallet_card_template.svg): scope title, hero, coin list. KPI strip and margin-usage section removed per review 2026-08-28.",
+        "Panel header and dust footer stay elements chrome; eye / search / hide-toggle are interactive " + "→" + " native overlays above the template (drawn for layout only).",
+        "Rail rows: per-account equity + MM-band health dot; legend at rail bottom.",
+    ]
+    LINES = wrap_notes(NOTES, PW + 24)
+    W, H = PW + 80, PH + 76 + notes_h(LINES)
+    s = SB(W, H)
+    s.R(0, 0, W, H, CANVAS)
+    caption(s, 40, 26, "Draft B (chosen) " + MINUS + " native account rail + SVG-template card",
+            "rail is a common elements widget; the card is the SVG template " + DOT + " shown 560" + "×" + "396")
+    s.T(40, 59, "dashed outline = SVG template (wallet_card_template.svg) " + DOT + " rail & chrome = native elements widgets", size=11, fill=DIM)
+    px, py = 40, 76
+    s.R(px - 1, py - 1, PW + 2, PH + 2, "none", stroke=PANEL_BR)
+    s.R(px, py, PW, PH, BG)
+    s.g(tr=f"translate({px},{py})")
+
+    panel_header(s, 0, 0, PW, "Wallet")
+    RW = 186                              # rail width (native elements widget)
+    s.R(0, 26, RW, PH - 26, FTR_BG)
+    s.L(RW, 26, RW, PH, stroke=HAIR)
+
+    # ---- rail (native account selector; not part of the template) ----
+    y = 26 + 12
+    s.R(0, y - 4, RW, 34, CARD_HI)
+    s.R(0, y - 4, 3, 34, ACC)
+    s.T(12, y + 9, "All accounts", size=11.5, fill=BRIGHT)
+    s.T(RW - 10, y + 24, "$" + num(TOTAL_EQ), size=10.5, fill=LAB, anchor="end")
+    y += 42
+    for group in ("Main", "Subaccounts"):
+        s.T(12, y + 8, group.upper(), size=8.5, fill=DIM, spacing=1.2)
+        y += 16
+        for key, grp, name, badge, deriv in ACCTS:
+            if grp != group:
+                continue
+            s.badge(12, y + 3, badge)
+            s.T(31, y + 13, name, size=11, fill=LAB)
+            if key in ACCT_RISK:
+                s.dot(RW - 10, y + 9, band_col(ACCT_RISK[key][0]), r=2.5)
+            s.T(RW - 10, y + 28, num(acct_equity[key]), size=10, fill=DIM, anchor="end")
+            y += 36
+        y += 8
+    s.L(8, y, RW - 8, y, stroke=HAIR)
+    y += 16
+    s.T(12, y, "MM health", size=9, fill=DIM)
+    s.dot(70, y - 3, POS, r=2.5); s.T(76, y, "ok", size=9, fill=DIM)
+    s.dot(96, y - 3, WRN, r=2.5); s.T(102, y, "50–70", size=9, fill=DIM)
+    s.dot(140, y - 3, NEG, r=2.5); s.T(146, y, "≥70", size=9, fill=DIM)
+
+    # ---- the SVG-template card ----
+    ix = RW + 14
+    xr = PW - 14
+    wallet_card(s, ix, xr, 26 + 8, scroll_x=550)
+    s.R(RW + 6, 29, PW - 9 - (RW + 6), PH - 24 - 29, "none", stroke=ACC, sw=1, dash="5,4", op=0.7)
 
     fy = PH - 20
     s.R(RW + 1, fy, PW - RW - 1, 20, FTR_BG)
@@ -552,7 +551,31 @@ def draft_b():
     s.gend()
 
     footnotes(s, 40, py + PH + 30, LINES)
-    return s.svg("Wallet draft B " + MINUS + " master" + "–" + "detail account rail")
+    return s.svg("Wallet draft B " + MINUS + " native rail + template card")
+
+
+def wallet_card_template():
+    PW, PH = 380, 360
+    NOTES = [
+        "The template ONLY: ThorVG renders this scene per selected scope; panel chrome, the account-selector widget, footer and interactive controls (eye, search, hide-toggle) are native elements " + MINUS + " controls are drawn here for layout only.",
+        "Injection classes: v-scope-title, v-updated, v-total-equity, v-btc-equiv, v-total-upl, v-coin-count, and per-row v-coin-sym / v-coin-amount / v-coin-usd / v-coin-upl (row group stamped per coin).",
+        "Same layout for any scope: a single Funding account renders UPL as — and drops the unrealised part of the secondary line.",
+        "Conservative SVG diet for the ThorVG loader: rect / circle / path / line / text; no gradients, filters or masks in this file.",
+    ]
+    LINES = wrap_notes(NOTES, PW + 24)
+    W, H = PW + 80, PH + 58 + notes_h(LINES)
+    s = SB(W, H)
+    s.R(0, 0, W, H, CANVAS)
+    caption(s, 40, 26, "Wallet card " + MINUS + " the SVG template",
+            "scope title + hero + coin list; everything else is native " + DOT + " shown 380" + "×" + "360")
+    px, py = 40, 58
+    s.R(px - 1, py - 1, PW + 2, PH + 2, "none", stroke=PANEL_BR)
+    s.R(px, py, PW, PH, BG)
+    s.g(tr=f"translate({px},{py})")
+    wallet_card(s, 12, PW - 12, 12, scroll_x=PW - 6)
+    s.gend()
+    footnotes(s, 40, py + PH + 30, LINES)
+    return s.svg("Wallet card SVG template")
 
 
 # =====================================================================
@@ -890,6 +913,7 @@ def draft_e():
 DRAFTS = {
     "draft_a_compact_stack.svg": draft_a,
     "draft_b_master_detail.svg": draft_b,
+    "wallet_card_template.svg": wallet_card_template,
     "draft_c_portfolio_cards.svg": draft_c,
     "draft_d_account_matrix.svg": draft_d,
     "draft_e_summary_strip.svg": draft_e,

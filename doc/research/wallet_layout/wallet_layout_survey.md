@@ -9,6 +9,23 @@ design literature. Most exchange help domains were egress-blocked for direct fet
 search-engine renditions of the exact official pages; field lists are high-confidence, pixel-level placement claims are
 marked *(uncertain)* where applicable.
 
+## 0a. Decision (2026-08-28, review)
+
+**Draft B is chosen**, with two modifications:
+
+1. **The account rail is NOT part of the SVG template.** The selector panel will be built as a common (reusable)
+   elements widget — native `cycfi/elements` composition — owning account selection; it feeds the selected scope and
+   its data into the card. The template boundary is the detail card only.
+2. **The wallet card drops the KPI strip ("Available / Wallet balance / Unrealised PnL") and the "MARGIN USAGE"
+   section.** The card = scope title + updated stamp, hero (equity, ≈ BTC, unrealised), coin list (search, hide-small,
+   COIN / AMOUNT / VALUE / UPL). Those figures stay available in the view-model (and the rail keeps its MM-band dots),
+   they are just not drawn in the card.
+
+Files: `draft_b_master_detail.svg` now shows the revised composition with the template region outlined (dashed);
+`wallet_card_template.svg` is the card alone — the actual SVG-template draft. Interactive furniture drawn inside the
+card (eye, search box, hide-small toggle) is native overlay at runtime; it appears in the drafts for layout only.
+Drafts A / C / D / E remain unchanged as survey record.
+
 ## 0. Scope framing — what "CEX-oriented" changes
 
 Our wallet is an **exchange account**, not an on-chain wallet. That removes the whole self-custody furniture (seed
@@ -103,7 +120,7 @@ $9,567.91 (IM 61.8 % — amber band on display), sub `hedge-desk`·Funding $4,43
 | Draft | File | Dock | Scope / filter model | Wins when | Costs |
 |---|---|---|---|---|---|
 | **A — Compact stack** | `draft_a_compact_stack.svg` | 360×644 (min ≈ 300×600) | chip row: All + per-account; search + hide-small on the list | default docked panel; ≤ ~5 accounts | chips overflow → pan+fade; no per-coin location info |
-| **B — Master–detail** | `draft_b_master_detail.svg` | 560×574 | persistent account rail (groups Main / Subaccounts, per-account equity + MM health dot); detail pane = A's anatomy | wallet gets a wide dock or split half; frequent account hopping | ~190 px width for the rail |
+| **B — Master–detail** (chosen, §0a) | `draft_b_master_detail.svg` | 560×396 | persistent account rail (native elements widget: groups Main / Subaccounts, per-account equity + MM health dot); detail = the SVG-template card (title + hero + coin list) | wallet gets a wide dock or split half; frequent account hopping | ~190 px width for the rail |
 | **C — Portfolio overview** | `draft_c_portfolio_cards.svg` | 400×614 | scope dropdown; account cards double as filters; coin rows expand into per-account splits | portfolio review; "where is my BTC held?" | tallest; two taps to a specific number |
 | **D — Account matrix** | `draft_d_account_matrix.svg` | 560×470 | coins × accounts crosstab, Σ-equity footer row, TOTAL column tinted; Majors/Stables quick chips | power-user audit; treasury view of many accounts | needs ≥ 520 px; no margin bars (dot line only); UPL squeezed |
 | **E — Summary strip** | `draft_e_summary_strip.svg` | 1200×84 | MT4-idiom horizontal strip: equity → available → UPL → margin micro-bars → top-coin ticker cells | shallow top/bottom dock beside charts | glance-only; companion to A–D, not a replacement |
@@ -115,7 +132,7 @@ chrome → scope chips → hero (label + `USD ▾` selector, `$` dim, updated st
 list, not one bar) → coin table (search, hide-small, `9 / 12` count, sort marker on VALUE) → footer dust roll-up.
 When the scope is a single Unified account, the margin rows collapse into the two full-width IM/MM bars of §4.2.
 
-## 4. Recommendation
+## 4. Recommendation (2026-08-27 — superseded by the §0a decision: the review chose B)
 
 **A is the panel.** It keeps the §4.2 skeleton the elements-native plan already targets, adds the account dimension in
 the cheapest form (chips = switch-into with a first-class All), and every element maps to `WalletViewModel` fields.
@@ -145,13 +162,14 @@ is actually in scope — phase 1 ships with Main·UNIFIED only and the chip row 
 
 - Each SVG is: review canvas (caption + footnotes) around one self-contained `<g transform>` panel group — the group is
   liftable as a template skeleton on its own.
-- Every dynamic value node carries a `v-*` class (`v-total-equity`, `v-btc-equiv`, `v-total-upl`, `v-kpi`, `v-im-rate`,
-  `v-mm-rate`, `v-coin-sym`, `v-coin-amount`, `v-coin-usd`, `v-coin-upl`, `v-acct-equity`, `v-updated`) — injection-point
-  markers for the CSS-class + data-injection route verified in `svg_template_research.md`; row groups would be stamped
-  per entry at runtime.
+- Every dynamic value node carries a `v-*` class — injection-point markers for the CSS-class + data-injection route
+  verified in `svg_template_research.md`; row groups are stamped per entry at runtime. In the chosen template
+  (`wallet_card_template.svg`): `v-scope-title`, `v-updated`, `v-total-equity`, `v-btc-equiv`, `v-total-upl`,
+  `v-coin-count`, and per-row `v-coin-sym` / `v-coin-amount` / `v-coin-usd` / `v-coin-upl`. The exploratory drafts
+  carry additional historical markers (`v-kpi`, `v-im-rate`, `v-mm-rate`, …).
 - Feature diet is deliberately conservative for the ThorVG loader: rect/rrect, circle, path, line, text, one linear
-  gradient (A's chip-row fade); no filters, masks, or text-on-path. Numbers are pre-formatted strings (fixed-point
-  formatting stays on our side of the render border, per CONTRIBUTING).
+  gradient (A's chip-row fade — the chosen template file uses none); no filters, masks, or text-on-path. Numbers are
+  pre-formatted strings (fixed-point formatting stays on our side of the render border, per CONTRIBUTING).
 - Fonts: `Open Sans, Segoe UI, DejaVu Sans, sans-serif` — OpenSans digits are tabular (§2.2 of the research doc), so
   live updates don't jitter; all numeric text is `text-anchor="end"` on fixed column edges.
 - `gen_wallet_drafts.py` (same directory) regenerates all five from the shared sample dataset:
@@ -161,8 +179,10 @@ is actually in scope — phase 1 ships with Main·UNIFIED only and the chip row 
 ## 6. Files
 
 - `wallet_layout_survey.md` — this document
-- `draft_a_compact_stack.svg` · `draft_b_master_detail.svg` · `draft_c_portfolio_cards.svg` ·
-  `draft_d_account_matrix.svg` · `draft_e_summary_strip.svg`
+- `wallet_card_template.svg` — **the chosen SVG-template draft** (§0a): the wallet card alone
+- `draft_b_master_detail.svg` — chosen composition: native account rail + template card (template region dashed)
+- `draft_a_compact_stack.svg` · `draft_c_portfolio_cards.svg` · `draft_d_account_matrix.svg` ·
+  `draft_e_summary_strip.svg` — survey record
 - `gen_wallet_drafts.py` — mock generator (research tooling, not application code)
 
 Key sources (survey passes, 2026-08-27): Binance wallet-overview & futures-interface FAQs; ByBit UTA asset-page,
