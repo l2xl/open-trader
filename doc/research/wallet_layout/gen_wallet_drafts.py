@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
 """Wallet panel layout drafts — SVG mock generator (research tooling, not application code).
 
-Emits the five reviewable SVG drafts of a CEX-oriented wallet panel that live next to this
-script (doc/research/wallet_layout/). One shared sample-data model keeps every total
+Emits the kept wallet-panel SVG mocks that live next to this script
+(doc/research/wallet_layout/): the chosen draft-B composition, the wallet-card
+template, and the future-use summary strip. One shared sample-data model keeps every total
 consistent across drafts; tweak data or geometry here and re-run rather than editing SVGs.
 Palette mirrors src/app/ui_builder.cpp; type rules mirror wallet_panel_research.md §4.3.
 
-Usage: python3 gen_wallet_drafts.py   (rewrites draft_*.svg beside the script)
+Usage: python3 gen_wallet_drafts.py   (rewrites the SVG mocks beside the script)
+Decision & implementation notes: src/app/WALLET_PANEL.md
 """
 
 import os
@@ -296,143 +298,6 @@ def footnotes(s, x, y, lines):
         s.T(x, y + i * 16, l, size=11, fill=DIM)
 
 
-def risk_rows(s, px, ix, iw, y, compact=False):
-    """per-account margin-usage rows (scope = aggregated)."""
-    s.T(ix, y, "MARGIN USAGE", size=9, fill=DIM, spacing=1.1)
-    s.T(ix + iw, y, "IM " + DOT + " MM", size=9, fill=DIM, anchor="end", spacing=0.5)
-    y += 10
-    for key, label in (("uta", "Main " + DOT + " Unified"), ("algo", "algo-grid-01")):
-        im, mm = ACCT_RISK[key]
-        yy = y + 14
-        s.T(ix, yy + 4, label, size=10.5, fill=LAB)
-        s.gauge(ix + 108, yy, iw - 108 - 96, im)
-        s.T(ix + iw - 46, yy + 5.5, f"{im:.1f}%", size=10.5, fill=band_col(im), anchor="end", cls="v-im-rate")
-        s.T(ix + iw, yy + 5.5, f"{mm:.1f}%", size=10.5, fill=DIM, anchor="end", cls="v-mm-rate")
-        y += 24
-    return y + 6
-
-
-# =====================================================================
-# Draft A — compact stack, account-chip scope filter (360 x 700)
-# =====================================================================
-def draft_a():
-    PW, PH = 360, 644
-    NOTES = [
-        "Chips scope every section below; ‹All› aggregates accounts; the row pans when accounts overflow (right fade).",
-        "‹USD ▾› switches the conversion currency (USD / EUR / BTC / USDT); the eye masks every figure; ‘updated’ = last feed acceptance.",
-        "Margin usage is per derivatives account (rates never aggregate); bar = IM with 70 / 90 / 100 ticks, value colored by band.",
-        "Coin list: search + hide-small; sorted by value desc; dust rolls into the footer, not into rows. Single-account scope swaps the two margin rows for the full-width IM / MM bars of that account.",
-    ]
-    LINES = wrap_notes(NOTES, PW + 24)
-    W, H = PW + 80, PH + 58 + notes_h(LINES)
-    s = SB(W, H)
-    s.R(0, 0, W, H, CANVAS)
-    caption(s, 40, 26, "Draft A " + MINUS + " Compact stack " + DOT + " scope chips",
-            "single column, account filter as chip row " + DOT + " min dock ≈ 300" + "×" + "600 " + DOT + " shown 360" + "×" + "644")
-    px, py = 40, 58
-    s.R(px - 1, py - 1, PW + 2, PH + 2, "none", stroke=PANEL_BR)
-    s.R(px, py, PW, PH, BG)
-    s.g(tr=f"translate({px},{py})")
-    ix, iw = 12, PW - 24           # content inset
-    xr = ix + iw
-
-    y = panel_header(s, 0, 0, PW, "Wallet") - 0  # local coords now
-    s.gend()
-    s.g(tr=f"translate({px},{py})")
-    y = 26
-
-    # --- scope chips row (scrollable) ---
-    cy = y + 9
-    s.clip("clipchips", 0, y, PW, 38)
-    s.g(clip="clipchips")
-    cx = ix
-    for label, sel in (("All", True), ("Main" + DOT + "Unified", False), ("Main" + DOT + "Funding", False),
-                       ("algo-grid-01", False), ("hedge-desk", False)):
-        cx += s.chip(cx, cy, label, sel) + 6
-    s.gend()
-    s.fade_right(PW - 34, y + 1, 34, 36, "fadeA")
-    y += 38
-    s.L(0, y, PW, y, stroke=HAIR)
-
-    # --- hero ---
-    y += 20
-    s.T(ix, y, "Total equity", size=11, fill=DIM)
-    cw = s.chipw("USD", 9.5) + 10
-    s.R(xr - cw, y - 12, cw, 16, CARD, rx=8, stroke=HAIR)
-    s.T(xr - cw + 8, y, "USD", size=9.5, fill=LAB)
-    s.chev(xr - 10, y - 4.5)
-    y += 30
-    s.T(ix, y, "$", size=22, fill=DIM, weight="bold")
-    s.T(ix + 17, y, num(TOTAL_EQ), size=28, fill=BRIGHT, weight="bold", cls="v-total-equity")
-    s.T(xr, y - 15, "updated " + UPDATED, size=9.5, fill=DIM, anchor="end", cls="v-updated")
-    s.eye(xr - 8, y + 1)
-    y += 19
-    s.T(ix, y, "≈ " + f"{BTC_EQ:.4f}" + " BTC", size=11.5, fill=DIM, cls="v-btc-equiv")
-    s.tri(ix + 96, y - 4, POS, up=True)
-    s.T(ix + 104, y, signed(TOTAL_UPL) + f"  ({TOTAL_UPL / TOTAL_WALLET * 100:.2f}%) unrealised", size=11.5, fill=POS, cls="v-total-upl")
-    y += 14
-    s.L(0, y, PW, y, stroke=HAIR)
-
-    # --- KPI grid 2x3 ---
-    y += 16
-    kpis = [("Available", num(TOTAL_AVAIL), LAB), ("Wallet balance", num(TOTAL_WALLET), LAB),
-            ("Unrealised PnL", signed(TOTAL_UPL), pnl_col(TOTAL_UPL)),
-            ("Margin balance", num(round(acct_equity["uta"] + acct_equity["algo"], 2)), LAB),
-            ("Initial margin", num(18513.42), LAB), ("Maint. margin", num(9017.31), LAB)]
-    colw = iw / 3
-    for i, (k, v, c) in enumerate(kpis):
-        cxk = ix + (i % 3) * colw
-        cyk = y + (i // 3) * 36
-        s.T(cxk, cyk, k, size=9.5, fill=DIM)
-        s.T(cxk, cyk + 16, v, size=12.5, fill=c, cls="v-kpi")
-    y += 36 * 2 - 4
-    s.L(0, y, PW, y, stroke=HAIR)
-
-    # --- margin usage per derivatives account ---
-    y += 16
-    y = risk_rows(s, 0, ix, iw, y)
-    s.L(0, y, PW, y, stroke=HAIR)
-
-    # --- coin table ---
-    y += 10
-    s.searchbox(s_ix := ix, y, 176)
-    s.checkbox(ix + 188, y + 5, "hide < $1", on=True)
-    s.T(xr, y + 15, "9 / 12", size=9.5, fill=DIM, anchor="end")
-    y += 32
-    cA, cV, cU = ix + 168, ix + 262, xr          # right edges: amount, value, UPL
-    s.T(ix, y, "COIN", size=9, fill=DIM, spacing=0.8)
-    s.T(cA, y, "AMOUNT", size=9, fill=DIM, anchor="end", spacing=0.8)
-    s.T(cV, y, "VALUE " + DOT + " USD", size=9, fill=DIM, anchor="end", spacing=0.8)
-    s.T(cU, y, "UPL", size=9, fill=DIM, anchor="end", spacing=0.8)
-    s.tri(cV - 74, y - 3, DIM, up=False, r=2.6)    # sort marker on VALUE
-    y += 6
-    rows_top = y
-    rh = 26
-    for sym in ORDER:
-        s.L(0 + ix - 12, y, PW, y, stroke="#26262B")
-        s.coin(ix + 8, y + rh / 2, sym, r=8)
-        s.T(ix + 22, y + rh / 2 + 4, sym, size=11.5, fill=LAB, cls="v-coin-sym")
-        s.T(cA, y + rh / 2 + 4, amt(sym), size=11, fill=LAB, anchor="end", cls="v-coin-amount")
-        s.T(cV, y + rh / 2 + 4, num(coin_usd[sym]), size=11, fill=LAB, anchor="end", cls="v-coin-usd")
-        u = coin_upl[sym]
-        s.T(cU, y + rh / 2 + 4, signed(u) if u else "—", size=11,
-            fill=pnl_col(u) if u else DIM, anchor="end", cls="v-coin-upl")
-        y += rh
-    s.scrollhint(PW - 5, rows_top, y - rows_top)
-    y += 2
-
-    # --- footer ---
-    fy = PH - 22
-    s.R(0, fy, PW, 22, FTR_BG)
-    s.L(0, fy, PW, fy, stroke=HAIR)
-    s.T(ix, fy + 15, f"{DUST_N} small balances hidden (< $1.00) {DOT} Σ ${num(DUST_SUM)}", size=10, fill=DIM)
-    s.T(xr, fy + 15, "4 accounts", size=10, fill=DIM, anchor="end")
-    s.gend()
-
-    footnotes(s, 40, py + PH + 30, LINES)
-    return s.svg("Wallet draft A " + MINUS + " compact stack")
-
-
 # =====================================================================
 # Draft B — master–detail: account rail + detail pane (560 x 640)
 # =====================================================================
@@ -492,7 +357,7 @@ def draft_b():
         "Account rail = common elements widget, OUT of the SVG template; it owns selection (All / per-wallet / per-subaccount) and feeds scope + data into the card.",
         "Dashed region = the SVG template (wallet_card_template.svg): scope title, hero, coin list. KPI strip and margin-usage section removed per review 2026-08-28.",
         "Panel header and dust footer stay elements chrome; eye / search / hide-toggle are interactive " + "→" + " native overlays above the template (drawn for layout only).",
-        "Rail rows: per-account equity + MM-band health dot; legend at rail bottom.",
+        "Rail rows: per-account equity + IM-band health dot; legend at rail bottom.",
     ]
     LINES = wrap_notes(NOTES, PW + 24)
     W, H = PW + 80, PH + 76 + notes_h(LINES)
@@ -533,7 +398,7 @@ def draft_b():
         y += 8
     s.L(8, y, RW - 8, y, stroke=HAIR)
     y += 16
-    s.T(12, y, "MM health", size=9, fill=DIM)
+    s.T(12, y, "IM usage", size=9, fill=DIM)
     s.dot(70, y - 3, POS, r=2.5); s.T(76, y, "ok", size=9, fill=DIM)
     s.dot(96, y - 3, WRN, r=2.5); s.T(102, y, "50–70", size=9, fill=DIM)
     s.dot(140, y - 3, NEG, r=2.5); s.T(146, y, "≥70", size=9, fill=DIM)
@@ -579,260 +444,6 @@ def wallet_card_template():
 
 
 # =====================================================================
-# Draft C — portfolio overview: allocation + account cards + grouped coins
-# =====================================================================
-def draft_c():
-    PW, PH = 400, 614
-    NOTES = [
-        "Answers “what do I hold and where”: coin rows expand into per-account splits (BTC shown expanded).",
-        "Account cards double as filters (tapping one scopes the asset list; none selected here " + MINUS + " scope is ‹All›); card bar = share of total equity; dot = margin-band health of derivatives accounts.",
-        "Allocation bar is horizontal-stacked (fits narrow docks better than a donut); legend groups stables.",
-        "Scope dropdown instead of chips " + MINUS + " scales past ~5 accounts; ‹+ 4 more› collapses the tail.",
-    ]
-    LINES = wrap_notes(NOTES, PW + 24)
-    W, H = PW + 80, PH + 58 + notes_h(LINES)
-    s = SB(W, H)
-    s.R(0, 0, W, H, CANVAS)
-    caption(s, 40, 26, "Draft C " + MINUS + " Portfolio overview " + DOT + " cards + grouped coins",
-            "allocation bar, account cards as filters, per-coin account breakdown " + DOT + " shown 400" + "×" + "614")
-    px, py = 40, 58
-    s.R(px - 1, py - 1, PW + 2, PH + 2, "none", stroke=PANEL_BR)
-    s.R(px, py, PW, PH, BG)
-    s.g(tr=f"translate({px},{py})")
-    panel_header(s, 0, 0, PW, "Wallet")
-    ix, iw = 12, PW - 24
-    xr = ix + iw
-
-    # scope dropdown row
-    y = 26 + 10
-    dw = 118
-    s.R(ix, y, dw, 22, CARD, rx=4, stroke=HAIR)
-    s.T(ix + 8, y + 15, "All accounts", size=10.5, fill=LAB)
-    s.chev(ix + dw - 10, y + 11)
-    s.T(xr - 24, y + 15, "updated " + UPDATED, size=9.5, fill=DIM, anchor="end")
-    s.eye(xr - 8, y + 11)
-    y += 40
-
-    # hero
-    s.T(ix, y, "Total equity " + DOT + " USD", size=11, fill=DIM)
-    y += 28
-    s.T(ix, y, "$", size=20, fill=DIM, weight="bold")
-    s.T(ix + 15, y, num(TOTAL_EQ), size=26, fill=BRIGHT, weight="bold", cls="v-total-equity")
-    y += 17
-    s.T(ix, y, "≈ " + f"{BTC_EQ:.4f} BTC", size=11, fill=DIM)
-    s.tri(ix + 90, y - 3.6, POS, up=True)
-    s.T(ix + 98, y, signed(TOTAL_UPL) + " unrealised", size=11, fill=POS)
-    y += 16
-
-    # allocation stacked bar (ordered to match the legend story)
-    seg_order = ["BTC", "ETH", "USDT", "USDC"] + [c for c in ORDER if c not in ("BTC", "ETH", "USDT", "USDC")]
-    segs = [(sym, coin_usd[sym]) for sym in seg_order]
-    total = sum(v for _, v in segs)
-    bx, bw = ix, iw
-    xcur = bx
-    for sym, v in segs:
-        w = bw * v / total
-        s.R(xcur, y, max(w - 1, 0.8), 13, BRAND[sym], rx=1.5)
-        xcur += w
-    y += 24
-    leg = [("BTC", 37.3), ("ETH", 21.1), ("Stables", 33.4), ("Other", 8.2)]
-    legx = ix
-    for name, pct in leg:
-        col = BRAND.get(name, DIM) if name in BRAND else DIM
-        s.R(legx, y - 8, 8, 8, {"BTC": BRAND["BTC"], "ETH": BRAND["ETH"], "Stables": BRAND["USDT"], "Other": DIV}[name], rx=2)
-        s.T(legx + 12, y, f"{name} {pct:.1f}%", size=10, fill=DIM)
-        legx += 12 + (len(name) + 6) * 10 * 0.56 + 14
-    y += 14
-    s.L(0, y, PW, y, stroke=HAIR)
-
-    # account cards 2x2
-    y += 14
-    s.T(ix, y, "ACCOUNTS", size=9, fill=DIM, spacing=1.1)
-    y += 8
-    cw, ch, gap = (iw - 12) / 2, 62, 12
-    names = {"uta": "Main " + DOT + " Unified", "fund": "Main " + DOT + " Funding",
-             "algo": "algo-grid-01", "hedge": "hedge-desk"}
-    for i, (key, grp, name, badge, deriv) in enumerate(ACCTS):
-        cx0 = ix + (i % 2) * (cw + gap)
-        cy0 = y + (i // 2) * (ch + 10)
-        sel = False
-        s.R(cx0, cy0, cw, ch, CARD_HI if sel else CARD, rx=6,
-            stroke=ACC if sel else HAIR, sw=1.2 if sel else 1)
-        s.badge(cx0 + 10, cy0 + 9, badge)
-        s.T(cx0 + 29, cy0 + 19, names[key], size=10.5, fill=BRIGHT if sel else LAB)
-        if key in ACCT_RISK:
-            s.dot(cx0 + cw - 12, cy0 + 15, band_col(ACCT_RISK[key][0]), r=2.6)
-        s.T(cx0 + 10, cy0 + 40, num(acct_equity[key]), size=13, fill=BRIGHT, cls="v-acct-equity")
-        share = acct_equity[key] / TOTAL_EQ
-        s.R(cx0 + 10, cy0 + 49, cw - 20, 3, TRACK, rx=1.5)
-        s.R(cx0 + 10, cy0 + 49, (cw - 20) * share, 3, ACC if sel else DIV, rx=1.5)
-    y += 2 * ch + 10 + 12
-    s.L(0, y, PW, y, stroke=HAIR)
-
-    # grouped assets
-    y += 16
-    s.T(ix, y, "ASSETS", size=9, fill=DIM, spacing=1.1)
-    s.search(xr - 96, y - 3)
-    s.checkbox(xr - 78, y - 10, "hide < $1", on=True, size=9.5)
-    y += 8
-    rh = 30
-    def asset_row(sym, expanded=False):
-        nonlocal y
-        s.L(0, y, PW, y, stroke="#26262B")
-        s.coin(ix + 9, y + rh / 2, sym, r=8.5)
-        s.T(ix + 25, y + rh / 2 + 4, sym, size=11.5, fill=LAB)
-        s.chev(ix + 25 + len(sym) * 7.3 + 9, y + rh / 2 + (0 if expanded else -1), col=DIM, up=expanded)
-        s.T(xr - 70, y + rh / 2 + 4, amt(sym), size=10, fill=DIM, anchor="end")
-        s.T(xr, y + rh / 2 - 2, num(coin_usd[sym]), size=11.5, fill=LAB, anchor="end")
-        u = coin_upl[sym]
-        s.T(xr, y + rh / 2 + 10, signed(u) if u else "—", size=9,
-            fill=pnl_col(u) if u else "#4A4A52", anchor="end")
-        y += rh
-        if expanded:
-            for akey, aname in (("uta", "Main " + DOT + " Unified"), ("fund", "Main " + DOT + " Funding")):
-                a = HOLD[sym].get(akey, 0.0)
-                if not a:
-                    continue
-                s.L(ix + 9, y - 2, ix + 9, y + 9, stroke=DIV)
-                s.L(ix + 9, y + 9, ix + 18, y + 9, stroke=DIV)
-                s.T(ix + 24, y + 12, aname, size=9.5, fill=DIM)
-                s.T(xr - 70, y + 12, amt(sym, a), size=9.5, fill=DIM, anchor="end")
-                s.T(xr, y + 12, num(cell_usd[sym][akey]), size=9.5, fill=DIM, anchor="end")
-                y += 20
-            y += 2
-    asset_row("BTC", expanded=True)
-    for sym in ("USDT", "ETH", "USDC", "SOL"):
-        asset_row(sym)
-    s.L(0, y, PW, y, stroke="#26262B")
-    s.T(ix + 25, y + 17, "+ 4 more", size=10.5, fill=ACC)
-    s.T(xr, y + 17, num(coin_usd["BNB"] + coin_usd["XRP"] + coin_usd["DOGE"] + coin_usd["TON"]), size=10.5, fill=DIM, anchor="end")
-    y += 26
-
-    fy = PH - 20
-    s.R(0, fy, PW, 20, FTR_BG)
-    s.L(0, fy, PW, fy, stroke=HAIR)
-    s.T(ix, fy + 14, f"{DUST_N} small balances hidden (< $1.00) {DOT} Σ ${num(DUST_SUM)}", size=9.5, fill=DIM)
-    s.gend()
-
-    footnotes(s, 40, py + PH + 30, LINES)
-    return s.svg("Wallet draft C " + MINUS + " portfolio overview")
-
-
-# =====================================================================
-# Draft D — dense matrix: coins x accounts (560 x 470)
-# =====================================================================
-def draft_d():
-    PW, PH = 560, 470
-    NOTES = [
-        "One screen answers “how much of X, and in which account” " + MINUS + " no drill-down; the power-user variant.",
-        "Cells: converted value on top, native amount beneath; empty cells stay quiet (—). TOTAL column tinted.",
-        "Σ row = per-account equity (+ UPL note); grand total bottom-right anchors the eye at the crosshair.",
-        "Quick filters: Majors / Stables chips + search + hide-small; account columns scroll horizontally past ~5.",
-        "Trade-off: needs ≥ 520 px width; no room for margin bars (one-line dots above the grid instead).",
-    ]
-    LINES = wrap_notes(NOTES, PW + 24)
-    W, H = PW + 80, PH + 58 + notes_h(LINES)
-    s = SB(W, H)
-    s.R(0, 0, W, H, CANVAS)
-    caption(s, 40, 26, "Draft D " + MINUS + " Account matrix " + DOT + " coins × accounts",
-            "terminal-density crosstab: every balance and its location in one screen " + DOT + " shown 560" + "×" + "470")
-    px, py = 40, 58
-    s.R(px - 1, py - 1, PW + 2, PH + 2, "none", stroke=PANEL_BR)
-    s.R(px, py, PW, PH, BG)
-    s.g(tr=f"translate({px},{py})")
-    panel_header(s, 0, 0, PW, "Wallet " + MINUS + " matrix")
-    ix = 12
-    xr = PW - 12
-
-    # toolbar
-    y = 26 + 8
-    s.searchbox(ix, y, 118)
-    cx = ix + 128
-    for label, sel in (("All", True), ("Majors", False), ("Stables", False)):
-        cx += s.chip(cx, y, label, sel, h=22, size=10) + 6
-    cx += 8
-    s.checkbox(cx, y + 5, "hide < $1", on=True, size=10)
-    cw = s.chipw("USD", 9.5) + 12
-    s.R(xr - cw, y + 2, cw, 18, CARD, rx=9, stroke=HAIR)
-    s.T(xr - cw + 7, y + 15, "USD", size=9.5, fill=LAB)
-    s.chev(xr - 10, y + 11)
-    s.eye(xr - cw - 16, y + 11)
-    y += 32
-
-    # margin one-liner
-    s.T(ix, y + 4, "Margin usage:", size=9.5, fill=DIM)
-    mx = ix + 76
-    for key, label in (("uta", "Main" + DOT + "Unified"), ("algo", "algo-grid-01")):
-        im = ACCT_RISK[key][0]
-        s.dot(mx, y, band_col(im), r=2.6)
-        s.T(mx + 7, y + 4, f"{label} {im:.1f}%", size=9.5, fill=LAB)
-        mx += 7 + (len(label) + 7) * 9.5 * 0.56 + 16
-    y += 14
-
-    # table geometry
-    c0w, aw, tw = 92, 86, 100
-    xs = [ix, ix + c0w]                                  # coin col
-    for i in range(4):
-        xs.append(ix + c0w + (i + 1) * aw)
-    xT0, xT1 = xs[-1], xs[-1] + tw                       # total col
-    right_of = lambda i: xs[i + 2] - 8                    # right edge for acct col i
-
-    # total column tint (behind header+rows+footer)
-    thead = y
-    nrows = len(ORDER)
-    tbl_h = 26 + nrows * 30 + 30
-    s.R(xT0, thead, tw, tbl_h, CARD)
-
-    # header
-    s.R(ix, y, xT1 - ix, 26, HDR_BG, op=0.55)
-    heads = [("Main", "Unified"), ("Main", "Funding"), ("algo-grid-01", "Unified"), ("hedge-desk", "Funding")]
-    s.T(ix + 2, y + 17, "COIN", size=9, fill=DIM, spacing=0.8)
-    for i, (l1, l2) in enumerate(heads):
-        s.T(right_of(i), y + 11, l1, size=9, fill=LAB, anchor="end")
-        s.T(right_of(i), y + 21, l2, size=8, fill=DIM, anchor="end")
-    s.T(xT1 - 8, y + 17, "TOTAL " + DOT + " USD", size=9, fill=LAB, anchor="end", spacing=0.6)
-    y += 26
-
-    # rows
-    for sym in ORDER:
-        s.L(ix, y, xT1, y, stroke="#26262B")
-        s.coin(ix + 8, y + 15, sym, r=7)
-        s.T(ix + 21, y + 18.5, sym, size=10.5, fill=LAB)
-        for i, akey in enumerate(AK):
-            a = HOLD[sym].get(akey)
-            if a:
-                s.T(right_of(i), y + 13, num(cell_usd[sym][akey]), size=10, fill=LAB, anchor="end")
-                s.T(right_of(i), y + 25, amt(sym, a) if DP.get(sym, 8) <= 2 else f"{a:,.5f}", size=8.5, fill=DIM, anchor="end")
-            else:
-                s.T(right_of(i), y + 19, "—", size=10, fill="#4A4A52", anchor="end")
-        s.T(xT1 - 8, y + 13, num(coin_usd[sym]), size=10.5, fill=BRIGHT, anchor="end")
-        u = coin_upl[sym]
-        if u:
-            s.T(xT1 - 8, y + 25, signed(u), size=8.5, fill=pnl_col(u), anchor="end")
-        y += 30
-
-    # totals footer row
-    s.L(ix, y, xT1, y, stroke=DIV)
-    s.T(ix + 2, y + 19, "Σ equity", size=10, fill=DIM)
-    for i, akey in enumerate(AK):
-        s.T(right_of(i), y + 13, num(acct_equity[akey]), size=10, fill=BRIGHT, anchor="end")
-        u = acct_upl[akey]
-        s.T(right_of(i), y + 25, (signed(u) + " upl") if u else "", size=8, fill=pnl_col(u), anchor="end")
-    s.T(xT1 - 8, y + 16, num(TOTAL_EQ), size=11.5, fill=BRIGHT, anchor="end", weight="bold", cls="v-total-equity")
-    y += 30
-
-    fy = PH - 20
-    s.R(0, fy, PW, 20, FTR_BG)
-    s.L(0, fy, PW, fy, stroke=HAIR)
-    s.T(ix, fy + 14, f"{DUST_N} small balances hidden (< $1.00) {DOT} columns scroll when accounts overflow", size=9.5, fill=DIM)
-    s.T(xr, fy + 14, "≈ " + f"{BTC_EQ:.4f} BTC", size=9.5, fill=DIM, anchor="end")
-    s.gend()
-
-    footnotes(s, 40, py + PH + 30, LINES)
-    return s.svg("Wallet draft D " + MINUS + " account matrix")
-
-
-# =====================================================================
 # Draft E — summary strip (960 x 84)
 # =====================================================================
 def draft_e():
@@ -840,7 +451,7 @@ def draft_e():
     NOTES = [
         "The MT4 / cTrader account-status idiom: equity " + "→" + " available " + "→" + " PnL " + "→" + " margin, then top holdings as ticker cells.",
         "Fits a shallow bottom/top dock next to charts; scope dropdown switches account; ‹+ 5 more› opens the full panel.",
-        "Not a replacement for A–D " + MINUS + " a companion glance view once a full wallet panel exists.",
+        "Reserved for future use " + MINUS + " a companion glance strip to the wallet panel, not part of this iteration.",
     ]
     LINES = wrap_notes(NOTES, PW + 24)
     W, H = PW + 80, PH + 58 + notes_h(LINES)
@@ -911,11 +522,8 @@ def draft_e():
 
 # --------------------------------------------------------------------- main --
 DRAFTS = {
-    "draft_a_compact_stack.svg": draft_a,
     "draft_b_master_detail.svg": draft_b,
     "wallet_card_template.svg": wallet_card_template,
-    "draft_c_portfolio_cards.svg": draft_c,
-    "draft_d_account_matrix.svg": draft_d,
     "draft_e_summary_strip.svg": draft_e,
 }
 
