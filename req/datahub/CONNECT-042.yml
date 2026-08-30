@@ -1,0 +1,6 @@
+header: Default policy sends nothing extra
+description: |
+  A default session policy shall send no message of its own after the handshake.
+parents: [CONNECT-040]
+order: 20
+tests: ~

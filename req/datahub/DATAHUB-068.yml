@@ -1,0 +1,6 @@
+header: Percent-encoding of query values
+description: |
+  Characters outside the RFC 3986 unreserved set shall be percent-encoded in the emitted key=value pairs.
+parents: [DATAHUB-060]
+order: 80
+tests: ~

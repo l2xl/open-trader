@@ -1,0 +1,10 @@
+header: Range fit
+description: |
+  Before calibration and any downstream computation, each per-side deviation
+  shall be clamped one-sidedly to that side's tip distance divided by the tail
+  multiple treated as the bell's zero, never below the positive deviation
+  floor, so the declared zero never lands beyond a tip while a deviation
+  already inside it is left untouched, per src/engine/BUOY_CANDLE.md section 4.
+parents: [BUOY_GEOMETRY]
+order: 5
+tests: ~

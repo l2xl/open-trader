@@ -14,10 +14,11 @@
 
 #include "data_model.hpp"
 #include "generic_handler.hpp"
+#include "log.hpp"
 
 namespace datahub {
 
-using scratcher::generic_handler;
+using cex::generic_handler;
 
 template<typename D, typename H>
 class data_adapter
@@ -34,7 +35,6 @@ public:
     {}
 
     bool operator()(const std::string& json_data) {
-        std::clog << "Try JSON: " << json_data << std::endl;
         try {
             data_type result{};
             auto err = glz::read<glz::opts{.error_on_unknown_keys = false, .error_on_missing_keys = true}>(result, json_data);
@@ -42,11 +42,11 @@ public:
                 m_handler(std::move(result));
                 return true;
             }
-            std::clog << "Failed to read json data for type '" << typeid(data_type).name() << "':\n"
+            cex::log::at(cex::log::trace) << "Failed to read json data for type '" << typeid(data_type).name() << "':\n"
                           << "  Error: " << glz::format_error(err, json_data) << std::endl;
         }
         catch (...) {
-            std::cerr << "Unknown exception while parsing json for type '" << typeid(data_type).name() << "'" << std::endl;
+            cex::log::at(cex::log::error) << "Unknown exception while parsing json for type '" << typeid(data_type).name() << "'" << std::endl;
         }
         return false;
     }
@@ -106,6 +106,7 @@ private:
         if (queue && acceptors) {
             std::string data;
             while (queue->pop(data)) {
+                cex::log::at(cex::log::log) << "Try JSON: " << data << std::endl;
                 // Try every acceptor in sequence
                 try_acceptors(*acceptors, data, std::index_sequence_for<Acceptor...>{});
             }

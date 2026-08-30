@@ -1,0 +1,6 @@
+header: Per-type body shaping via glz::meta
+description: |
+  The emitted JSON body shall follow the field selection, renaming and nesting declared by the entity glz::meta specialisation.
+parents: [DATAHUB-060]
+order: 40
+tests: ~

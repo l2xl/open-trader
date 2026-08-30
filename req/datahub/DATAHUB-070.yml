@@ -1,0 +1,6 @@
+header: Acceptor invocation contract
+description: |
+  An encoder shall invoke its acceptor exactly once per entity with the query string as the first argument and the body as the second.
+parents: [DATAHUB-060]
+order: 100
+tests: ~

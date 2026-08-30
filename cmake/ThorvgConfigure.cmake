@@ -11,8 +11,9 @@
 set(THORVG_MESON_OPTS
                 --buildtype=release
                 --default-library=static
+                -Dstatic=true
                 -Dengines=cpu
-                -Dloaders=ttf
+                -Dloaders=ttf,svg,png
                 -Dsavers=
                 -Dbindings=
                 -Dtools=

@@ -1,0 +1,8 @@
+header: Area encodes volume
+description: |
+  Across periods sharing one calibration, the area enclosed by the sampled
+  contour scaled by the width ratio shall be proportional to traded volume,
+  including periods whose deviations the range fit clamped.
+parents: [BUOY_GEOMETRY]
+order: 25
+tests: ~

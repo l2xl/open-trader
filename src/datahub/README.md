@@ -54,9 +54,65 @@ data_adapter → any callable(Range&&)
 **No dispatcher — direct model feed (async, strand-posted):**
 ```
 data_model::data_acceptor<Range, Container>()  — posts accept() on db_strand
+``` 
+
+**Outbound — entity straight to the connection the encoder owns:**
+```
+entity → json_body_encoder / url_query_encoder → connection(query, body)
+```
+No dispatcher, adapter, sink, or feed involved — outbound is inherently a single-shot, two-stage flow; there is nothing left to reduce.
+
+## Outbound Flow
+
+```
+Client-side entity (by value)
+    │
+    ▼
+json_body_encoder<Entity, Acceptor, Projection>   — glz::write_json(projection(entity)) → body
+        or
+url_query_encoder<Entity, Acceptor>               — per-field percent-encoded "k=v&k=v" → query
+    │
+    ▼
+acceptor(std::string query, std::string body)     — the connection's own call operator
+    │
+    ▼
+connection — connect::http_query<Policy> / connect::websock_connection<Policy> instance
+    — owns verb + URL (or op name)
+    — policy hook (RequestPolicy / SessionPolicy) lives in connect, NOT a datahub stage
 ```
 
+The chain is built inline, exactly like the inbound one, with the connection constructed inside the encoder factory call:
+
+```cpp
+auto place_order = datahub::make_json_body_encoder<OrderRequest>(
+    connect::http_query<rest_signer>::create(ctx, http::verb::post, url, rest_signer{creds}, response_pipeline, error_cb));
+```
+
+**Ownership rule:** the encoder holds the connection's `shared_ptr` and that ownership is what keeps the connection alive — mirroring the inbound rule where the connection owns its dispatcher, which owns its adapter. There is no separate long-lived "command object" member and no weak-captured acceptor: destroying the encoder destroys the chain.
+
+The acceptor is transport-agnostic: either a callable `(std::string query, std::string body)` or a `std::shared_ptr<T>` for which `(*ptr)(query, body)` is valid; the encoder stores it by value and dereferences pointers before the call.
+
+### Two-tier request
+
+| tier | encoded as | owner |
+|---|---|---|
+| command / address | the `http_query<Policy>` instance (verb + URL) or `websock_connection<Policy>` instance (+ op name) | the encoder that wraps it |
+| data | a client-side entity struct (e.g. `bybit::OrderRequest`, `OrderFilter`) | caller, by value |
+
+datahub hosts no request type — only the two generic encoders above, turning an entity into `(query, body)` strings handed to the connection. Authentication is not a pipeline stage: it is a policy handler injected into the transport by `connect` (see [src/connect/README.md](../connect/README.md)); the transport invokes it at the right lifecycle moment, and the encoders never see it.
+
 ## Component Details
+
+### data_encoder.hpp — json_body_encoder, url_query_encoder (`src/datahub/data_encoder.hpp`)
+- Acceptor contract for both: a callable `(std::string query, std::string body) -> void`, or a `std::shared_ptr` to one — the shape `connect::http_query<Policy>::operator()` has
+- `json_body_encoder<Entity, Acceptor, Projection = std::identity>` — `operator()(Entity&&)` calls `acceptor("", glz::write_json(projection(entity)))`; throws `std::runtime_error` (wrapping `glz::format_error`) on write failure
+  - Filtration: per-type via `glz::meta<Entity>` (field selection/renaming, nested shapes); Glaze's default `skip_null_members` drops empty `std::optional`; per-endpoint via the `Projection` callable (`Entity -> View`) applied before `write_json`
+  - Factory: `make_json_body_encoder<Entity>(acceptor, projection = {})`
+- `url_query_encoder<Entity, Acceptor>` — `operator()(Entity&&)` calls `acceptor(query_string, "")`; no JSON post-transform
+  - Iterates `glz::reflect<Entity>::keys` + `glz::to_tie` (the idiom of `src/datahub/operations.hpp`); per field in declaration order: skip `std::nullopt`; serialise the scalar with `glz::write_json`; strip enclosing quotes (enum-by-name, currency codec, numeric formatting stay byte-identical to the JSON body path); percent-encode (RFC 3986 unreserved: `A-Z a-z 0-9 - _ . ~`); join as `key=value&key=value`
+  - `static_assert`s every member is a scalar (arithmetic, bool, enum, `std::string`, `currency`) or `std::optional` of one — query entities must be flat
+  - Empty entity / all-`nullopt` entity ⇒ empty query string
+  - Factory: `make_url_query_encoder<Entity>(acceptor)`
 
 ### generic_handler<DATA, PARENT, DATA_CALLABLE, ERROR_CALLABLE, ARGS...> (`src/common/generic_handler.hpp`)
 - CRTP mixin that implements `handle_data(DATA)` and `handle_error(exception_ptr)` as virtual overrides via stored callables
@@ -155,3 +211,5 @@ All feed types accept an optional `shared_ptr<data_condition<Entity>>` at creati
 - **Subscriptions are held by weak_ptr**: allowing automatic lazy subscription management (no explicit unsubscribe) — feeds prune expired weak_ptrs on the next push, so dropping the subscriber's `shared_ptr` is the only unsubscribe action needed.
 - **Subscriber callback shape is dictated by the feed kind, statically**: snapshot-only feeds never pass iterators to subscribers; incremental feeds always do. There is no runtime branching inside the subscription layer to decide which signature applies — the partial specialisation of `subscription<Range, Extra...>` picked by the feed makes the call shape unambiguous at compile time.
 - **Callable held as-is**: the user's lambda or function object is stored as a direct member of `detail::subscription_impl` — no `std::function` wrap, no per-call SBO/allocation overhead.
+- **Auth is never a datahub stage**: encoders hand `(query, body)` straight to the connection they own; signing/authentication is a policy injected into the transport by `connect` (see [src/connect/README.md](../connect/README.md)), invoked at the transport's own lifecycle boundary. datahub has no knowledge of credentials or headers.
+- **Encoders are entity/transport agnostic**: `json_body_encoder`/`url_query_encoder` depend on nothing but the acceptor shape `(std::string, std::string) -> void`; they compose with any connection (`http_query<Policy>`, `websock_connection<Policy>`, a test double) with zero coupling to a specific transport or to an entity's business meaning.

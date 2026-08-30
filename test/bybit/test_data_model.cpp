@@ -80,7 +80,7 @@ TEST_CASE("Write first", "[bybit][instruments]")
         );
     auto dispatcher = make_data_dispatcher(fixture.scheduler->io().get_executor(), resp_adapter);
 
-    // auto query = connect::http_query::create(fixture.ctx, "https://api.bybit.com/v5/market/instruments-info",
+    // auto query = connect::http_query<>::create(fixture.ctx, "https://api.bybit.com/v5/market/instruments-info",
     //     dispatcher,
     //     [&](std::exception_ptr e){
     //         if (e) {

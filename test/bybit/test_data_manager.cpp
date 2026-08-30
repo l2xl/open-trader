@@ -26,8 +26,7 @@ struct TestConfig {
     std::string http_port;
     std::string stream_host;
     std::string stream_port;
-    std::string api_key;
-    std::string api_secret;
+    std::string api_keyfile;
 
     TestConfig()
     {
@@ -37,8 +36,7 @@ struct TestConfig {
         bybit->add_option(keys::http_port,   http_port)->default_val("443");
         bybit->add_option(keys::stream_host, stream_host)->default_val("stream.bybit.com");
         bybit->add_option(keys::stream_port, stream_port)->default_val("443");
-        bybit->add_option(keys::api_key,     api_key);
-        bybit->add_option(keys::api_secret,  api_secret);
+        bybit->add_option(keys::api_keyfile, api_keyfile);
 
         const char* argv[] = {"test"};
         app.parse(1, argv);

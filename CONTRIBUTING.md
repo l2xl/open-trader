@@ -7,14 +7,19 @@ The upper tier is **application-layer code** (e.g. `src/cockpit/`, `src/app/`) �
 
 ## Pointers & ownership
 
-- **Raw pointers are prohibited in any form** — no raw owning pointers, and no raw non-owning pointers either. Use appropriate c++ stdlib smart pointers (including std::optional) for optionally nullable pointers, or references for non-owning function parameters with strictly bounded lifetime.
+- Apply RAII aggressively. Resources are acquired in constructors (or in `Create` / `create`) and released in destructors. There is no manual `initialize()`, `cleanup()` or `shutdown()` step that callers must remember.
+- Raw pointers are prohibited in any form — no raw owning pointers, and no raw non-owning pointers either. Use appropriate c++ stdlib smart pointers (including std::optional) for optionally nullable pointers, or references for non-owning function parameters with strictly bounded lifetime.
+- `const char*` is prohibited as a string type and must be replaced with `const std::string&` (or `std::string_view` where the callee genuinely just observes a borrowed range). Isolated special cases — interop with C APIs, `extern "C"` boundaries, compile-time string literals consumed by templates that demand pointer-to-char — are the only permitted exceptions and should be commented to record why.
 - When usage of the stdlib shared pointers is impossible due to third-party library design – explicitly create own pointer wrappers to build strong memory ownership model 
-- **`const char*` is prohibited** as a string type and must be replaced with `const std::string&` (or `std::string_view` where the callee genuinely just observes a borrowed range). Isolated special cases — interop with C APIs, `extern "C"` boundaries, compile-time string literals consumed by templates that demand pointer-to-char — are the only permitted exceptions and should be commented to record why.
-- Any class designed to be used through a smart pointer must hide its constructor behind a private passkey tag (typically `struct ensure_private {}` / `struct EnsurePrivate {}`) and expose a static factory: `create(...)` for the library tier, `Create(...)` for the application tier. The factory is the single point of construction and is the correct place to perform `shared_from_this`-dependent initialisation, two-phase init, or registration with collaborators.
-- Every library-tier factory must additionally have a free `make_<type_name>(...)` wrapper that perfect-forwards to `create()` so template arguments are deduced at the call site.
+- Any class designed to be used through a smart pointer must hide its constructor behind a private passkey tag (typically `struct ensure_private {}` ) and expose a static factory: `create(...)` for the library tier, `Create(...)` for the application tier. The factory is the single point of construction and is the correct place to perform `shared_from_this`-dependent initialisation, two-phase init, or registration with collaborators.
+- Every library-tier factory should additionally have a free `make_<type_name>(...)` wrapper that perfect-forwards to `create()` so template arguments are deduced at the call site.
 - Inherit from `std::enable_shared_from_this<Self>` whenever the class needs to hand out `shared_ptr<Self>`/`weak_ptr<Self>` to its own asynchronous machinery.
-- Apply RAII aggressively. Resources are acquired in constructors (or in `Create` / `create`) and released in destructors. There is no manual `cleanup()` / `shutdown()` step that callers must remember.
 - Prefer move semantics. Pass by value + `std::move` when the callee will store the argument; pass by rvalue reference for sink parameters; pass by `const&` only when the callee genuinely just observes. Eliminate redundant copies on sight.
+
+## Error conditions handling
+
+- Strictly prefer algorithm design where single or few execution scenarios are considered normal. Any other conditions, especially those that break the scenario and make early return, must throw. However early returns are normal if intended to just skip/simplify processing without situation considered abnormal by the caller.
+- Strictly avoid bypassing of throwing of an exception and producing a broken object state. The exception to this may be the only case when outer/caller algorithm awaits such the degraded object (and in case of throwing anyway will be forced to create a replacement for algorithm result was thrown)
 
 ## Layering & dependency direction
 
@@ -35,7 +40,7 @@ The upper tier is **application-layer code** (e.g. `src/cockpit/`, `src/app/`) �
 
 - Concrete classes are factory-constructed (`Create` + `EnsurePrivate`), and own their collaborators through `shared_ptr` / `unique_ptr`.
 - Use the **composite pattern** for hierarchical UI / domain trees (e.g. `PanelNode` → `LeafPanelNode` + `SplitPanelNode`). Each node is independently shared-ptr-managed, owns its sub-tree, and cleans up via its destructor.
-- Use **two-phase initialisation** (`Create()` followed by `Initialize()`) when callbacks need a fully-formed `shared_from_this()` to capture, but keep both phases inside the factory whenever possible so callers see a single construction step.
+- Use **two-phase initialisation** (ctor + raw custom steps inside factory method) when callbacks need a fully-formed `shared_from_this()` to capture, keep both phases inside the factory whenever possible so callers see a single construction step.
 - A single controller (e.g. `MainWindow`) orchestrates lifecycle and inter-component wiring; UI-emitted callbacks capture `weak_ptr<>` and route to controller handlers.
 
 ## Asynchrony & concurrency
@@ -99,7 +104,17 @@ The Data Pipeline begins from one or a number of data sources. The project uses 
 
 For any work involving the `connect` component — opening HTTP queries or WebSocket connections, handling transport errors, or modifying the abstraction — see [src/connect/README.md](src/connect/README.md).
 
-## Data Model
+
+## Trader Engine
+
+The Trader Engine provides a unified API and abstractions for upper layers to Exchange data, and communications, as well as automated strategy execution control.
+
+The Trader Engine provides unified calculation primitives and engine based on fixed-point math (implemented by [currency](src/engine/currency.hpp) template class).
+For any price-related calculations upto rendering engine border it is strictly required to use the currency parametherized by 64-bit integer.
+For any time-related calculations it is required to use stdlib's system_clock::time_point (and corresponding compatible types) or uint64_t.
+Beyond HUD API border a ThorVG buffered rendering used with float base tipe for coordinates. It is strictly forbidden to convert fixed point to any floating point types until crossing this border!
+
+### Data Model
 
 The data model is the main Data Pipeline parameter. It is defined by entity types and per-provider implementations derived from the `IDataController` interface.
 

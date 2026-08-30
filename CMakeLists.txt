@@ -89,6 +89,8 @@ endif()
 include(cmake/ThorvgBuild.cmake)
 
 set(core_SOURCES
+        src/cex/generic_handler.hpp
+        src/cex/log.hpp
         src/common/config_helper.hpp
         src/data/bybit/bybit_config.hpp
         src/cockpit/trade_cockpit_config.hpp
@@ -97,7 +99,6 @@ set(core_SOURCES
         src/common/hex.hpp
         src/common/timedef.hpp
         src/common/data_rectangle.hpp
-        src/core/generic_handler.hpp
         src/core/scheduler.cpp
         src/core/scheduler.hpp
         src/engine/buoy_candle.cpp
@@ -108,6 +109,7 @@ set(core_SOURCES
         src/data/entities/instrument.hpp
         src/data/entities/trade.hpp
         src/data/entities/orderbook_level.hpp
+        src/data/bybit/auth.hpp
         src/data/bybit/data_manager.cpp
         src/data/bybit/data_manager.hpp
         src/data/orderbook.hpp
@@ -116,9 +118,7 @@ set(core_SOURCES
         src/connect/connection_context.hpp
         src/connect/connection_context.cpp
         src/connect/http_query.hpp
-        src/connect/http_query.cpp
         src/connect/websocket.hpp
-        src/connect/websocket.cpp
         src/datahub/data_model.hpp
         src/datahub/operations.hpp
         src/datahub/query_builder.hpp
@@ -128,7 +128,7 @@ set(core_SOURCES
         src/datahub/data_subscription.hpp
         src/datahub/data_feed.hpp
         src/datahub/data_condition.hpp
-        src/cockpit/pixel_rect.hpp
+        src/datahub/data_encoder.hpp
         src/cockpit/tvg_ptr.hpp
         src/cockpit/scratcher.hpp
         src/cockpit/scratchers/time_ruler.hpp
@@ -141,8 +141,14 @@ set(core_SOURCES
         src/cockpit/scratchers/quote_scratcher.cpp
         src/cockpit/content_panel.hpp
         src/cockpit/content_panel.cpp
+        src/cockpit/vector_scene_panel.hpp
+        src/cockpit/vector_scene_panel.cpp
         src/cockpit/instrument_panel.hpp
         src/cockpit/instrument_panel.cpp
+        src/cockpit/svg_template.hpp
+        src/cockpit/svg_template.cpp
+        src/cockpit/wallet_panel.hpp
+        src/cockpit/wallet_panel.cpp
         src/cockpit/trade_cockpit.hpp
         src/cockpit/trade_cockpit.cpp
 )
@@ -161,8 +167,8 @@ add_executable(trader
             src/app/ui_builder.hpp
             src/app/ui_builder.cpp
             src/app/split_direction.hpp
-            src/app/instrument_panel_element.hpp
-            src/app/instrument_panel_element.cpp
+            src/app/vector_scene_panel_element.hpp
+            src/app/vector_scene_panel_element.cpp
             src/app/tab_bar.hpp
             src/app/tab_bar.cpp
             src/app/panel_node.hpp
@@ -186,13 +192,15 @@ add_custom_command(
         "${ELEMENTS_FONT_DIR}/OpenSans-Light.ttf"
         "${ELEMENTS_FONT_DIR}/OpenSans-Bold.ttf"
         "${ELEMENTS_FONT_DIR}/Roboto-Regular.ttf"
+        "${CMAKE_SOURCE_DIR}/src/cockpit/templates/wallet_panel.svg"
         ${TRADER_RESOURCES_DIR}
-    COMMENT "Copying Elements font resources for trader"
+    COMMENT "Copying font and panel template resources for trader"
 )
 
 include_directories(
         contrib
         src
+        src/cex
         src/common
         src/connect
         src/core
@@ -256,18 +264,26 @@ if(NOT ANDROID)
     # Add each test file as a separate executable
     add_unit_test(test_currency test/engine/test_currency.cpp)
     add_unit_test(test_buoy_candle test/engine/test_buoy_candle.cpp)
+    add_unit_test(test_buoy_deviation test/engine/test_buoy_deviation.cpp)
+    add_unit_test(test_buoy_geometry test/engine/test_buoy_geometry.cpp)
     add_unit_test(test_dao test/datahub/test_dao.cpp)
     add_unit_test(test_http_query test/connect/test_http_query.cpp)
     add_unit_test(test_websocket test/connect/test_websocket.cpp)
+    add_unit_test(test_request_policy test/connect/test_request_policy.cpp)
+    add_unit_test(test_session_policy test/connect/test_session_policy.cpp)
     add_unit_test(test_data_sink test/datahub/test_data_sink.cpp)
     add_unit_test(test_data_model test/bybit/test_data_model.cpp)
     add_unit_test(test_sorted_data_feed test/datahub/test_sorted_data_feed.cpp)
     add_unit_test(test_sorted_snapshot_data_feed test/datahub/test_sorted_snapshot_data_feed.cpp)
     add_unit_test(test_keyed_snapshot_data_feed test/datahub/test_keyed_snapshot_data_feed.cpp)
+    add_unit_test(test_data_encoder test/datahub/test_data_encoder.cpp)
+    add_unit_test(test_auth test/bybit/test_auth.cpp)
     add_unit_test(test_data_manager test/bybit/test_data_manager.cpp LIVE)
     add_unit_test(test_orderbook test/data/test_orderbook.cpp)
     add_unit_test(test_bybit_orderbook test/bybit/test_orderbook.cpp)
     add_unit_test(test_quote_scratcher test/cockpit/scratchers/test_quote_scratcher.cpp)
+    add_unit_test(test_wallet_panel test/cockpit/test_wallet_panel.cpp)
+    add_dependencies(test_wallet_panel trader)  # the wallet SVG template is copied next to trader
 
     # ThorVG render test — links only Catch2 + ThorVG (+ cairo for the bridge test)
     if(THORVG_AVAILABLE AND CAIRO_FOUND)

@@ -1,0 +1,6 @@
+header: Per-message payload alteration
+description: |
+  The session policy shall be invoked before each outgoing message, including heartbeats, and may alter the payload that is sent.
+parents: [CONNECT-040]
+order: 30
+tests: ~

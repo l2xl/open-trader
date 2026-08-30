@@ -41,7 +41,7 @@ TEST_CASE("subscribepublic trades", "[connect][websocket][CONNECT-021]")
         response_promise.set_exception(e);
     };
 
-    auto connection = websock_connection::create(context, server.ws_url("/stream"), data_handler, error_handler);
+    auto connection = websock_connection<>::create(context, server.ws_url("/stream"), data_handler, error_handler);
 
     REQUIRE_NOTHROW((*connection)(R"({"op":"subscribe","args":["publicTrade.BTCUSDT"]})"));
 

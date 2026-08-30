@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="400" height="300" viewBox="0 0 400 300">
+  <style>
+    .bg    { fill: #1e1e23; }
+    .card  { fill: #28282d; stroke: #50505a; stroke-width: 1; }
+    .rowbg { fill: #232328; }
+    .muted { fill: #808080; }
+    .label { fill: #c8c8c8; }
+    .hero  { fill: #ffffff; }
+  </style>
+  <rect id="bg" class="bg" x="0" y="0" width="400" height="300"/>
+  <rect id="card" class="card" x="8" y="8" width="384" height="100" rx="6"/>
+  <text class="muted" x="20" y="30" font-family="OpenSans" font-size="12px">Total equity</text>
+  <text id="status" class="muted" x="380" y="30" font-family="OpenSans" font-size="11px">Waiting for wallet data</text>
+  <text id="equity" class="hero" x="20" y="68" font-family="OpenSans" font-size="30px">—</text>
+  <text id="upl" class="muted" x="20" y="94" font-family="OpenSans" font-size="13px">—</text>
+  <text class="muted" x="20" y="132" font-family="OpenSans" font-size="11px">Wallet balance</text>
+  <text id="wallet_balance" class="label" x="20" y="152" font-family="OpenSans" font-size="15px">—</text>
+  <text id="available_label" class="muted" x="200" y="132" font-family="OpenSans" font-size="11px">Available</text>
+  <text id="available" class="label" x="200" y="152" font-family="OpenSans" font-size="15px">—</text>
+  <text class="muted" x="20" y="184" font-family="OpenSans" font-size="11px">Coin</text>
+  <text id="h_balance" class="muted" x="200" y="184" font-family="OpenSans" font-size="11px">Balance</text>
+  <text id="h_usd" class="muted" x="300" y="184" font-family="OpenSans" font-size="11px">USD value</text>
+  <text id="h_upl" class="muted" x="380" y="184" font-family="OpenSans" font-size="11px">Unrealised</text>
+  <g id="rows" transform="translate(0,192)">
+    <g id="row_tpl">
+      <rect class="rowbg" x="8" y="0" width="384" height="22"/>
+      <text id="c_coin" class="label" x="20" y="16" font-family="OpenSans" font-size="12px">COIN</text>
+      <text id="c_balance" class="label" x="200" y="16" font-family="OpenSans" font-size="12px">0</text>
+      <text id="c_usd" class="label" x="300" y="16" font-family="OpenSans" font-size="12px">0</text>
+      <text id="c_upl" class="label" x="380" y="16" font-family="OpenSans" font-size="12px">0</text>
+    </g>
+  </g>
+</svg>

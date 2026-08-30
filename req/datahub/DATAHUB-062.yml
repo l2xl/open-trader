@@ -1,0 +1,6 @@
+header: Empty optionals omitted from the body
+description: |
+  Entity fields holding an empty std::optional shall be absent from the emitted JSON body.
+parents: [DATAHUB-060]
+order: 20
+tests: ~

@@ -6,7 +6,7 @@
 
 #include <utility>
 
-#include "instrument_panel_element.hpp"
+#include "vector_scene_panel_element.hpp"
 #include "trade_cockpit.hpp"
 
 namespace scratcher::elements {
@@ -151,6 +151,8 @@ std::shared_ptr<LeafPanelNode> MainWindow::MakeLeaf(PanelType type)
     case PanelType::MarketGraph:
     case PanelType::OrderBook:
         return MakeInstrumentLeaf(type);
+    case PanelType::Wallet:
+        return MakeWalletLeaf();
     default:
         return MakeGenericLeaf(type);
     }
@@ -196,12 +198,32 @@ std::shared_ptr<InstrumentPanelNode> MainWindow::MakeInstrumentLeaf(PanelType ty
     return leaf;
 }
 
+std::shared_ptr<ScenePanelNode> MainWindow::MakeWalletLeaf()
+{
+    auto leaf_holder = std::make_shared<std::shared_ptr<ScenePanelNode>>();
+
+    auto onSplit = [this, leaf_holder](PanelType newType, SplitDirection dir) {
+        if (auto n = *leaf_holder) HandleSplit(n, newType, dir);
+    };
+    auto onClose = [this, leaf_holder]() {
+        if (auto n = *leaf_holder) HandleClose(n);
+    };
+
+    auto leaf = mBuilder.MakeScenePanel(mView, PanelType::Wallet, std::move(onClose), std::move(onSplit));
+    *leaf_holder = leaf;
+
+    auto panel = WalletPanelElement::Create(mView);
+    panel_id pid = mCockpit->RegisterWalletPanel(panel);
+    leaf->InstallContent(el::share(el::hold(panel)), pid);
+    return leaf;
+}
+
 void MainWindow::InstallChart(std::shared_ptr<InstrumentPanelNode> leaf, std::string symbol)
 {
-    auto panel = InstrumentPanelElement::Create(leaf->Type(), mCockpit->GetDefaultCandlePeriod(), mCockpit->GetDefaultCandleWidth(), mView);
+    auto panel = InstrumentPanelElement::Create(mView, leaf->Type(), mCockpit->GetDefaultCandlePeriod(), mCockpit->GetDefaultCandleWidth());
     panel_id pid = mCockpit->RegisterInstrumentPanel(symbol, panel);
     leaf->SetTitle(symbol);
-    leaf->InstallChart(el::share(el::hold(panel)), pid);
+    leaf->InstallContent(el::share(el::hold(panel)), pid);
 }
 
 void MainWindow::HandleChangeType(std::shared_ptr<LeafPanelNode> node, PanelType newType)
@@ -302,7 +324,7 @@ void MainWindow::OnSymbolsArrived(std::vector<std::string> symbols)
 
     ForEachInstrumentLeaf([this, &defSym](std::shared_ptr<InstrumentPanelNode> leaf) {
         PushSymbolListTo(leaf);
-        if (!leaf->HasChart() && !defSym.empty())
+        if (!leaf->HasContent() && !defSym.empty())
             InstallChart(leaf, defSym);
     });
 }

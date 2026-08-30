@@ -14,8 +14,8 @@ class Config
 {
     CLI::App mApp;
 
-    size_t mVerbose;
-    bool mTrace;
+    size_t mVerbose = 0;
+    bool mTrace = false;
 
     std::string mDataDir;
 
@@ -25,8 +25,7 @@ class Config
     std::string m_stream_host;
     std::string m_stream_port;
 
-    std::string m_api_key;
-    std::string m_api_secret;
+    std::string m_api_keyfile;
 
     std::string mDefaultInstrument;
     uint32_t mDefaultCandlePeriodSeconds = 60;

@@ -7,9 +7,9 @@
 #include <algorithm>
 #include <array>
 #include <chrono>
-#include <climits>
 #include <cmath>
 #include <format>
+#include <limits>
 #include <optional>
 #include <string>
 #include <vector>
@@ -280,11 +280,11 @@ std::string format_leftmost(sys_time<milliseconds> tp, StepUnit unit)
     return {};
 }
 
-int approx_label_px(const std::string& s, float font_size)
+float approx_label_px(const std::string& s, float font_size)
 {
-    if (s.empty()) return kFallbackLabelW;
-    const int char_w = std::max(1, static_cast<int>(font_size) * kAvgCharWidthN / kAvgCharWidthD);
-    return static_cast<int>(s.size()) * char_w;
+    if (s.empty()) return static_cast<float>(kFallbackLabelW);
+    const float char_w = std::max(1.0f, font_size * kAvgCharWidthN / kAvgCharWidthD);
+    return static_cast<float>(s.size()) * char_w;
 }
 
 // Helper: emit a left-anchored Text into a scene at HUD-pixel coordinates. Counter-flips
@@ -337,15 +337,15 @@ void TimeRuler::OnDetach(InstrumentPanel& /*panel*/)
 void TimeRuler::CalculateSize(InstrumentPanel& panel)
 {
     const float font_size  = panel.DefaultFontSize() * kLabelFontScale;
-    const int   text_box_h = static_cast<int>(std::ceil(font_size * kLineHeightScale));
+    const float text_box_h = std::ceil(font_size * kLineHeightScale);
     // Reserve only the regular below-axis lane; the boundary lane (and the leftmost
     // timestamp) overlay the chart area above the axis with transparent backgrounds.
     // Keeping the strip thin lets the price-ruler vertical line meet the time-ruler axis
     // line at the inner-rect bottom-right corner without a visual gap.
-    mReservedHeight = text_box_h + kLabelPadding * 2 + kMajorTickLen;
+    mReservedHeight = static_cast<int64_t>(text_box_h) + kLabelPadding * 2 + kMajorTickLen;
 
-    PixelRect& rect = panel.MutableInnerDataRect();
-    rect.bottom = std::max(rect.top, rect.bottom - mReservedHeight);
+    Rectangle& rect = panel.MutableInnerDataRect();
+    rect.h = std::max<int64_t>(0, rect.h - mReservedHeight);
 }
 
 void TimeRuler::OnLayout(InstrumentPanel& panel)
@@ -357,12 +357,12 @@ void TimeRuler::RebuildAll(InstrumentPanel& panel)
 {
     if (!mScene) return;
 
-    const PixelRect& rect = panel.InnerDataRect();
-    if (rect.width() <= 0) return;
+    const Rectangle& rect = panel.InnerDataRect();
+    if (rect.w <= 0) return;
 
-    const float canvas_h = static_cast<float>(panel.OuterCanvasRect().height());
+    const float canvas_h = static_cast<float>(panel.OuterCanvasRect().h);
     const float font_size = panel.DefaultFontSize() * kLabelFontScale;
-    const int   text_box_h = static_cast<int>(std::ceil(font_size * kLineHeightScale));
+    const float text_box_h = std::ceil(font_size * kLineHeightScale);
 
     // One canvas pixel measured in HUD-local units; (1, 1) under the current Y-flip-only
     // HUD transform but consulted via the panel API so a future zoom or device-pixel
@@ -372,14 +372,14 @@ void TimeRuler::RebuildAll(InstrumentPanel& panel)
     // Axis sits at the strip's top edge (= rect.bottom in canvas-Y-down) so the price
     // ruler's vertical line meets it cleanly at the inner-rect corner. The 0.5 nudge
     // centres the half-pixel-wide stroke on a pixel boundary.
-    const float axis_y_hud = canvas_h - static_cast<float>(rect.bottom) - 0.5f * hud_px.y;
+    const float axis_y_hud = canvas_h - static_cast<float>(rect.y_end()) - 0.5f * hud_px.y;
 
     // mAxisShape — single horizontal line, full inner-rect width. Rebuild path replaces
     // the stroke geometry; tvg::Shape::reset clears all sub-paths so the next moveTo/lineTo
     // pair defines the entire line.
     mAxisShape->reset();
-    mAxisShape->moveTo(static_cast<float>(rect.left), axis_y_hud);
-    mAxisShape->lineTo(static_cast<float>(rect.right), axis_y_hud);
+    mAxisShape->moveTo(static_cast<float>(rect.x), axis_y_hud);
+    mAxisShape->lineTo(static_cast<float>(rect.x_end()), axis_y_hud);
     mAxisShape->strokeFill(180, 180, 180, 255);
     mAxisShape->strokeWidth(0.5f * hud_px.y);
 
@@ -390,7 +390,7 @@ void TimeRuler::RebuildAll(InstrumentPanel& panel)
     const double ms_per_px = static_cast<double>(period.count()) / static_cast<double>(cwidth_px);
 
     const int64_t view_left_ms  = panel.ViewLeftTimeMs();
-    const int64_t view_span_ms  = static_cast<int64_t>(rect.width() * ms_per_px);
+    const int64_t view_span_ms  = static_cast<int64_t>(static_cast<double>(rect.w) * ms_per_px);
     // Q1 — emit visible window ± 0.5 viewport buffer. Pan-extend within the buffer is
     // covered by future commits; for now, the buffer just widens the iterated tick range.
     const int64_t buffer_ms     = view_span_ms / 2;
@@ -414,7 +414,7 @@ void TimeRuler::RebuildAll(InstrumentPanel& panel)
     // 5-ish-pixel visual gap on the boundary lane, where bbox-bottom sits kLabelPadding
     // above the axis and the descender pad eats most of the difference.
     const float below_label_top_y_hud = axis_y_hud - static_cast<float>(kTickLength + 1);
-    const float above_label_top_y_hud = axis_y_hud + static_cast<float>(kLabelPadding + text_box_h);
+    const float above_label_top_y_hud = axis_y_hud + static_cast<float>(kLabelPadding) + text_box_h;
 
     // Leftmost full-context timestamp lives in the SAME LANE as boundary labels (upper
     // half of the strip), pinned at the chart's left edge. It carries every granularity
@@ -427,16 +427,16 @@ void TimeRuler::RebuildAll(InstrumentPanel& panel)
     mLeftmostTimestamp->text(leftmost_text.c_str());
     mLeftmostTimestamp->fill(220, 220, 220);
     mLeftmostTimestamp->align(0.0f, 0.0f);
-    const float leftmost_x = static_cast<float>(rect.left + kLabelPadding);
+    const float leftmost_x = static_cast<float>(rect.x) + static_cast<float>(kLabelPadding);
     mLeftmostTimestamp->transform(tvg::Matrix{1.0f, 0.0f, leftmost_x,
                                               0.0f, -1.0f, above_label_top_y_hud,
                                               0.0f, 0.0f, 1.0f});
 
     // Pre-compute leftmost timestamp's right edge for boundary collision tests. Empty
-    // text => the leftmost label isn't rendered, so boundaries can start from rect.left.
-    const int leftmost_right_px = leftmost_text.empty()
-        ? rect.left
-        : rect.left + kLabelPadding + approx_label_px(leftmost_text, font_size);
+    // text => the leftmost label isn't rendered, so boundaries can start from rect.x.
+    const float leftmost_right = leftmost_text.empty()
+        ? static_cast<float>(rect.x)
+        : leftmost_x + approx_label_px(leftmost_text, font_size);
 
     // Wipe the per-rebuild content. mAxisShape stays (mutated above); the tick lines
     // shape and label scene are re-emitted from scratch.
@@ -445,22 +445,21 @@ void TimeRuler::RebuildAll(InstrumentPanel& panel)
 
     sys_time<milliseconds> t = align_first_tick(start_tp, step);
     std::optional<CalView> prev;
-    int last_regular_right_px  = INT_MIN;
-    int last_boundary_right_px = leftmost_right_px;  // boundary collision must also avoid the leftmost timestamp
+    float last_regular_right  = -std::numeric_limits<float>::infinity();
+    float last_boundary_right = leftmost_right;  // boundary collision must also avoid the leftmost timestamp
 
     while (t <= end_tp) {
         // Use the panel helper rather than reproducing scale + view-offset locally — the
         // matrix it reads from mLogicalScene is the single source of truth for the X-axis
         // mapping (e11 = px_per_ms, e13 = inner_left - e11 * (view_left - floor)).
         const float tick_x = panel.HudXOfTime(static_cast<int64_t>(t.time_since_epoch().count()));
-        const int   tick_x_px = static_cast<int>(tick_x);
 
         // Skip ticks whose anchor falls outside the inner rect's horizontal extent. The
         // ± 0.5-viewport buffer over which we iterate intentionally over-emits ticks; the
         // HUD scene's clip is the canvas, not the inner rect, so without this skip the
         // axis would carry tick stubs into the price-ruler strip on the right and into
         // negative-x sliver on the left.
-        if (tick_x_px < rect.left || tick_x_px > rect.right) {
+        if (tick_x < static_cast<float>(rect.x) || tick_x > static_cast<float>(rect.x_end())) {
             prev = CalView{t};
             t = advance_tick(t, step);
             continue;
@@ -479,14 +478,13 @@ void TimeRuler::RebuildAll(InstrumentPanel& panel)
         // which already filter on rect.right, regular labels were drifting into the
         // price strip whenever the rightmost tick sat near the inner-rect edge.
         const std::string regular_text = format_regular(cur, step);
-        const int regular_w = approx_label_px(regular_text, font_size);
-        const int regular_right_px = tick_x_px + regular_w;
-        const bool regular_fits_horizontally = tick_x_px > last_regular_right_px + kMinLabelGapPx;
-        const bool regular_fits_in_inner_rect = regular_right_px <= rect.right;
+        const float regular_right = tick_x + approx_label_px(regular_text, font_size);
+        const bool regular_fits_horizontally = tick_x > last_regular_right + kMinLabelGapPx;
+        const bool regular_fits_in_inner_rect = regular_right <= static_cast<float>(rect.x_end());
         if (regular_fits_horizontally && regular_fits_in_inner_rect) {
             emit_label(*mLabelScene, panel.DefaultFontName(), font_size, regular_text,
-                       static_cast<float>(tick_x_px), below_label_top_y_hud, 210, 210, 210);
-            last_regular_right_px = regular_right_px;
+                       tick_x, below_label_top_y_hud, 210, 210, 210);
+            last_regular_right = regular_right;
         }
 
         // Boundary above-line label, ALL left-anchored, priority Year > Month > Day.
@@ -496,14 +494,13 @@ void TimeRuler::RebuildAll(InstrumentPanel& panel)
         const BoundaryKind kind = detect_boundary(cur, prev, step);
         if (kind != BoundaryKind::None) {
             const std::string boundary_text = format_boundary(cur, kind);
-            const int boundary_w = approx_label_px(boundary_text, font_size);
-            const int boundary_right_px = tick_x_px + boundary_w;
-            const bool fits_horizontally = tick_x_px > last_boundary_right_px + kMinLabelGapPx;
-            const bool fits_in_inner_rect = boundary_right_px <= rect.right;
+            const float boundary_right = tick_x + approx_label_px(boundary_text, font_size);
+            const bool fits_horizontally = tick_x > last_boundary_right + kMinLabelGapPx;
+            const bool fits_in_inner_rect = boundary_right <= static_cast<float>(rect.x_end());
             if (fits_horizontally && fits_in_inner_rect) {
                 emit_label(*mLabelScene, panel.DefaultFontName(), font_size, boundary_text,
-                           static_cast<float>(tick_x_px), above_label_top_y_hud, 230, 230, 180);
-                last_boundary_right_px = boundary_right_px;
+                           tick_x, above_label_top_y_hud, 230, 230, 180);
+                last_boundary_right = boundary_right;
             }
         }
 

@@ -1,0 +1,5 @@
+header: Outbound entity encoders
+description: |
+  json_body_encoder and url_query_encoder turn a client-side entity into the (query, body) pair handed to the connection they own, one encoder per wire shape, with no request type of their own (src/datahub/data_encoder.hpp).
+parents: [DATAHUB-001]
+order: 60

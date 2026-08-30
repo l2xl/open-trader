@@ -1,7 +1,8 @@
 header: Degenerate single-price period
 description: |
-  A period whose high equals its low shall be reported as degenerate whatever its
-  traded volume, so the renderer substitutes its fixed-size marker instead of a
+  Constructing a geometry candle whose high does not exceed its low shall be
+  rejected with an invalid-argument error whatever its traded volume; the
+  renderer substitutes its fixed-size marker for such periods instead of a
   sampled contour.
 parents: [BUOY_GEOMETRY]
 order: 100

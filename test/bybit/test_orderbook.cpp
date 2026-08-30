@@ -212,7 +212,7 @@ TEST_CASE("Receive raw orderbook payloads from ByBit WebSocket", "[bybit][orderb
     auto captured = std::make_shared<std::deque<std::string>>();
     auto done = std::make_shared<std::atomic<bool>>(false);
 
-    auto ws = connect::websock_connection::create(ctx, "wss://stream.bybit.com:443/v5/public/spot",
+    auto ws = connect::websock_connection<>::create(ctx, "wss://stream.bybit.com:443/v5/public/spot",
         [captured, done, &promise](std::string message) {
             if (done->load()) return;
             if (message.find("orderbook") != std::string::npos) {

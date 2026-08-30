@@ -19,7 +19,7 @@
 CPMAddPackage(
     NAME thorvg
     GITHUB_REPOSITORY thorvg/thorvg
-    GIT_TAG v1.0.4
+    GIT_TAG v1.1.1
     GIT_SHALLOW TRUE
     DOWNLOAD_ONLY YES
 )

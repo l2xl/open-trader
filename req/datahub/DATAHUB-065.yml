@@ -1,0 +1,6 @@
+header: Query string field order
+description: |
+  url_query_encoder shall emit one key=value pair per entity field in declaration order, joined by ampersands.
+parents: [DATAHUB-060]
+order: 50
+tests: ~

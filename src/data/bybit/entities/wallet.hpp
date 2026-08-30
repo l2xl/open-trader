@@ -35,6 +35,11 @@ struct WalletBalance {
     std::deque<CoinBalance> coin;
 };
 
+struct WalletFilter
+{
+    AccountType accountType;
+};
+
 } // namespace scratcher::bybit
 
 #endif // BYBIT_WALLET_HPP

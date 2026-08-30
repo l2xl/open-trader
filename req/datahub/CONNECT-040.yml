@@ -1,0 +1,5 @@
+header: Session policy injection (websock_connection<SessionPolicy>)
+description: |
+  websock_connection is a class template parameterized on a session policy carried by value and befriended by the connection, which the connection invokes once after the handshake and again before each outgoing message (src/connect/websocket.hpp).
+parents: [CONNECT-001]
+order: 40

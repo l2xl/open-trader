@@ -1,0 +1,6 @@
+header: Scalar formatting matches the body path
+description: |
+  A query value shall carry the same text as the corresponding JSON scalar with enclosing quotes stripped, so enums, currency values and numbers format identically on both paths.
+parents: [DATAHUB-060]
+order: 70
+tests: ~

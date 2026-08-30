@@ -45,6 +45,50 @@ void LeafPanelNode::Initialize(el::element_ptr content, panel_id pid)
     RefreshDeck(std::move(content));
 }
 
+// --- ScenePanelNode ---
+
+void ScenePanelNode::InstallContent(el::element_ptr content, cockpit::panel_id pid)
+{
+    if (mWorkArea) {
+        // Hold the old content through the deck mutation; release it only after
+        // layout/refresh have settled so its destruction (which can recurse into
+        // ThorVG's cascade-free) happens outside any deck/cycfi-internal walk.
+        el::element_ptr old_content = nullptr;
+        if (mWorkArea->size() < 2) {
+            mWorkArea->push_back(content);
+        } else {
+            old_content = *(mWorkArea->begin() + 1);
+            mWorkArea->select(0);
+            mWorkArea->erase(mWorkArea->begin() + 1);
+            mWorkArea->push_back(content);
+        }
+
+        mWorkArea->select(1);
+        mPanelId = pid;
+        mHasContent = true;
+
+        mRootView->layout();
+        mRootView->refresh();
+        old_content.reset();
+    }
+}
+
+void ScenePanelNode::UninstallContent()
+{
+    if (mWorkArea) {
+        if (mWorkArea->size() >= 2) {
+            mWorkArea->pop_back();
+        }
+        mWorkArea->select(0);
+    }
+
+    mPanelId = 0;
+    mHasContent = false;
+
+    mRootView->layout();
+    mRootView->refresh();
+}
+
 // --- InstrumentPanelNode ---
 
 void InstrumentPanelNode::SetInstruments(const std::vector<std::string>& symbols, std::function<void(std::string)> onSelect)
@@ -75,50 +119,7 @@ void InstrumentPanelNode::SetTitle(const std::string& text)
     if (mTitleLabel) mTitleLabel->set_text(text);
 }
 
-void InstrumentPanelNode::InstallChart(el::element_ptr chart_element, cockpit::panel_id pid)
-{
-    if (mWorkArea) {
-        // Hold the old chart through the deck mutation; release it only after
-        // layout/refresh have settled so the chart's destruction (which can recurse
-        // into ThorVG's cascade-free) happens outside any deck/cycfi-internal walk.
-        el::element_ptr old_panel = nullptr;
-        if (mWorkArea->size() < 2) {
-            mWorkArea->push_back(chart_element);
-        } else {
-            old_panel = *(mWorkArea->begin() + 1);
-            mWorkArea->select(0);
-            mWorkArea->erase(mWorkArea->begin() + 1);
-            mWorkArea->push_back(chart_element);
-        }
-
-        mWorkArea->select(1);
-        mPanelId = pid;
-        mHasChart = true;
-
-        mRootView->layout();
-        mRootView->refresh();
-        old_panel.reset();
-    }
-}
-
-void InstrumentPanelNode::UninstallChart()
-{
-    if (mWorkArea) {
-        if (mWorkArea->size() >= 2) {
-            mWorkArea->pop_back();/*erase(mWorkArea->begin() + 1);*/
-        }
-        mWorkArea->select(0);
-    }
-
-    mPanelId = 0;
-    mHasChart = false;
-
-    mRootView->layout();
-    mRootView->refresh();
-}
-
 // --- SplitPanelNode ---
-
 
 void SplitPanelNode::ReplaceChild(std::shared_ptr<PanelNode> oldChild, std::shared_ptr<PanelNode> newChild)
 {

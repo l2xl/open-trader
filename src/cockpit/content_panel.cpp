@@ -18,6 +18,7 @@ std::string PanelTypeName(PanelType type)
     case PanelType::TradeStats:   return "Trade Stats";
     case PanelType::Positions:    return "Positions";
     case PanelType::Watchlist:    return "Watchlist";
+    case PanelType::Wallet:       return "Wallet";
     }
     return "Unknown";
 }

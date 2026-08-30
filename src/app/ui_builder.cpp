@@ -30,6 +30,7 @@ const PanelType all_panel_types[] = {
     PanelType::TradeStats,
     PanelType::Positions,
     PanelType::Watchlist,
+    PanelType::Wallet,
 };
 
 class AutoPositionMenu : public el::basic_button_menu
@@ -212,12 +213,7 @@ std::shared_ptr<InstrumentPanelNode> UiBuilder::MakeInstrumentPanel( std::shared
         )
     );
 
-    // The work area is a 2-child deck: index 0 is the waiting indicator, index 1 is
-    // the chart (installed later via InstrumentPanelNode::InstallChart). Flipping
-    // select(0|1) avoids the layout glitch from wholesale leaf replacement.
-    auto work_area = std::make_shared<el::deck_composite>();
-    work_area->push_back(MakeWaitingIndicator());
-    work_area->select(0);
+    auto work_area = MakeWorkArea();
 
     auto root = el::share(
         el::vtile(
@@ -230,6 +226,34 @@ std::shared_ptr<InstrumentPanelNode> UiBuilder::MakeInstrumentPanel( std::shared
     auto node = std::make_shared<InstrumentPanelNode>(std::move(root_view), type, title_label, instrument_btn, work_area);
     node->Initialize(root, 0);
     return node;
+}
+
+std::shared_ptr<ScenePanelNode> UiBuilder::MakeScenePanel(std::shared_ptr<cycfi::elements::view> root_view, PanelType type, std::function<void()> onClose, std::function<void(PanelType, SplitDirection)> onSplit)
+{
+    auto work_area = MakeWorkArea();
+
+    auto root = el::share(
+        el::vtile(
+            el::hold(MakePanelHeader(type, nullptr, std::move(onClose), onSplit)),
+            el::vstretch(1.0, el::hold(work_area)),
+            el::hold(MakePanelFooter(std::move(onSplit)))
+        )
+    );
+
+    auto node = std::make_shared<ScenePanelNode>(std::move(root_view), type, work_area);
+    node->Initialize(root, 0);
+    return node;
+}
+
+std::shared_ptr<el::deck_composite> UiBuilder::MakeWorkArea()
+{
+    // 2-child deck: index 0 is the waiting indicator, index 1 the panel content installed later via
+    // ScenePanelNode::InstallContent. Flipping select(0|1) avoids the layout glitch from wholesale
+    // leaf replacement.
+    auto work_area = std::make_shared<el::deck_composite>();
+    work_area->push_back(MakeWaitingIndicator());
+    work_area->select(0);
+    return work_area;
 }
 
 el::element_ptr UiBuilder::MakePanel(PanelType type, std::function<void(PanelType)> onChangeType, std::function<void()> onClose, std::function<void(PanelType, SplitDirection)> onSplit)
