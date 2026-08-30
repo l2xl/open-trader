@@ -6,4 +6,5 @@ description: |
   and coincide only when they are equal.
 parents: [BUOY_GEOMETRY]
 order: 30
-tests: ~
+tests: e9af27dfa2ca2dc89ea330d2d06705f42259546cfa15d23196e7e9cc7510129b
+reviewed: 6b9bbd972eda4105f45f8f815d015641ed34bd11828c117fec0232735c6decf4

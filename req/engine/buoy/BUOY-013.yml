@@ -5,4 +5,5 @@ description: |
   fixed-point currency storage carrying prices and volumes.
 parents: [BUOY_CANDLE]
 order: 130
-tests: ~
+tests: f8a0767bce0a8d0bb37fae17f61fb6064aa3a17dc86cb0fb0504652ce8b3f9b3
+reviewed: f44706e486efaae4425a397d9e62d1b27c1c52bd7684a25975e872e194593fda

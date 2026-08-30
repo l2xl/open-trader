@@ -5,4 +5,5 @@ description: |
   including periods whose deviations the range fit clamped.
 parents: [BUOY_GEOMETRY]
 order: 25
-tests: ~
+tests: eebcc0c79c0857bb7ddc9d8fc84f04f212885c39afc036a09a854d2224169614
+reviewed: f7f0fb3ffd8f93d425da81cb58f931483389ce1c2a0dc3236a844600da485aae

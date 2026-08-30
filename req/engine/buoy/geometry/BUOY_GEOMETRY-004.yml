@@ -4,4 +4,5 @@ description: |
   halves meet the waist at unit normalised width with zero slope.
 parents: [BUOY_GEOMETRY]
 order: 40
-tests: ~
+tests: 87a5fc58e912e642e94ba16f56786b01ea2bd81d5019c1b335d160267a33ab11
+reviewed: 516536bd989cfd0b7ff3ad15ce773e854d4cbffefeff3f44ac8206516db2ac32

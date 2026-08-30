@@ -7,4 +7,5 @@ description: |
   already inside it is left untouched, per src/engine/BUOY_CANDLE.md section 4.
 parents: [BUOY_GEOMETRY]
 order: 5
-tests: ~
+tests: 03aaafaef0debdcf28d2cd2161051c5897059ff61b493041399265486c136a76
+reviewed: 6d125eea860866cbe16b784512e1b1c2dfee69762da7c41b2da296da805094a6

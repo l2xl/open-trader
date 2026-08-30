@@ -3,4 +3,5 @@ description: |
   Zero-volume carry-forward periods shall report floor deviations on both sides.
 parents: [BUOY_CANDLE]
 order: 120
-tests: ~
+tests: 8f322599450384436c12f52c0a195e6f56465134213df88f532c77c05e0431fa
+reviewed: b688a775502bfe555b8728da95fd561041b5a054b5f84d6cce38dac41ae3f8f3

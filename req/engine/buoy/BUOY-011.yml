@@ -5,4 +5,5 @@ description: |
   predecessor.
 parents: [BUOY_CANDLE]
 order: 110
-tests: ~
+tests: 1794bfa22fff33c56f6c7ce49d8895bb56be35a7836d4c75a9906e2b30a83e75
+reviewed: 05e77b679ec4ffb6fcf63367665f1f7f23dd1e0cfa53854d9191d29f020e34b8

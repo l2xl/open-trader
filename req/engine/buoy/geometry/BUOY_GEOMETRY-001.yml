@@ -5,4 +5,5 @@ description: |
   range's periods, excluding empty periods and single-price degenerate periods.
 parents: [BUOY_GEOMETRY]
 order: 10
-tests: ~
+tests: de67fa1ac9470e115ee53083d0a5a07e2235781eddf9d539261387d5352f5669
+reviewed: 1c7953dd2590a2b23f7a56f1587ba42ca4367c562dc640b547f525c901c09233

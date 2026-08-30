@@ -6,4 +6,5 @@ description: |
   keeping both waist corners sharp.
 parents: [BUOY_GEOMETRY]
 order: 90
-tests: ~
+tests: 5f8664c6c187c62cbe25ee6c4e619c24cae37af7f9af620feade6b65d0c64899
+reviewed: 7a50d51bd94b012a73dbeec5331c0348225914bd1df45a1ab511f4ec02518d6c

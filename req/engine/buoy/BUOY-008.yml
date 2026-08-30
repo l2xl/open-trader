@@ -5,4 +5,5 @@ description: |
   waist, each normalised by that side's own traded volume.
 parents: [BUOY_CANDLE]
 order: 80
-tests: ~
+tests: c6861c74d5c2c35060ee2ba11d0ff0983ed293ce92eea6afbbfffd0ff77a69f6
+reviewed: e3c9a5521bab330a1c5c6a100a19592fafb549a61e7a92e8ec14c78b7b619333

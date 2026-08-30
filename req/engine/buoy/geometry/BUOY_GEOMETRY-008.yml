@@ -5,4 +5,5 @@ description: |
   their respective neighbours.
 parents: [BUOY_GEOMETRY]
 order: 80
-tests: ~
+tests: 2c4d5944acdd19bcdb4ee3147559a5d15f7c3a1a6bb03e6768384560e19e2a8c
+reviewed: e6f90c5e14b8a4b8150e99632dce6abdbcff1ca50cce46ef83055301aa46f1a0

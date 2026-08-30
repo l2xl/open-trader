@@ -5,4 +5,5 @@ description: |
   local bulges and pinches.
 parents: [BUOY_GEOMETRY]
 order: 50
-tests: ~
+tests: 25811e8fbeb7236db66204879e5ba38c574c189bb1a3d2fdd35faa566a6c1d8b
+reviewed: f15f28329f6b545029af0a5a21733f143a1ab0632594cf0dcb8f4ee4b961b5e4
