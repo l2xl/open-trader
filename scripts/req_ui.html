@@ -1,0 +1,560 @@
+<!doctype html>
+<!--
+  Open Trader
+  Copyright (c) 2026 l2xl (l2xl/at/proton.me)
+  Distributed under the Intellectual Property Reserve License, v2 (IPRL)
+
+  Single-page frontend for req_ui.py: tree + item editor + review console.
+  Vanilla JS, no build step, no external assets; talks JSON to /api/*.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Requirements Editor</title>
+<style>
+:root {
+  --bg: #f6f7f9; --panel: #ffffff; --line: #dde1e6; --text: #1b222b; --dim: #5b6472;
+  --accent: #2e5c6e; --accent-soft: #2e5c6e18;
+  --gray: #7a7f87; --yellow: #d9a63d; --yellow-text: #9a6f1c; --green: #3f7d52; --red: #a8482e;
+  --console-bg: #10151b; --console-text: #d6dde6;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #12161b; --panel: #1a2027; --line: #2c343e; --text: #d6dde6; --dim: #8b96a5;
+    --accent: #6fa8c0; --accent-soft: #6fa8c022;
+    --yellow-text: #d9a63d;
+  }
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body { margin: 0; font: 14px/1.45 -apple-system, "Segoe UI", system-ui, sans-serif; background: var(--bg); color: var(--text); display: flex; flex-direction: column; }
+button { font: inherit; color: inherit; background: var(--panel); border: 1px solid var(--line); border-radius: 4px; padding: 0.3em 0.8em; cursor: pointer; }
+button:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+button:disabled { opacity: 0.45; cursor: default; }
+button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+button.primary:hover:not(:disabled) { color: #fff; filter: brightness(1.1); }
+button.danger:hover:not(:disabled) { border-color: var(--red); color: var(--red); }
+input, textarea, select { font: inherit; color: var(--text); background: var(--panel); border: 1px solid var(--line); border-radius: 4px; padding: 0.3em 0.5em; }
+input:focus, textarea:focus, button:focus-visible { outline: 2px solid var(--accent-soft); border-color: var(--accent); }
+code, .mono { font-family: ui-monospace, "Cascadia Code", Menlo, Consolas, monospace; }
+
+header { display: flex; align-items: center; gap: 0.8rem; padding: 0.55rem 1rem; background: var(--panel); border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+header h1 { font-size: 1rem; margin: 0; white-space: nowrap; }
+header .counts { display: flex; gap: 0.4rem; }
+#filter { width: 14rem; }
+#gate-banner { color: var(--red); font-size: 0.82rem; cursor: pointer; }
+#stale-banner { color: var(--yellow-text); font-size: 0.82rem; }
+.spacer { flex: 1; }
+
+main { flex: 1; display: flex; min-height: 0; }
+#tree-pane { width: 30rem; min-width: 16rem; max-width: 60vw; resize: horizontal; overflow: auto; border-right: 1px solid var(--line); padding: 0.6rem 0.4rem 2rem; }
+#detail-pane { flex: 1; overflow: auto; padding: 1.1rem 1.4rem 3rem; }
+
+.chip { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 0.72rem; padding: 0.12em 0.55em 0.12em 0.4em; border-radius: 3px; white-space: nowrap; border: 1px solid transparent; cursor: pointer; background: none; }
+.chip .ball { display: inline-block; width: 0.62em; height: 0.62em; border-radius: 50%; margin-right: 0.35em; }
+.chip.on { border-color: currentColor; }
+.st-not_implemented { background: #7a7f8722; color: var(--gray); }
+.st-not_implemented .ball { background: var(--gray); }
+.st-partially_implemented { background: #b8862b22; color: var(--yellow-text); }
+.st-partially_implemented .ball { background: var(--yellow); }
+.st-test_passed { background: #3f7d5222; color: var(--green); }
+.st-test_passed .ball { background: var(--green); }
+.st-test_failed { background: #a8482e22; color: var(--red); }
+.st-test_failed .ball { background: var(--red); }
+
+ul.tree, ul.tree ul { list-style: none; margin: 0; padding-left: 1.05rem; }
+ul.tree { padding-left: 0.2rem; }
+.node-row { display: flex; align-items: center; gap: 0.35rem; padding: 0.13rem 0.3rem; border-radius: 4px; cursor: pointer; white-space: nowrap; }
+.node-row:hover { background: var(--accent-soft); }
+.node-row.selected { background: var(--accent-soft); outline: 1px solid var(--accent); }
+.twist { width: 1em; text-align: center; color: var(--dim); flex: none; font-size: 0.75rem; }
+.dot { width: 0.6em; height: 0.6em; border-radius: 50%; flex: none; }
+.dot.not_implemented { background: var(--gray); } .dot.partially_implemented { background: var(--yellow); }
+.dot.test_passed { background: var(--green); } .dot.test_failed { background: var(--red); }
+.node-uid { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 0.82rem; }
+.node-title { color: var(--dim); font-size: 0.82rem; overflow: hidden; text-overflow: ellipsis; }
+.badge { font-size: 0.72rem; flex: none; }
+.badge.fresh { color: var(--green); } .badge.stale { color: var(--yellow-text); } .badge.problem { color: var(--red); }
+.dupmark { color: var(--dim); font-size: 0.72rem; font-style: italic; }
+
+#detail-pane .headline { display: flex; align-items: baseline; gap: 0.7rem; flex-wrap: wrap; margin-bottom: 0.2rem; }
+#detail-pane .headline h2 { margin: 0; font-size: 1.25rem; font-family: ui-monospace, Menlo, Consolas, monospace; }
+.filepath { color: var(--dim); font-size: 0.78rem; }
+.problems { background: #a8482e14; border: 1px solid #a8482e55; border-radius: 4px; padding: 0.5rem 0.8rem; margin: 0.7rem 0; font-size: 0.85rem; color: var(--red); }
+.problems div { margin: 0.15rem 0; }
+.note { color: var(--dim); font-size: 0.78rem; margin-top: 0.25rem; }
+.field { margin: 0.9rem 0; }
+.field > label { display: block; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 0.7rem; text-transform: uppercase; color: var(--dim); margin-bottom: 0.25rem; letter-spacing: 0.04em; }
+.field input[type=text], .field textarea { width: 100%; }
+.field textarea { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 0.85rem; min-height: 7rem; resize: vertical; }
+.parents-list { display: flex; flex-wrap: wrap; gap: 0.35rem; align-items: center; }
+.parent-chip { display: inline-flex; gap: 0.35em; align-items: center; background: var(--accent-soft); border: 1px solid var(--line); border-radius: 3px; padding: 0.1em 0.45em; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 0.8rem; }
+.parent-chip a { cursor: pointer; color: var(--accent); text-decoration: none; }
+.parent-chip button, .binding-row button { border: none; background: none; padding: 0 0.15em; color: var(--dim); }
+.parent-chip button:hover, .binding-row button:hover { color: var(--red); }
+.binding-row { display: flex; gap: 0.6rem; align-items: baseline; margin: 0.3rem 0; flex-wrap: wrap; }
+.binding-row .name { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 0.85rem; min-width: 7rem; }
+.binding-row .sha { color: var(--dim); font-size: 0.75rem; }
+.binding-row .loc { font-size: 0.78rem; color: var(--accent); }
+.binding-row .miss { color: var(--yellow-text); font-size: 0.78rem; }
+.kids a { cursor: pointer; color: var(--accent); font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 0.85rem; margin-right: 0.7rem; }
+.actions { display: flex; gap: 0.5rem; margin: 1.2rem 0 0.6rem; flex-wrap: wrap; align-items: center; }
+.testrec summary { cursor: pointer; font-size: 0.85rem; }
+.testrec pre { background: var(--accent-soft); border: 1px solid var(--line); border-radius: 3px; padding: 0.5rem 0.7rem; font-size: 0.75rem; overflow-x: auto; }
+
+#console { border-top: 1px solid var(--line); background: var(--console-bg); color: var(--console-text); display: none; flex-direction: column; max-height: 40vh; }
+#console.open { display: flex; }
+#console .bar { display: flex; gap: 0.8rem; align-items: center; padding: 0.3rem 0.9rem; font-size: 0.8rem; border-bottom: 1px solid #ffffff22; }
+#console .bar .argv { font-family: ui-monospace, Menlo, Consolas, monospace; opacity: 0.8; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#console pre { flex: 1; overflow: auto; margin: 0; padding: 0.6rem 0.9rem; font-size: 0.78rem; }
+#console .bar button { background: none; border-color: #ffffff44; color: var(--console-text); }
+.status-run { color: var(--yellow); } .status-ok { color: #7fc990; } .status-fail { color: #e58a70; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.spinner { display: inline-block; width: 0.85em; height: 0.85em; border: 2px solid #ffffff44; border-top-color: #fff; border-radius: 50%; animation: spin 0.8s linear infinite; vertical-align: -0.1em; }
+
+#toasts { position: fixed; top: 3.2rem; right: 1rem; display: flex; flex-direction: column; gap: 0.5rem; z-index: 30; }
+.toast { background: var(--panel); border: 1px solid var(--red); color: var(--red); border-radius: 4px; padding: 0.5rem 0.9rem; max-width: 26rem; font-size: 0.85rem; box-shadow: 0 2px 10px #0003; }
+.toast.info { border-color: var(--accent); color: var(--accent); }
+
+dialog { border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--text); min-width: 24rem; }
+dialog::backdrop { background: #0006; }
+dialog h3 { margin-top: 0; }
+.empty { color: var(--dim); margin-top: 3rem; text-align: center; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Requirements Editor</h1>
+  <span class="counts" id="counts"></span>
+  <span id="gate-banner" hidden></span>
+  <span class="spacer"></span>
+  <span id="stale-banner" hidden>tree changed on disk — <a href="#" id="reload-link">reload</a></span>
+  <input id="filter" type="search" placeholder="filter uid / title  ( / )">
+  <button id="new-btn" title="create a requirement item">New item</button>
+</header>
+<main>
+  <nav id="tree-pane"><ul class="tree" id="tree"></ul></nav>
+  <section id="detail-pane"><div class="empty">Select a requirement on the left.</div></section>
+</main>
+<footer id="console">
+  <div class="bar">
+    <span id="job-state"></span>
+    <span class="argv" id="job-argv"></span>
+    <span class="spacer"></span>
+    <button id="console-close">close</button>
+  </div>
+  <pre id="job-out"></pre>
+</footer>
+<div id="toasts"></div>
+
+<dialog id="new-dialog">
+  <h3>New requirement item</h3>
+  <div class="field"><label>UID</label><input type="text" id="new-uid" class="mono" placeholder="FEATURE-001"></div>
+  <div class="field"><label>Parent</label><input type="text" id="new-parent" class="mono" list="uid-list"></div>
+  <div class="field"><label>Folder (under req/)</label><input type="text" id="new-dir" class="mono" list="dir-list" placeholder="req/infra"></div>
+  <div class="field"><label>Kind</label>
+    <select id="new-kind"><option value="leaf">leaf (carries tests)</option><option value="branch">branch (groups children)</option></select>
+    <label style="display:inline;text-transform:none;margin-left:1rem">order <input type="number" id="new-order" value="0" style="width:5rem"></label>
+  </div>
+  <div class="actions"><button class="primary" id="new-create">Create</button><button id="new-cancel">Cancel</button></div>
+</dialog>
+<datalist id="uid-list"></datalist>
+<datalist id="dir-list"></datalist>
+
+<script>
+"use strict";
+const TOKEN = new URLSearchParams(location.search).get("token") || "";
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+
+const state = {
+  model: null,          // /api/tree payload
+  selected: null,       // uid
+  edit: null,           // dirty edit buffer {header, description, parents, order, tests|null}
+  expanded: new Set(JSON.parse(sessionStorage.getItem("req-ui-expanded") || "[]")),
+  filter: "",
+  statusFilter: new Set(),
+  job: null,            // {id, argv, es, done}
+};
+
+async function api(path, payload) {
+  const res = await fetch(path, {
+    method: payload === undefined ? "GET" : "POST",
+    headers: { "X-Req-Token": TOKEN, ...(payload !== undefined && { "Content-Type": "application/json" }) },
+    body: payload === undefined ? undefined : JSON.stringify(payload),
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(body.error || `${res.status} on ${path}`);
+  return body;
+}
+
+function toast(message, cls = "") {
+  const el = document.createElement("div");
+  el.className = "toast " + cls;
+  el.textContent = message;
+  $("toasts").appendChild(el);
+  setTimeout(() => el.remove(), 6500);
+}
+
+// ---- tree ----------------------------------------------------------------
+
+function visibleSet() {
+  // An item stays visible when itself or any descendant matches the filters.
+  const m = state.model, needle = state.filter.toLowerCase(), statuses = state.statusFilter;
+  const memo = new Map();
+  const selfMatch = (uid) => {
+    const it = m.items[uid];
+    const text = !needle || uid.toLowerCase().includes(needle) || (it.header || "").toLowerCase().includes(needle);
+    const status = !statuses.size || statuses.has(it.status);
+    return text && status;
+  };
+  const visit = (uid, trail) => {
+    if (memo.has(uid)) return memo.get(uid);
+    if (trail.has(uid)) return false;
+    trail.add(uid);
+    const ok = selfMatch(uid) || m.items[uid].children.some((c) => visit(c, trail));
+    trail.delete(uid);
+    memo.set(uid, ok);
+    return ok;
+  };
+  const visible = new Set();
+  for (const uid of Object.keys(m.items)) if (visit(uid, new Set())) visible.add(uid);
+  return visible;
+}
+
+function nodeHtml(uid, trail, visible) {
+  const it = state.model.items[uid];
+  if (!visible.has(uid)) return "";
+  const kids = it.children.filter((c) => visible.has(c));
+  const cycle = trail.has(uid);
+  const expanded = state.expanded.has(uid) || state.filter || state.statusFilter.size;
+  const badges = [];
+  if (it.problems.length) badges.push('<span class="badge problem" title="' + esc(it.problems.join("\n")) + '">✗</span>');
+  if (it.reviewed) badges.push(it.stamp_fresh ? '<span class="badge fresh" title="reviewed, stamp fresh">✓</span>'
+                                              : '<span class="badge stale" title="reviewed, stamp STALE — re-review required">⚠</span>');
+  if (it.parents.length > 1) badges.push('<span class="dupmark" title="multiple parents: ' + esc(it.parents.join(", ")) + '">⇈</span>');
+  let html = '<li><div class="node-row' + (uid === state.selected ? " selected" : "") + '" data-uid="' + esc(uid) + '">'
+    + '<span class="twist" data-twist="' + esc(uid) + '">' + (kids.length ? (expanded ? "▾" : "▸") : "·") + "</span>"
+    + '<span class="dot ' + it.status + '" title="' + it.status.replace("_", " ") + '"></span>'
+    + '<span class="node-uid">' + esc(uid) + "</span>" + badges.join("")
+    + '<span class="node-title">' + esc(it.header || it.description.slice(0, 60)) + "</span>"
+    + "</div>";
+  if (cycle) return html + ' <span class="dupmark">(cycle)</span></li>';
+  if (kids.length && expanded) {
+    trail.add(uid);
+    html += "<ul>" + kids.map((c) => nodeHtml(c, trail, visible)).join("") + "</ul>";
+    trail.delete(uid);
+  }
+  return html + "</li>";
+}
+
+function renderTree() {
+  const m = state.model, visible = visibleSet();
+  const roots = [...m.roots, ...m.unreachable];
+  $("tree").innerHTML = roots.map((uid) => nodeHtml(uid, new Set(), visible)).join("")
+    || '<li class="empty">nothing matches the filter</li>';
+  const counts = $("counts");
+  counts.innerHTML = ["test_failed", "partially_implemented", "test_passed", "not_implemented"]
+    .filter((s) => m.counts[s])
+    .map((s) => '<button class="chip st-' + s + (state.statusFilter.has(s) ? " on" : "") + '" data-status="' + s + '">'
+      + '<span class="ball"></span>' + m.counts[s] + " " + s.replace(/_/g, " ") + "</button>").join("");
+  const gate = $("gate-banner");
+  const problemItems = Object.values(m.items).filter((it) => it.problems.length).length;
+  const troubles = m.load_errors.length + problemItems;
+  gate.hidden = !troubles;
+  if (troubles) gate.textContent = "⛔ gate: " + (m.load_errors.length ? m.load_errors.length + " tree error(s), " : "") + problemItems + " item(s) with validation problems";
+  $("uid-list").innerHTML = Object.keys(m.items).sort().map((u) => "<option>" + esc(u) + "</option>").join("");
+  $("dir-list").innerHTML = [...new Set(Object.values(m.items).map((it) => it.folder))].sort().map((f) => "<option>" + esc(f) + "</option>").join("");
+}
+
+// ---- detail --------------------------------------------------------------
+
+function startEdit() {
+  if (state.edit) return state.edit;
+  const it = state.model.items[state.selected];
+  state.edit = {
+    header: it.header,
+    description: it.description_raw,
+    parents: [...it.parents],
+    order: it.order,
+    tests: it.is_leaf ? it.bindings.map((b) => b.name) : null,
+  };
+  return state.edit;
+}
+
+function renderDetail() {
+  const pane = $("detail-pane");
+  const uid = state.selected;
+  if (!uid || !state.model.items[uid]) { pane.innerHTML = '<div class="empty">Select a requirement on the left.</div>'; return; }
+  const it = state.model.items[uid];
+  const e = state.edit || { header: it.header, description: it.description_raw, parents: it.parents, order: it.order,
+                            tests: it.is_leaf ? it.bindings.map((b) => b.name) : null };
+  const isLeaf = e.tests !== null;
+  const reviewedBadge = !it.reviewed ? '<span class="badge" title="not reviewed">unreviewed</span>'
+    : it.stamp_fresh ? '<span class="badge fresh">✓ reviewed</span>' : '<span class="badge stale">⚠ stamp stale — re-review required</span>';
+  const kids = it.children.map((c) => '<a data-goto="' + esc(c) + '">' + esc(c) + "</a>").join("") || '<span class="note">(none)</span>';
+
+  const bindingRows = isLeaf ? e.tests.map((name, i) => {
+    const bound = it.bindings.find((b) => b.name === name);
+    const locations = bound ? bound.locations : [];
+    const locHtml = locations.length
+      ? locations.map((l) => '<span class="loc mono" title="' + esc(l.name) + '">' + esc(l.path) + ":" + l.line + "</span>").join(" ")
+      : '<span class="miss">no tagged routine yet — tag it [' + esc(uid) + "]" + (name ? "[" + esc(name) + "]" : "") + "</span>";
+    const sha = bound && bound.sha ? '<span class="sha" title="' + esc(bound.sha) + '">frozen ' + esc(bound.sha.slice(0, 12)) + "…</span>" : '<span class="sha">unstamped</span>';
+    const records = bound && bound.records ? '<span class="note">' + bound.records + " run(s)</span>" : "";
+    return '<div class="binding-row"><span class="name">' + (name ? esc(name) : "(default)") + "</span>" + sha + locHtml + records
+      + '<button data-unbind="' + i + '" title="remove binding">✕</button></div>';
+  }).join("") : "";
+
+  pane.innerHTML = `
+    <div class="headline">
+      <h2>${esc(uid)}</h2>
+      <span class="chip st-${it.status}"><span class="ball"></span>${it.status.replace(/_/g, " ")}</span>
+      ${reviewedBadge}
+      <span class="filepath mono">${esc(it.path)}</span>
+    </div>
+    ${it.problems.length ? '<div class="problems">' + it.problems.map((p) => "<div>" + esc(p) + "</div>").join("") + "</div>" : ""}
+    <div class="field"><label>Header</label><input type="text" id="f-header" value="${esc(e.header)}"></div>
+    <div class="field"><label>Description</label>
+      <textarea id="f-description" spellcheck="false">${esc(e.description)}</textarea>
+      <div class="note">${isLeaf ? "test-bearing leaf: exactly one “shall”" : "branch: prose scope statement"}</div>
+    </div>
+    <div class="field"><label>Parents</label>
+      <div class="parents-list">
+        ${e.parents.map((p, i) => '<span class="parent-chip"><a data-goto="' + esc(p) + '">' + esc(p) + '</a><button data-unparent="' + i + '" title="unlink">✕</button></span>').join("")}
+        <input type="text" id="f-add-parent" class="mono" list="uid-list" placeholder="add parent…" style="width:11rem">
+      </div>
+    </div>
+    <div class="field"><label>Order</label><input type="number" id="f-order" value="${esc(e.order)}" style="width:7rem">
+      <span class="note">presentation-only sibling sort key; excluded from the review stamp</span></div>
+    <div class="field"><label>Tests</label>
+      ${it.children.length ? '<div class="note">branch — reviewed through its children</div>' : `
+        <label style="display:inline-flex;gap:.4em;text-transform:none;align-items:center">
+          <input type="checkbox" id="f-isleaf" ${isLeaf ? "checked" : ""}> carries a <code>tests</code> key (leaf)</label>
+        ${isLeaf ? bindingRows + '<div class="binding-row"><input type="text" id="f-add-binding" placeholder="binding name (empty = default)" class="mono" style="width:14rem"><button id="add-binding-btn">add binding</button></div>' : ""}
+      `}
+    </div>
+    <div class="actions">
+      <button class="primary" id="save-btn" ${state.edit ? "" : "disabled"}>Save</button>
+      <button id="revert-btn" ${state.edit ? "" : "disabled"}>Revert</button>
+      <span class="spacer"></span>
+      ${isLeaf && !it.children.length ? '<button id="review-btn" title="run the bound tests, then stamp routine shas + reviewed">Review (run tests + stamp)</button>' : ""}
+      ${it.reviewed ? '<button id="clear-btn" class="danger" title="drop the reviewed stamp">Clear review</button>' : ""}
+      <button id="child-btn">New child</button>
+      ${it.children.length ? "" : '<button id="delete-btn" class="danger">Delete</button>'}
+    </div>
+    ${state.edit && it.reviewed ? '<div class="note">⚠ saving substance edits makes the review stamp stale; commit the edit, then re-review (two-commit rule).</div>' : ""}
+    <div class="field"><label>Children</label><div class="kids">${kids}</div></div>
+    ${(it.tests || []).length ? '<div class="field"><label>Coverage runs</label>' + it.tests.map((t) =>
+      '<details class="testrec"><summary><span class="chip st-' + (t.passed ? "test_passed" : "test_failed") + '"><span class="ball"></span>' + (t.passed ? "passed" : "failed") + "</span> <span class='mono'>" + esc(t.name) + "</span></summary><pre>" + esc(t.log || "(no captured output)") + "</pre></details>").join("") + "</div>" : ""}
+  `;
+  wireDetail(it);
+}
+
+function wireDetail(it) {
+  $("f-header").addEventListener("input", () => { startEdit().header = $("f-header").value; refreshDirty(); });
+  $("f-description").addEventListener("input", () => { startEdit().description = $("f-description").value; refreshDirty(); });
+  $("f-order").addEventListener("input", () => { startEdit().order = Number($("f-order").value || 0); refreshDirty(); });
+  const addParent = $("f-add-parent");
+  addParent.addEventListener("change", () => {
+    const value = addParent.value.trim();
+    if (!value) return;
+    if (!state.model.items[value]) { toast(`unknown UID '${value}'`); return; }
+    const e = startEdit();
+    if (!e.parents.includes(value)) e.parents.push(value);
+    renderDetail();
+  });
+  document.querySelectorAll("[data-unparent]").forEach((b) => b.addEventListener("click", () => {
+    startEdit().parents.splice(Number(b.dataset.unparent), 1); renderDetail();
+  }));
+  const isleaf = $("f-isleaf");
+  if (isleaf) isleaf.addEventListener("change", () => {
+    const e = startEdit();
+    e.tests = isleaf.checked ? (it.is_leaf ? it.bindings.map((b) => b.name) : [""]) : null;
+    renderDetail();
+  });
+  document.querySelectorAll("[data-unbind]").forEach((b) => b.addEventListener("click", () => {
+    startEdit().tests.splice(Number(b.dataset.unbind), 1); renderDetail();
+  }));
+  const addBindingBtn = $("add-binding-btn");
+  if (addBindingBtn) addBindingBtn.addEventListener("click", () => {
+    const input = $("f-add-binding"), name = input.value.trim();
+    const e = startEdit();
+    if (e.tests.includes(name)) { toast(`binding '${name}' already present`); return; }
+    if (name && !/^[a-z0-9_]+$/.test(name)) { toast("binding names are [a-z0-9_]+"); return; }
+    if ((name === "" && e.tests.length) || e.tests.includes("")) { toast("the default binding stands alone; name all bindings to have several"); return; }
+    e.tests.push(name); renderDetail();
+  });
+  document.querySelectorAll("[data-goto]").forEach((a) => a.addEventListener("click", () => select(a.dataset.goto)));
+  $("save-btn").addEventListener("click", saveItem);
+  $("revert-btn").addEventListener("click", () => { state.edit = null; renderDetail(); });
+  const review = $("review-btn"); if (review) review.addEventListener("click", () => run("review", [state.selected]));
+  const clear = $("clear-btn"); if (clear) clear.addEventListener("click", () => {
+    if (confirm(`Drop the reviewed stamp of ${state.selected}? Bound routine shas revert to ~.`)) run("clear", [state.selected]);
+  });
+  $("child-btn").addEventListener("click", () => openNewDialog(state.selected));
+  const del = $("delete-btn"); if (del) del.addEventListener("click", async () => {
+    if (!confirm(`Delete ${state.selected} (${it.path})?`)) return;
+    try { await api(`/api/delete/${state.selected}`, {}); state.selected = null; state.edit = null; await refresh(); }
+    catch (err) { toast(err.message); }
+  });
+  function refreshDirty() { $("save-btn").disabled = !state.edit; $("revert-btn").disabled = !state.edit; }
+  refreshDirty();
+}
+
+async function saveItem() {
+  if (!state.edit) return;
+  try {
+    const result = await api(`/api/item/${state.selected}`, state.edit);
+    state.edit = null;
+    await refresh();
+    if (result.stamp_fresh === false) toast("saved — review stamp is now stale; re-review when the edit is committed", "info");
+  } catch (err) { toast(err.message); }
+}
+
+// ---- runs (review / clear) ----------------------------------------------
+
+async function run(action, uids) {
+  if (state.edit && !confirm("Discard unsaved edits and run?")) return;
+  state.edit = null;
+  try {
+    const { job } = await api("/api/run", { action, uids });
+    attachJob(job, `${action} ${uids.join(" ")}`);
+  } catch (err) { toast(err.message); }
+}
+
+function attachJob(id, label) {
+  $("console").classList.add("open");
+  $("job-out").textContent = "";
+  $("job-argv").textContent = label;
+  $("job-state").innerHTML = '<span class="spinner"></span> <span class="status-run">running</span>';
+  const es = new EventSource(`/api/job/${id}/events?token=${encodeURIComponent(TOKEN)}`);
+  state.job = { id, es };
+  es.onmessage = (event) => {
+    const out = $("job-out");
+    out.textContent += event.data + "\n";
+    out.scrollTop = out.scrollHeight;
+  };
+  es.addEventListener("done", async (event) => {
+    es.close();
+    state.job = null;
+    const rc = event.data;
+    $("job-state").innerHTML = rc === "0" ? '<span class="status-ok">✓ exit 0</span>' : `<span class="status-fail">✗ exit ${esc(rc)}</span>`;
+    await refresh();
+  });
+  es.onerror = () => { if (state.job && state.job.id === id) { es.close(); state.job = null; $("job-state").innerHTML = '<span class="status-fail">stream lost</span>'; } };
+}
+
+// ---- new item ------------------------------------------------------------
+
+function openNewDialog(parent) {
+  $("new-uid").value = "";
+  $("new-parent").value = parent || state.selected || (state.model ? state.model.roots[0] : "") || "";
+  const it = parent && state.model.items[parent];
+  $("new-dir").value = it ? it.folder : "req";
+  $("new-kind").value = "leaf";
+  $("new-order").value = "0";
+  $("new-dialog").showModal();
+}
+
+async function createItem() {
+  try {
+    const result = await api("/api/new", {
+      uid: $("new-uid").value.trim(),
+      parents: [$("new-parent").value.trim()].filter(Boolean),
+      dir: $("new-dir").value.trim(),
+      kind: $("new-kind").value,
+      order: Number($("new-order").value || 0),
+    });
+    $("new-dialog").close();
+    await refresh();
+    select($("new-uid").value.trim());
+    toast(`created ${result.path}`, "info");
+  } catch (err) { toast(err.message); }
+}
+
+// ---- refresh loop --------------------------------------------------------
+
+function select(uid) {
+  if (state.edit && uid !== state.selected && !confirm("Discard unsaved edits?")) return;
+  if (uid !== state.selected) state.edit = null;
+  state.selected = uid;
+  renderTree(); renderDetail();
+  const row = document.querySelector(`.node-row[data-uid="${CSS.escape(uid)}"]`);
+  if (row) row.scrollIntoView({ block: "nearest" });
+}
+
+async function refresh() {
+  try {
+    state.model = await api("/api/tree");
+  } catch (err) { toast(err.message); return; }
+  $("stale-banner").hidden = true;
+  if (state.selected && !state.model.items[state.selected]) { state.selected = null; state.edit = null; }
+  renderTree(); renderDetail();
+}
+
+async function poll() {
+  if (document.hidden || !state.model) return;
+  try {
+    const { fingerprint } = await api("/api/fingerprint");
+    if (fingerprint === state.model.fingerprint) return;
+    if (state.edit) { $("stale-banner").hidden = false; return; }
+    await refresh();
+  } catch (err) { /* server gone; the next interaction reports it */ }
+}
+
+// ---- events --------------------------------------------------------------
+
+$("tree").addEventListener("click", (event) => {
+  const twist = event.target.closest(".twist");
+  const row = event.target.closest(".node-row");
+  if (twist && row) {
+    const uid = twist.dataset.twist;
+    state.expanded.has(uid) ? state.expanded.delete(uid) : state.expanded.add(uid);
+    sessionStorage.setItem("req-ui-expanded", JSON.stringify([...state.expanded]));
+    renderTree();
+    event.stopPropagation();
+    return;
+  }
+  if (row) select(row.dataset.uid);
+});
+$("counts").addEventListener("click", (event) => {
+  const chip = event.target.closest("[data-status]");
+  if (!chip) return;
+  const s = chip.dataset.status;
+  state.statusFilter.has(s) ? state.statusFilter.delete(s) : state.statusFilter.add(s);
+  renderTree();
+});
+$("filter").addEventListener("input", () => { state.filter = $("filter").value.trim(); renderTree(); });
+$("new-btn").addEventListener("click", () => openNewDialog(null));
+$("new-create").addEventListener("click", createItem);
+$("new-cancel").addEventListener("click", () => $("new-dialog").close());
+$("console-close").addEventListener("click", () => $("console").classList.remove("open"));
+$("reload-link").addEventListener("click", (event) => { event.preventDefault(); state.edit = null; refresh(); });
+document.addEventListener("keydown", (event) => {
+  if (event.key === "/" && document.activeElement.tagName !== "INPUT" && document.activeElement.tagName !== "TEXTAREA") {
+    event.preventDefault(); $("filter").focus();
+  }
+  if ((event.key === "ArrowDown" || event.key === "ArrowUp") && document.activeElement.tagName !== "INPUT" && document.activeElement.tagName !== "TEXTAREA") {
+    const rows = [...document.querySelectorAll(".node-row")];
+    if (!rows.length) return;
+    const index = rows.findIndex((r) => r.dataset.uid === state.selected);
+    const next = rows[Math.max(0, Math.min(rows.length - 1, index + (event.key === "ArrowDown" ? 1 : -1)))];
+    if (next) { select(next.dataset.uid); event.preventDefault(); }
+  }
+});
+window.addEventListener("beforeunload", (event) => { if (state.edit) event.preventDefault(); });
+
+if (!TOKEN) {
+  document.body.innerHTML = '<div class="empty"><h2>Missing session token</h2><p>Open the exact URL printed by <code>req ui</code> (it carries <code>?token=…</code>).</p></div>';
+} else {
+  refresh().then(() => {
+    if (state.model) for (const uid of state.model.roots) state.expanded.add(uid);
+    renderTree();
+  });
+  setInterval(poll, 2000);
+}
+</script>
+</body>
+</html>
