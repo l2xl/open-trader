@@ -1,0 +1,10 @@
+header: Hummingbot compatibility layer
+description: |
+  Format compatibility (not binary compatibility) with Hummingbot: Python strategy base class
+  mirroring StrategyV2Base/ControllerBase lifecycle hooks, candle-series accessors matching
+  CandlesBase's column names, order/connector field names tracking OrderType/TradeType/
+  PositionAction and BudgetChecker semantics, and a ManagedTrigger accepting a
+  TripleBarrierConfig-shaped input, staged in that order. See
+  req/trading_api_design_2026-08-30.md section 3.6.
+parents: [TRADE]
+order: 60

@@ -1,5 +1,11 @@
-header: Tarding API
+header: Trading API
 description: |
-  API used to setup orders
+  Universal trading API and sandbox: market data exposed as indicator series synced to candle
+  close, an object-oriented trigger model (boolean, computational-geometry and linear-programming
+  evaluators), a unified cross-exchange order-execution connector, a strategy runtime that runs
+  bots as Python plugins or C++ shared libraries, a backtesting engine reusing the same strategy
+  code as live trading, and a Hummingbot-format-compatible shim. See
+  req/trading_api_design_2026-08-30.md for the full design and rationale; decomposed into the six
+  branches under req/engine/trade/.
 parents: [ENGINE]
 order: 20

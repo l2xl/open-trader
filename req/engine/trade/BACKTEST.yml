@@ -1,0 +1,9 @@
+header: Strategy backtesting engine
+description: |
+  Runs the identical indicator/trigger/strategy code against historical data by injecting a
+  historical-replay IExchangeConnector (fed from BuoyCandleQuotes replay) and a fill/slippage
+  simulator in place of the live connector and clock, matching the live/backtest parity model
+  used by Hummingbot, Freqtrade, Backtrader and NautilusTrader. See
+  req/trading_api_design_2026-08-30.md section 3.5.
+parents: [TRADE]
+order: 50

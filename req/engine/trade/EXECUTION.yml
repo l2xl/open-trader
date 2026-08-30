@@ -1,0 +1,10 @@
+header: Unified order execution
+description: |
+  A single IExchangeConnector interface generalizing the existing ByBit private order pipeline
+  (src/data/bybit) into a cross-exchange, CCXT-inspired unified surface: place/cancel order,
+  balances, order feed, instrument precision/limits, with currency<int64_t> fixed-point values and
+  a params escape hatch for exchange-specific fields. Pre-trade validation resizes/rejects order
+  intents against instrument tick/lot size and available balance. See
+  req/trading_api_design_2026-08-30.md section 3.3.
+parents: [TRADE]
+order: 30
