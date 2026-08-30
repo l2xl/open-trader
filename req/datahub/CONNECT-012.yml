@@ -3,5 +3,5 @@ description: |
   A failure to resolve the target host shall be delivered to the error handler as a domain_error exception instead of throwing at the call site.
 parents: [CONNECT-010]
 order: 20
-tests: 6feab4370f5308467615513c5d6f62b94eb94bd1772f493616ff35324b093a6e
-reviewed: 24e88b2bf229105b31dc76820c7c7a499825980254d40d2d423566bf1705f349
+tests: 7750cbd0b1fcdab443a61c8d4ac9441a32027a294d15224a5e0b09ad72fd644f
+reviewed: 1bc33c3531109d90b0fcba53d4e13aeb57910973d85b5f365bc0b97ce83d7bac

@@ -3,5 +3,5 @@ description: |
   websock_connection shall establish a TLS websocket session, send a subscription request and deliver received stream messages to the data handler.
 parents: [CONNECT-020]
 order: 10
-tests: 8d6b484b5e9bb36eb61678a0092053002d5a551534d84ed73562f198dbb9f330
-reviewed: d7d7883a33634bd889dfe1f6e4d9425562f144722e458a6f4dbc190a34b4f8a5
+tests: a93ec57311919ca4bc0df7222e60a98d24010c0d6785ef5f25404225d41403ef
+reviewed: 45e50ad236fbd641ad0f44bcb8c97b60ae8110aff1b80449e59210518f22c9ba
