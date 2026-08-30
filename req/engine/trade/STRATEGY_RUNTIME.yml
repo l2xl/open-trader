@@ -1,9 +1,0 @@
-header: Strategy runtime & plugin sandbox
-description: |
-  Runs a trading bot as either an in-process C++ shared-library plugin behind a versioned C ABI
-  (dlopen, LLVM-pass-plugin style), or as a sandboxed per-bot OS process (Python or C++) speaking
-  one language-neutral schema over a local socket, isolating a misbehaving or crashed bot from the
-  host engine. Config is schema-validated on both sides from a single source of truth. See
-  req/trading_api_design_2026-08-30.md section 3.4.
-parents: [TRADE]
-order: 40

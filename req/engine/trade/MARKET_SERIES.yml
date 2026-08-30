@@ -1,9 +1,0 @@
-header: Market data & indicator series
-description: |
-  Indicator values exposed as time series synced 1:1 to candle close, as parameterized
-  object-oriented indicators (IIndicator) wired onto the existing BuoyCandleQuotes candle series
-  via the datahub subscription idiom, rather than one-off DataFrame columns. Includes
-  multi-timeframe resampling that never exposes an unclosed higher-timeframe candle. See
-  req/trading_api_design_2026-08-30.md section 3.1.
-parents: [TRADE]
-order: 10
