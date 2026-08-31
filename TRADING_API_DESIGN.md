@@ -9,6 +9,13 @@ below. Where this design attaches to the requirements tree — a new top-level b
 `ENGINE` child, or something else — is still open. This file stands on its own until that's
 settled.
 
+**Terminology.** Throughout this document "sandbox" means what the original brief meant by it:
+**an environment to execute strategy/bot code against historical data** — i.e. the backtesting
+engine, §3.5. It does *not* mean process/security isolation of plugin code. The separate concern
+of how a bot is packaged and loaded (in-process C++ library vs. a separate OS process, crash
+containment, etc.) is covered in §3.4 and is deliberately never called "sandbox" below, to keep
+the two apart.
+
 # 1. Prior art survey
 
 Six mature open-source platforms and two proprietary-but-documented ones were read at source
@@ -19,7 +26,7 @@ level (not just marketing docs) to ground this design. Table first, detail after
 | **Hummingbot** | none — inline `pandas_ta` calls on a DataFrame per tick | imperative Python in `on_tick`/`determine_executor_actions`, one declarative exception (`TripleBarrierConfig`) | `ExchangePyBase` (spot) / `PerpetualDerivativePyBase` (derivatives); execution class + separate `*_api_order_book_data_source.py` class per connector | none — single in-process asyncio program; non-Python (DEX) bridged via a separate **Gateway** REST+mTLS service | same `ControllerBase` object driven live and in `BacktestingEngineBase`; only *executors* are swapped for per-type simulators |
 | **Freqtrade** | none — inline `talib`/`pandas_ta` columns | boolean `DataFrame.loc[...] = 1` masks (`enter_long`/`exit_long`) | one concrete `Exchange` class wrapping `ccxt`/`ccxt.pro` directly, no abstract interface | none — strategies are imported Python classes (`StrategyResolver`), FreqAI models are the only "plugin" boundary | `populate_indicators/entry/exit` run byte-identical in live and `Backtesting.backtest()` |
 | **Backtrader** | **`Indicator`** is a first-class stateful object: `lines = (...)`, `params = (...)`, tracks its own bar index in lockstep with its data feed, composes (`CrossOver(a, b)`) | `Strategy.next()` reads indicator `.lines` values imperatively | `Store`/`Broker`/`Feed` triplet per venue; swapping backtest→live = swapping the triplet, `Strategy` code unchanged | none — in-process | identical `Strategy` object; only the `Store`/`Broker`/`Feed` triplet changes |
-| **NautilusTrader** | **`Indicator`** trait/base (`handle_bar`/`handle_quote_tick`/`handle_trade_tick`, `.value`, `.initialized`), registered onto a bar/tick stream via `register_indicator_for_bars()` | imperative in `Actor`/`Strategy` callbacks | `InstrumentProvider` + `DataClient` + `ExecutionClient` per adapter | none in-process, but architecture is deliberately single-threaded-kernel + message bus so the *same* `Strategy` binary runs backtest/sandbox/live | same `Strategy` object across environment contexts; only injected clients change |
+| **NautilusTrader** | **`Indicator`** trait/base (`handle_bar`/`handle_quote_tick`/`handle_trade_tick`, `.value`, `.initialized`), registered onto a bar/tick stream via `register_indicator_for_bars()` | imperative in `Actor`/`Strategy` callbacks | `InstrumentProvider` + `DataClient` + `ExecutionClient` per adapter | none in-process, but architecture is deliberately single-threaded-kernel + message bus so the *same* `Strategy` binary runs unchanged across environment contexts | same `Strategy` object across backtest, paper-trading and live environment contexts; only injected clients change |
 | **QuantConnect LEAN** | `IndicatorBase<T>` (`ComputeNextValue`, `Current`, `IsReady`), fed by `IDataConsolidator` (time or non-time bars) | **Algorithm Framework**: `IAlphaModel` → `IPortfolioConstructionModel` (some built-ins are literal QP: `MeanVarianceOptimizationPortfolioConstructionModel`) → `IExecutionModel` → `IRiskManagementModel` | `IBrokerageModel` (rules) + `IBrokerage` (connectivity) | Python hosted **inside** the C# engine via pythonnet (`AlgorithmPythonWrapper` wraps a Python object to satisfy the C# `IAlgorithm` interface) | same algorithm object; brokerage/fill/slippage models swapped |
 | **CCXT** | n/a (data library only) | n/a | one unified method surface (`fetchOHLCV`, `fetchOrderBook`, `createOrder`, …) per exchange class, `params={}` escape hatch for exchange-specific fields | n/a | n/a |
 | **TradingView Pine Script** | `series` type: one value per bar, `ta.*` built-ins carry their own recursive state | `strategy.entry(..., when=cond)`, `alertcondition(cond, ...)` | n/a (closed platform) | n/a | historical bars execute once each; the *realtime* bar re-executes per tick with automatic rollback of non-`var`/`varip` state between ticks — this is the "sync to candle close vs. live tick" boundary the user is describing |
@@ -70,11 +77,13 @@ that turn indicator/state vectors into a sized order rather than a bare boolean.
 ```
 
 Everything below the dashed line already exists (`datahub`, `connect`, `src/data/bybit`,
-`BuoyCandleQuotes`). The new work is the four boxes above it, plus a backtesting mode (an
-alternate, historical-data-fed implementation of the same `ExchangeConnector`/clock contract) and
-a Hummingbot compatibility shim (so existing Hummingbot scripts/controllers port with minimal
-edits). This keeps the project's layering rule intact: application/strategy code depends on the
-new trading-library layer, which depends on `datahub`/`connect`/`engine`, never the reverse.
+`BuoyCandleQuotes`). The new work is the four boxes above it, plus the historical-data **sandbox**
+(§3.5 — an alternate, historical-candle-fed implementation of the same `ExchangeConnector`/clock
+contract, letting a bot run against past data before it ever touches a live connector or real
+capital) and a Hummingbot compatibility shim (so existing Hummingbot scripts/controllers port with
+minimal edits). This keeps the project's layering rule intact: application/strategy code depends
+on the new trading-library layer, which depends on `datahub`/`connect`/`engine`, never the
+reverse.
 
 Namespace: `scratcher::trading` (siblings of the existing `scratcher::data`, `scratcher::cex`
 engine code), with a `scratcher::trading::compat::hummingbot` sub-namespace for §3.6. Naming
@@ -230,11 +239,13 @@ float rounding.
 Each real exchange (ByBit today, others later) implements `IExchangeConnector` by composing its
 existing `data_manager` private pipeline — this is additive over `src/data/bybit`, not a rewrite.
 
-## 3.4 Strategy runtime & plugin sandbox
+## 3.4 Strategy runtime & plugin loading
 
 **Goal**: run a bot as either a **Python plugin** or a **compiled C++ shared library**, matching
 MQL5's proven "compiled Indicator vs. compiled EA, loaded by name" split, informed by the research
-into pybind11/LLVM/go-plugin/Bitwig above. Two tiers, chosen per bot at load time:
+into pybind11/LLVM/go-plugin/Bitwig above. This is a packaging/loading concern, unrelated to §3.5's
+historical-data sandbox — a bot loaded either way here still needs §3.5 to be tested against
+history before it runs live. Two tiers, chosen per bot at load time:
 
 - **Tier A — in-process C++ library plugin** (trusted, latency-sensitive). Loaded via `dlopen` +
   a versioned C ABI, LLVM-pass-plugin style:
@@ -249,7 +260,7 @@ into pybind11/LLVM/go-plugin/Bitwig above. Two tiers, chosen per bot at load tim
   ```
   A version mismatch is rejected outright, exactly as LLVM's `LLVM_PLUGIN_API_VERSION` gate does.
 
-- **Tier B — sandboxed bot process** (default for third-party and all Python bots). Each bot
+- **Tier B — isolated bot process** (default for third-party and all Python bots). Each bot
   instance is its own OS process, talking to the engine over a local Unix-domain-socket using one
   Protobuf schema for the command/event contract (order intents, fills, indicator snapshots) —
   the go-plugin/Bitwig pattern: a misbehaving or crashed bot cannot take the host down, and
@@ -268,22 +279,74 @@ Strategy config is schema-validated on both sides: a Pydantic `BaseModel` for Py
 changes) and a plain aggregate struct (Glaze-reflectable, per the project's C++23 convention) for
 C++ bots — both generated from the same Protobuf/JSON-schema source so the two never drift.
 
-## 3.5 Backtesting engine
+## 3.5 Historical-data sandbox (backtesting engine)
 
-**Goal**: strategy/indicator/trigger code must run **unchanged** in backtest and live — every
-platform surveyed that does this well (Hummingbot's `BacktestingEngineBase`, Freqtrade's
-`Backtesting`, NautilusTrader's environment contexts, Backtrader's `Store`/`Broker`/`Feed` swap)
-achieves it by swapping only the data source and the execution/fill side, never the strategy code.
+**This is the "sandbox to run bots" from the original brief**: a safe environment to execute
+unmodified strategy code against historical data, so a bot is proven out before it ever reaches a
+live connector or risks real capital. It is unrelated to §3.4's plugin-loading/process-isolation
+mechanics, which is about how bot code is packaged and loaded, not about what data it runs
+against — a bot can (and should) run in this historical sandbox regardless of which of §3.4's two
+tiers loaded it.
+
+**Goal**: strategy/indicator/trigger code must run **unchanged** in the sandbox and in live
+trading — every platform surveyed that does this well (Hummingbot's `BacktestingEngineBase`,
+Freqtrade's `Backtesting`, NautilusTrader's environment contexts, Backtrader's
+`Store`/`Broker`/`Feed` swap) achieves it by swapping only the data source and the execution/fill
+side, never the strategy code.
 
 Concretely: a historical `IExchangeConnector` implementation, fed from historical candles via
 `BuoyCandleQuotes` replay instead of live `connect::websock_connection`, plus a fill/slippage
-simulator standing in for Tier A/B's live order feed (mirroring Hummingbot's per-executor
+simulator standing in for the live order feed (mirroring Hummingbot's per-executor
 `*ExecutorSimulator` classes rather than re-running a live async order-state machine against fake
-time). The `Trigger`/`IIndicator` graph and the strategy-runtime plugin boundary are identical in
-both modes — only which `IExchangeConnector` and clock get injected changes, matching
+time). The `Trigger`/`IIndicator` graph and the strategy-runtime plugin boundary (§3.4) are
+identical in both modes — only which `IExchangeConnector` and clock get injected changes, matching
 NautilusTrader's "environment context" framing exactly.
 
 ## 3.6 Hummingbot compatibility layer
+
+### 3.6.1 Hummingbot's trading API surface, for reference
+
+Hummingbot has no single "trading API" class — the calls a strategy actually uses are spread
+across a connector object, a market-data facade, a pre-trade validator, and the strategy/controller
+base classes themselves. Grouped by role (all from `github.com/hummingbot/hummingbot`, `master`):
+
+**Connector (`ExchangeBase`/`ExchangePyBase`) — order entry & account state**
+- `buy(trading_pair, amount, order_type, price=...) -> str` / `sell(trading_pair, amount, order_type, price=...) -> str` — the public order-submission calls a strategy uses directly; both return a locally-generated `order_id` and internally route to:
+- `_place_order(order_id, trading_pair, amount, trade_type, order_type, price, **kwargs) -> Tuple[str, float]` — abstract, implemented per exchange
+- `cancel(trading_pair, order_id)` → `_place_cancel(order_id, tracked_order)` (abstract)
+- `cancel_all(timeout_seconds) -> List[CancellationResult]`
+- `start_tracking_order(...)`, `stop_tracking_order(order_id)`, `restore_tracking_states(saved_states)` — in-flight order bookkeeping across restarts
+- `_update_balances()`, `_update_order_status()`, `_update_trading_fees()` — abstract, driven by background polling loops (`_status_polling_loop`, `_trading_rules_polling_loop`)
+- `_get_fee(base_currency, quote_currency, order_type, order_side, amount, price, is_maker) -> TradeFeeBase`
+- `_create_order_book_data_source()` / `_create_user_stream_data_source()` — abstract factories wiring the connector to its market-data and private-stream classes
+- `_api_get/_post/_put/_delete/_api_request(...)` — generic authenticated REST helpers every connector implementation calls
+- properties: `trading_rules`, `order_books`, `in_flight_orders`, `trading_pairs`
+
+**Market data (`MarketDataProvider`, `CandlesFactory`)**
+- `initialize_candles_feed(config: CandlesConfig)` / `get_candles_feed(config) -> CandlesBase`
+- `get_candles_df(connector_name, trading_pair, interval, max_records) -> pandas.DataFrame` — columns `timestamp, open, high, low, close, volume, quote_asset_volume, n_trades, taker_buy_base_volume, taker_buy_quote_volume`
+- `get_historical_candles_df(...)`
+- `get_order_book(connector_name, trading_pair) -> OrderBook`
+- `get_price_by_type(connector_name, trading_pair, price_type)`, `get_vwap_for_volume(connector_name, trading_pair, is_buy, volume)`
+- `CandlesFactory.get_candle(candles_config, connector=None) -> CandlesBase` — reuses/shares an existing feed's rate-limit budget when a live connector is passed
+
+**Pre-trade validation (`BudgetChecker`, `OrderCandidate`)**
+- `BudgetChecker.adjust_candidates(order_candidates: List[OrderCandidate], all_or_none=True) -> List[OrderCandidate]` — resizes or zeroes each candidate against available balance before it is ever sent to `_place_order`
+- `BudgetChecker.adjust_candidate_and_lock_available_collateral(...)`
+- `OrderCandidate` fields: `trading_pair, order_type, order_side, amount, price`, plus computed `order_collateral`, `percent_fee_collateral`, `fixed_fee_collaterals`
+
+**Strategy/controller lifecycle (`StrategyV2Base`, `ControllerBase`)**
+- `StrategyV2Base.tick(timestamp)` — the actual per-second `Clock` entrypoint, calls `on_tick()`
+- `on_tick()` (user-overridden), `on_stop()`, `format_status() -> str`, `start(clock, timestamp)`, `apply_initial_setting()`
+- `ControllerBase.start()`, `initialize_candles()`, `get_candles_config() -> List[CandlesConfig]`, `control_task()` (calls `update_processed_data()` then `determine_executor_actions()`), `update_processed_data()` (abstract), `determine_executor_actions()` (abstract), `to_format_status()`, `get_custom_info()`
+
+**Executors** — order-lifecycle managers a controller spawns rather than placing raw orders itself: `PositionExecutor` (the `TripleBarrierConfig` stop-loss/take-profit/time-limit manager), `DCAExecutor`, `GridExecutor`, `TWAPExecutor`, `XEMMExecutor`, `OrderExecutor`, `ArbitrageExecutor`, `LPExecutor`.
+
+**Enums/value types** (`hummingbot.core.data_type.common`): `OrderType{MARKET, LIMIT, LIMIT_MAKER, AMM_SWAP, AMM_ADD, AMM_REMOVE}`, `TradeType{BUY, SELL, RANGE}`, `PositionAction{OPEN, CLOSE, NIL}`, `PositionSide{LONG, SHORT, BOTH}`, `PositionMode{HEDGE, ONEWAY}`, `PriceType`.
+
+**Non-Python/DEX bridge**: `GatewayHttpClient` — REST calls over mutual TLS to the separate Node.js **Gateway** service, for on-chain swap/liquidity operations outside the core Python connector surface.
+
+### 3.6.2 Compatibility staging
 
 Full binary compatibility (loading an unmodified Hummingbot `.py` script) would require either
 depending on Hummingbot's own package or reimplementing its entire class surface
@@ -337,10 +400,10 @@ or `Decimal`-typed prices (Open Trader keeps `currency<int64_t>` end to end per
    `GeometricEvaluator`, then `LinearProgramEvaluator` behind a chosen LP/QP backend.
 3. Unified execution: `IExchangeConnector` extracted from the existing ByBit private pipeline (no
    new exchange required to land this phase).
-4. Backtesting: historical replay `IExchangeConnector` + fill simulator, reusing steps 1–3
-   unchanged.
+4. Historical-data sandbox: historical replay `IExchangeConnector` + fill simulator, reusing steps
+   1–3 unchanged.
 5. Strategy runtime: Tier A (C++ ABI) first (stays entirely in-process, no IPC to design yet),
-   then Tier B (sandboxed process + schema) once the wire contract is settled by steps 1–4.
+   then Tier B (isolated process + schema) once the wire contract is settled by steps 1–4.
 6. Hummingbot compatibility: layered on top once steps 1–5 are stable, in the four sub-stages of
    §3.6.
 
@@ -371,4 +434,4 @@ Pine Script: tradingview.com/pine-script-docs (Execution model, `ta.*`, `request
 MQL5: mql5.com/en/docs (`customind/setindexbuffer`, `series/copybuffer`) and mql5.com/en/articles/19625 (R²-gated trendline breakout), mql5.com/en/articles/43.
 Geometry/pattern precedent: `github.com/ednunezg/pytrendline`; `ta-lib.github.io/ta-lib-python` pattern-recognition group; tradingmathematically.com S/R detection.
 LP/QP precedent: `github.com/robertmartin8/PyPortfolioOpt` (`GeneralEfficientFrontier.rst`), cvxpy.org QP example, Almgren-Chriss (`smallake.kr/optliq.pdf`).
-Plugin sandboxing: pybind11.readthedocs.io (embedding, subinterpreters), `llvm.org/doxygen/structllvm_1_1PassPluginLibraryInfo.html`, `github.com/hashicorp/go-plugin` (`docs/internals.md`), bitwig.com crash-protection article, capnproto.org.
+Plugin loading & process isolation (§3.4, unrelated to the historical-data sandbox of §3.5): pybind11.readthedocs.io (embedding, subinterpreters), `llvm.org/doxygen/structllvm_1_1PassPluginLibraryInfo.html`, `github.com/hashicorp/go-plugin` (`docs/internals.md`), bitwig.com crash-protection article, capnproto.org.
