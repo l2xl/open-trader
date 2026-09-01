@@ -45,14 +45,15 @@ TEST_CASE("Per-side deviations are volume-weighted RMS around the waist", "[BUOY
     CHECK(candle.sigma_minus == price_t(1000, 2));  // sqrt((2*100^2)/2) = 10.00 exact
 }
 
-TEST_CASE("Trades classify against the running mean at ingestion time", "[BUOY-009]")
+TEST_CASE("Trades classify against the final mean whatever their ingestion-time side", "[BUOY-009]")
 {
     BuoyCandleQuotes quotes(1000);
 
-    // Running means: 100.00, 150.00, 145.00, 118.00. The trade (140.00, 2) is classified lower
-    // against the running mean 150.00 although 140.00 lies above the final mean 118.00 — the
-    // approximation sanctioned by BUOY_CANDLE.md section 3. Final-mean classification would put
-    // it upper and yield different deviations, so the expectations pin the running rule.
+    // Running means: 100.00, 150.00, 145.00, 118.00. The trade (140.00, 2) arrives BELOW the
+    // running mean 150.00 but lies above the final mean 118.00 — the retained volume-by-price
+    // profile re-splits it upper when the deviations are derived, so the expectations pin the
+    // final-mean rule of BUOY_CANDLE.md section 3: upper {200.00 x1, 140.00 x2}, lower
+    // {100.00 x7}.
     std::vector<MockTrade> trades{ mk(0, 10000, 1), mk(100, 20000, 1), mk(200, 14000, 2), mk(300, 10000, 6) };
     const auto last_price = quotes.AppendTrades(trades, price_t(0, 2));
     quotes.AdvanceTo(1000, last_price);
@@ -60,8 +61,8 @@ TEST_CASE("Trades classify against the running mean at ingestion time", "[BUOY-0
     REQUIRE(quotes.quotes().size() == 1);
     const auto candle = quotes.quotes().front();
     CHECK(candle.mean == price_t(11800, 2));
-    CHECK(candle.sigma_plus == price_t(5936, 2));   // upper {100.00 x1, 200.00 x1} around 118.00: sqrt(3524) = 59.36
-    CHECK(candle.sigma_minus == price_t(1907, 2));  // lower {140.00 x2, 100.00 x6} around 118.00: sqrt(364) = 19.07
+    CHECK(candle.sigma_plus == price_t(5063, 2));   // upper {200.00 x1, 140.00 x2} around 118.00: isqrt(25640000 scaled) = 50.63
+    CHECK(candle.sigma_minus == price_t(1800, 2));  // lower {100.00 x7} around 118.00: 18.00 exact
 }
 
 TEST_CASE("Deviation floor guards empty and single-price sides", "[BUOY-010]")
@@ -77,38 +78,40 @@ TEST_CASE("Deviation floor guards empty and single-price sides", "[BUOY-010]")
         CHECK(quotes.quotes().front().sigma_minus == price_t(1, 2));
     }
 
-    SECTION("one-sided period floors the empty side only") {
+    SECTION("lone-trade period floors both sides") {
         BuoyCandleQuotes quotes(1000);
-        // Running means 100.00, 105.00, 105.00: every trade classifies upper, the lower side
-        // stays empty.
-        std::vector<MockTrade> trades{ mk(0, 10000, 1), mk(100, 11000, 1), mk(200, 10500, 2) };
+        // One trade: the upper side holds it at zero deviation (p == mu by construction) and
+        // the lower side is empty — the two floor clauses in one period. Under the final-mean
+        // split these are the only floored shapes a traded period can take: the VWAP identity
+        // puts spread on both sides of the mean whenever prices differ at all.
+        std::vector<MockTrade> trades{ mk(0, 10500, 3) };
         const auto last_price = quotes.AppendTrades(trades, price_t(0, 2));
         quotes.AdvanceTo(1000, last_price);
 
         REQUIRE(quotes.quotes().size() == 1);
-        CHECK(quotes.quotes().front().sigma_plus == price_t(353, 2));  // sqrt((25 + 25 + 0)/4 scaled) = 3.53
+        CHECK(quotes.quotes().front().sigma_plus == price_t(1, 2));
         CHECK(quotes.quotes().front().sigma_minus == price_t(1, 2));
     }
 }
 
-TEST_CASE("Period close and Reset zero the per-side moment accumulators", "[BUOY-011]")
+TEST_CASE("Period close and Reset clear the retained trade profile", "[BUOY-011]")
 {
     BuoyCandleQuotes quotes(1000);
 
-    // Period [0,1000) has spread (sigma_plus 50.00); period [1000,2000) is single-price and
+    // Period [0,1000) has spread (both sigmas 50.00); period [1000,2000) is single-price and
     // must not inherit any of it.
     std::vector<MockTrade> trades{ mk(0, 10000, 1), mk(100, 20000, 1), mk(1000, 15000, 4) };
     const auto last_price = quotes.AppendTrades(trades, price_t(0, 2));
     quotes.AdvanceTo(2000, last_price);
 
     REQUIRE(quotes.quotes().size() == 2);
-    CHECK(quotes.quotes()[0].sigma_plus == price_t(5000, 2));  // upper {100.00, 200.00} around 150.00
-    CHECK(quotes.quotes()[0].sigma_minus == price_t(1, 2));
+    CHECK(quotes.quotes()[0].sigma_plus == price_t(5000, 2));   // upper {200.00} around 150.00
+    CHECK(quotes.quotes()[0].sigma_minus == price_t(5000, 2));  // lower {100.00} around 150.00
     CHECK(quotes.quotes()[1].sigma_plus == price_t(1, 2));
     CHECK(quotes.quotes()[1].sigma_minus == price_t(1, 2));
 
-    // Reset with DIRTY accumulators: no period close in between, the active candle still
-    // carries the spread, so only the Reset path can zero the moments before the rebuild.
+    // Reset with a DIRTY profile: no period close in between, the active candle still
+    // carries the spread, so only the Reset path can clear the profile before the rebuild.
     BuoyCandleQuotes rebuilt(1000);
     std::vector<MockTrade> spread{ mk(0, 10000, 1), mk(100, 20000, 1) };
     rebuilt.AppendTrades(spread, price_t(0, 2));
@@ -146,10 +149,9 @@ TEST_CASE("Wire-scale moment accumulation keeps deviations precise", "[BUOY-013]
     BuoyCandleQuotes quotes(1000);
 
     // BTC-scale wire values: prices 100000.00000 and 100010.00000 (raw 1e10 at 5 decimals),
-    // sizes 100000.000 (raw 1e8 at 3 decimals). Even origin-shifted, the second moment of the
-    // 10.0-wide spread is v*d^2 = 1e8 * (1e6)^2 = 1e20 and the recentred numerator 5e19 — both
-    // beyond uint64 (~1.8e19), so only extended-integer accumulation yields the exact 5.00000
-    // deviation around the mean 100005.00000 (the unshifted moment would need ~1e28).
+    // sizes 100000.000 (raw 1e8 at 3 decimals). The per-side second moment around the mean is
+    // v*d^2 = 1e8 * (5e5)^2 = 2.5e19 — beyond uint64 (~1.8e19), so only extended-integer
+    // accumulation yields the exact 5.00000 deviation on each side of the mean 100005.00000.
     std::vector<MockTrade> trades{
         MockTrade{ time_point{} + milliseconds(0),   price_t(10000000000ull, 5), price_t(100000000ull, 3) },
         MockTrade{ time_point{} + milliseconds(100), price_t(10001000000ull, 5), price_t(100000000ull, 3) },
@@ -160,6 +162,86 @@ TEST_CASE("Wire-scale moment accumulation keeps deviations precise", "[BUOY-013]
     REQUIRE(quotes.quotes().size() == 1);
     const auto candle = quotes.quotes().front();
     CHECK(candle.mean.raw() == 10000500000ull);
-    CHECK(candle.sigma_plus == price_t(500000, 5));  // 5.00000 exact
-    CHECK(candle.sigma_minus == price_t(1, 5));
+    CHECK(candle.sigma_plus == price_t(500000, 5));   // 5.00000 exact
+    CHECK(candle.sigma_minus == price_t(500000, 5));  // the symmetric two-trade split puts one trade each side
+}
+
+// Eleven equal-size trades stepping 1.00 per tick across one period: 100.00 -> 110.00
+// rising, or 110.00 -> 100.00 falling. Every running mean is exact (no truncation), the
+// final mean is 105.00 either way, and by BUOY_CANDLE.md section 3 the two sides around
+// that waist hold real spread: sigma_minus = RMS{100..104} = 3.31, sigma_plus =
+// RMS{105..110} = 3.02 for both directions. The regime is NORMAL (waist mid-range), so
+// the notation demands a two-sided bell.
+std::vector<MockTrade> monotonic_period(bool rising)
+{
+    std::vector<MockTrade> trades;
+    for (uint64_t k = 0; k <= 10; ++k)
+        trades.push_back(mk(static_cast<int64_t>(k * 80), rising ? 10000 + k * 100 : 11000 - k * 100, 1));
+    return trades;
+}
+
+BuoyCandleQuotes::candle_t close_single_period(const std::vector<MockTrade>& trades)
+{
+    BuoyCandleQuotes quotes(1000);
+    const auto last_price = quotes.AppendTrades(trades, price_t(0, 2));
+    quotes.AdvanceTo(1000, last_price);
+    REQUIRE(quotes.quotes().size() == 1);
+    return quotes.quotes().front();
+}
+
+TEST_CASE("Monotonic rising period keeps its lower half-bell weighted", "[buoy][monotonic]")
+{
+    // Reproduces the live-chart artefact: during a one-directional (rising) period the
+    // ingestion-time running mean lags below every incoming trade, so ALL volume
+    // classifies upper. The lower side stays empty, sigma_minus collapses to the
+    // one-raw-unit floor and its wall renders at zero width everywhere — the buoy's
+    // bottom half degrades to a bare spine while the upper sigma absorbs the ENTIRE
+    // two-sided spread and keeps full weight.
+    const auto candle = close_single_period(monotonic_period(true));
+
+    REQUIRE(candle.mean == price_t(10500, 2));
+    REQUIRE(candle.min == price_t(10000, 2));
+    REQUIRE(candle.max == price_t(11000, 2));
+    REQUIRE(candle.Classify() == BuoyRegime::NORMAL);  // mid-range waist: a two-sided bell is demanded
+
+    INFO("sigma_minus raw = " << candle.sigma_minus.raw_at(2) << ", sigma_plus raw = " << candle.sigma_plus.raw_at(2));
+
+    // Section 3 contract: the five trades below the 105.00 waist spread 1.00..5.00 away,
+    // so the lower deviation is a full price unit at the very least (exact value 3.31).
+    CHECK(candle.sigma_minus > price_t(100, 2));
+
+    // The ramp is symmetric around its waist, so the halves must carry comparable
+    // weight — never a full bell over a floored side.
+    CHECK(2 * candle.sigma_minus.raw_at(2) > candle.sigma_plus.raw_at(2));
+
+    // The render-facing symptom, via the same FitRange + WallWidth path the scratcher
+    // emits through: one price unit below the waist the wall must hold comparable width
+    // to one price unit above, not collapse to zero.
+    const auto fitted = candle.FitRange();
+    INFO("wall below = " << fitted.WallWidth(price_t(10400, 2)) << ", wall above = " << fitted.WallWidth(price_t(10600, 2)));
+    CHECK(fitted.WallWidth(price_t(10400, 2)) > 0.5f * fitted.WallWidth(price_t(10600, 2)));
+}
+
+TEST_CASE("Monotonic falling period bounds the upper deviation inside its tip", "[buoy][monotonic]")
+{
+    // Falling direction of the same root cause: only the FIRST trade (the period high,
+    // upper by the p >= mu convention) lands upper, so sigma_plus recentres a lone point
+    // and comes out as the full tip distance max - mean — as if the side's whole mass sat
+    // at the extreme. Section 3 puts six of the eleven trades at or above the final
+    // waist, spreading 0.00..5.00, so the upper deviation is strictly inside the tip
+    // (exact value 3.02). On screen the FitRange clamp masks this overshoot, which is
+    // why the live chart shows degraded bottoms but not degraded tops.
+    const auto candle = close_single_period(monotonic_period(false));
+
+    REQUIRE(candle.mean == price_t(10500, 2));
+    REQUIRE(candle.Classify() == BuoyRegime::NORMAL);
+
+    INFO("sigma_minus raw = " << candle.sigma_minus.raw_at(2) << ", sigma_plus raw = " << candle.sigma_plus.raw_at(2));
+
+    CHECK(candle.sigma_plus < candle.max - candle.mean);
+
+    // The lower side receives the other ten trades (including four above the final
+    // waist), so it keeps weight — the falling direction never degrades a half, which
+    // pins the artefact's direction asymmetry.
+    CHECK(candle.sigma_minus > price_t(100, 2));
 }

@@ -88,11 +88,14 @@ where `V⁺` / `V⁻` is the volume traded on that side of `μ`. Each `σ±` is
 clamped to a small positive floor to keep later divisions finite when a side is
 empty or all its trades land on one price.
 
-*Computation note.* The side split depends on the final `μ`, so exact `σ±`
-take a second pass over the period's ticks. Where only online accumulation is
-possible, per-side raw moments (`V±`, `Σv·p`, `Σv·p²`) classified against the
-running mean give an approximation acceptable for a visual encoding; closed
-periods can be recomputed exactly wherever the tick stream is retained.
+*Computation note.* The side split depends on the final `μ`, so `σ±` cannot be
+finalised trade-by-trade. The period's ticks are therefore retained as a
+volume-by-price profile — lossless for these statistics, which depend only on
+per-level volume — and the split is re-derived against the current mean at every
+accumulation boundary and at period close. A trade's side is never frozen at
+ingestion time: classifying against the running mean would land every trade of a
+one-directional period on a single side, floor that side's opposite `σ` and
+degrade half the bell to nothing.
 
 ---
 

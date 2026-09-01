@@ -1,9 +1,10 @@
-header: Running-mean side classification
+header: Mean side classification
 description: |
-  Because the tick stream is not retained, each trade shall be assigned to the
-  upper or lower side by comparing its price against the running volume-weighted
-  mean at ingestion time, per the approximation sanctioned by
-  src/engine/BUOY_CANDLE.md section 3.
+  The active period's trades shall be retained as a volume-by-price profile and each price level's side
+  membership re-derived against the current volume-weighted mean whenever the
+  per-side deviations are computed — at accumulation boundaries and at period
+  close. A trade's side is never frozen against the running mean at ingestion
+  time, per src/engine/BUOY_CANDLE.md section 3.
 parents: [BUOY_CANDLE]
 order: 90
 tests: 897f348e96df38a42a57da0df5ff1517eb1dcdb76f46ff68a2e822291464aad3

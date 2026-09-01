@@ -11,6 +11,7 @@
 #include <algorithm>
 #include <optional>
 #include <stdexcept>
+#include <utility>
 #include <vector>
 #include <boost/multiprecision/cpp_int.hpp>
 #include <boost/multiprecision/debug_adaptor.hpp>
@@ -203,17 +204,6 @@ private:
     // its fields use currency-over-atomic storage.
     typedef currency<std::atomic_uint64_t> atomic_price_t;
 
-    // Per-side raw moments of the active period, accumulated around the period's first trade
-    // price (magnitude shift). big_int cannot overflow, so the shift is not a range guard — it
-    // keeps the deviations (and thus every accumulator's limb count) small enough for the
-    // per-trade updates to stay in cpp_int's inline storage. Data-thread-only state — readers
-    // only see the derived sigmas stored into the atomic candle fields.
-    struct SideMoments {
-        big_int volume;
-        big_int weighted_dev;
-        big_int weighted_dev2;
-    };
-
     const uint64_t m_buoy_duration;
 
     std::optional<std::atomic_uint64_t> m_first_buoy_timestamp;
@@ -222,78 +212,56 @@ private:
     quotes_t m_buoy_data;
     BuoyCandleData<atomic_price_t, atomic_price_t> mCurCandle;
 
-    SideMoments m_upper_moments;
-    SideMoments m_lower_moments;
-    big_int m_origin_price_raw;
-    size_t m_moment_price_decimals = 0;
-    size_t m_moment_volume_decimals = 0;
-    bool m_origin_set = false;
+    // Volume-by-price profile of the active period: every ingested trade folded into its
+    // price level. Order-free and lossless for the per-side statistics (they depend only
+    // on per-level volume), it is what lets store_sigmas re-derive the side split against
+    // the CURRENT mean instead of freezing each trade's side at ingestion time — a
+    // one-directional period would otherwise land its whole volume on one side, floor the
+    // other sigma and degrade that half's wall to nothing (BUOY_CANDLE.md section 3).
+    // A flat price-sorted vector, not a map: every consumer is a full iteration, so the
+    // ordering only serves the binary-search insert, and clear() retaining capacity makes
+    // steady-state ingestion allocation-free. Data-thread-only state — readers only see
+    // the derived sigmas stored into the atomic candle fields.
+    std::vector<std::pair<price_t, price_t>> m_level_volume;
 
-    static big_int pow10(size_t exponent)
-    { return boost::multiprecision::pow(big_int(10), static_cast<unsigned>(exponent)); }
-
-    void rescale_price_moments(size_t decimals)
+    static price_t side_sigma(const big_int& weighted_dev2, const big_int& volume, size_t decimals)
     {
-        const big_int factor = pow10(decimals - m_moment_price_decimals);
-        m_origin_price_raw *= factor;
-        m_upper_moments.weighted_dev *= factor;
-        m_upper_moments.weighted_dev2 *= factor * factor;
-        m_lower_moments.weighted_dev *= factor;
-        m_lower_moments.weighted_dev2 *= factor * factor;
-        m_moment_price_decimals = decimals;
+        const price_t floor(1, decimals);
+        if (volume == 0) return floor;
+        const uint64_t sigma_raw = big_sqrt(weighted_dev2 / volume).convert_to<uint64_t>();
+        return sigma_raw > 0 ? price_t(sigma_raw, decimals) : floor;
     }
 
-    void rescale_volume_moments(size_t decimals)
-    {
-        const big_int factor = pow10(decimals - m_moment_volume_decimals);
-        m_upper_moments.volume *= factor;
-        m_upper_moments.weighted_dev *= factor;
-        m_upper_moments.weighted_dev2 *= factor;
-        m_lower_moments.volume *= factor;
-        m_lower_moments.weighted_dev *= factor;
-        m_lower_moments.weighted_dev2 *= factor;
-        m_moment_volume_decimals = decimals;
-    }
-
-    void accumulate_moments(bool upper, const price_t& price, const price_t& size)
-    {
-        if (!m_origin_set) {
-            m_origin_set = true;
-            m_moment_price_decimals = price.decimals();
-            m_moment_volume_decimals = size.decimals();
-            m_origin_price_raw = price.raw();
-        }
-        if (price.decimals() > m_moment_price_decimals) rescale_price_moments(price.decimals());
-        if (size.decimals() > m_moment_volume_decimals) rescale_volume_moments(size.decimals());
-
-        const big_int deviation = big_int(price.raw_at(m_moment_price_decimals)) - m_origin_price_raw;
-        const big_int volume = size.raw_at(m_moment_volume_decimals);
-        SideMoments& side = upper ? m_upper_moments : m_lower_moments;
-        side.volume += volume;
-        side.weighted_dev += volume * deviation;
-        side.weighted_dev2 += volume * deviation * deviation;
-    }
-
-    // Exact recentring of the origin-shifted moments around the current mean:
-    // sum v*(p-mu)^2 = sum v*d^2 - 2*shift*sum v*d + shift^2*V with shift = mu - origin.
-    // Scales: dev2/volume lands on twice the price scale, so the integer sqrt returns the
-    // deviation straight on the price scale. Floored at one raw price unit per side.
-    price_t side_sigma(const SideMoments& side) const
-    {
-        const price_t floor(1, m_moment_price_decimals);
-        if (side.volume == 0) return floor;
-        const big_int shift = big_int(mCurCandle.mean.raw_at(m_moment_price_decimals)) - m_origin_price_raw;
-        big_int recentred = side.weighted_dev2 - 2 * shift * side.weighted_dev + shift * shift * side.volume;
-        if (recentred < 0) recentred = 0;
-        const big_int sigma = big_sqrt(recentred / side.volume);
-        const uint64_t sigma_raw = sigma.convert_to<uint64_t>();
-        return sigma_raw > 0 ? price_t(sigma_raw, m_moment_price_decimals) : floor;
-    }
-
+    // Exact per-side deviations around the current mean (BUOY_CANDLE.md section 3): the
+    // side split is re-derived from the level profile on every call, so a level ingested
+    // when the running mean stood elsewhere still lands on the side of the mean in force
+    // now — at period close that is the final mean. p >= mu counts as upper, mirroring
+    // the section-3 convention. dev2/volume lands on twice the price scale, so the
+    // integer sqrt returns the deviation straight on the price scale, floored at one raw
+    // unit per side.
     void store_sigmas()
     {
-        mCurCandle.sigma_plus = side_sigma(m_upper_moments);
-        mCurCandle.sigma_minus = side_sigma(m_lower_moments);
+        size_t price_decimals = mCurCandle.mean.decimals();
+        size_t volume_decimals = 0;
+        for (const auto& [level, volume] : m_level_volume) {
+            price_decimals = std::max(price_decimals, level.decimals());
+            volume_decimals = std::max(volume_decimals, volume.decimals());
+        }
+        const big_int mean_raw = big_int(mCurCandle.mean.raw_at(price_decimals));
+        big_int upper_volume = 0, upper_dev2 = 0, lower_volume = 0, lower_dev2 = 0;
+        for (const auto& [level, volume] : m_level_volume) {
+            const big_int deviation = big_int(level.raw_at(price_decimals)) - mean_raw;
+            const big_int level_volume = volume.raw_at(volume_decimals);
+            if (deviation < 0) {
+                lower_volume += level_volume;
+                lower_dev2 += level_volume * deviation * deviation;
+            } else {
+                upper_volume += level_volume;
+                upper_dev2 += level_volume * deviation * deviation;
+            }
+        }
+        mCurCandle.sigma_plus = side_sigma(upper_dev2, upper_volume, price_decimals);
+        mCurCandle.sigma_minus = side_sigma(lower_dev2, lower_volume, price_decimals);
     }
 
     // In-place reset of the persistent active candle. The object is never reconstructed — a
@@ -303,12 +271,7 @@ private:
     // visual artefact, consistent with the pre-existing torn-snapshot allowance).
     void reset_active(const price_t& price)
     {
-        m_upper_moments = {};
-        m_lower_moments = {};
-        m_origin_price_raw = 0;
-        m_moment_price_decimals = price.decimals();
-        m_moment_volume_decimals = 0;
-        m_origin_set = false;
+        m_level_volume.clear();
 
         mCurCandle.min = price;
         mCurCandle.max = price;
@@ -442,12 +405,6 @@ public:
             price_t last_volume = mCurCandle.volume;
             price_t sum_volume = last_volume + trade.size;
 
-            // Side classification against the running mean at ingestion time — the
-            // approximation sanctioned by BUOY_CANDLE.md section 3 for a stream that is
-            // not retained. The period's first trade coincides with the mean it sets and
-            // lands on the upper side by the p >= mu convention.
-            const bool upper_side = last_volume.raw() == 0 || !(trade.price < mCurCandle.mean);
-
             if (last_volume.raw() == 0) {
                 // First trade of the period: the buoy opens AT the trade price, not at
                 // the carried-forward previous close. A lone-trade buoy is therefore a
@@ -467,12 +424,16 @@ public:
             mCurCandle.close = trade.price;
             mCurCandle.volume = sum_volume;
 
-            accumulate_moments(upper_side, trade.price, trade.size);
+            const auto level = std::ranges::lower_bound(m_level_volume, trade.price, std::less<>{}, &std::pair<price_t, price_t>::first);
+            if (level != m_level_volume.end() && level->first == trade.price)
+                level->second = level->second + trade.size;
+            else
+                m_level_volume.emplace(level, trade.price, trade.size);
 
             last_price = trade.price;
         }
         // Sigmas materialise at candle-close and batch boundaries only — readers observe the
-        // active candle at frame granularity, so the per-trade integer sqrt cost is skipped.
+        // active candle at frame granularity, so the per-trade profile re-split cost is skipped.
         store_sigmas();
         m_last_trade_timestamp.emplace(trade_ts);
 
