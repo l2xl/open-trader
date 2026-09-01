@@ -7,5 +7,5 @@ description: |
   time, per src/engine/BUOY_CANDLE.md section 3.
 parents: [BUOY_CANDLE]
 order: 90
-tests: 897f348e96df38a42a57da0df5ff1517eb1dcdb76f46ff68a2e822291464aad3
-reviewed: 52e100d613283f0155174813a5bd0bae935e4b4769f54c376a4a32a01ed1ca9d
+tests: 265fecb71d850977197bd957425a9578244886b9ed26e1f18e74611523c47447
+reviewed: dfcb43d1bc5e5224843a8a995bf1a051d9eacf57d7da3aab8b16367f935a39e7
