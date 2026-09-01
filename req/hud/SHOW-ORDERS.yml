@@ -1,0 +1,6 @@
+header: Show orders
+description: |
+  Market data graph shall show active private orders
+parents: [MARKET_DATA_SCENE]
+order: 60
+tests: ~

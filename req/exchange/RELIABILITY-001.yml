@@ -1,0 +1,5 @@
+header: Auto reconnect
+description: |
+  Automatically reconnect subscriptions when reconnect
+parents: [DATA-RELIABILITY]
+tests: ~

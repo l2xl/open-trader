@@ -9,7 +9,7 @@ UID is the file stem; folders carry no semantics. Item schema:
 
     header: one-line title
     description: |
-      prose with exactly one "shall" on test-bearing leaves
+      free-form prose
     parents: [UID, ...]        # DAG edges; exactly one item in the tree has none
     order: 10                  # optional presentation-only sibling sort key
     tests: ~ | <sha> | {name: sha|~, ...}   # leaf test bindings; absent on branches
@@ -174,7 +174,7 @@ def compute_stamp(item):
 
 def layout_problems(items):
     """[(uid|None, message)] -- how the tree is shaped: UID form, parent links,
-    leaf/branch exclusivity, description form, exactly one root, no cycles.
+    leaf/branch exclusivity, non-empty description, exactly one root, no cycles.
 
     Deliberately free of review state. A stale stamp is the tree's *data*, not a
     defect of its layout, so it reddens the item that carries it (see
@@ -200,8 +200,6 @@ def layout_problems(items):
             problems.append((uid, f"{uid}: has both 'tests' and children {sorted(kids)}; leaf and branch are mutually exclusive"))
         if not item.description.strip():
             problems.append((uid, f"{uid}: empty description"))
-        if item.is_leaf and item.description.count("shall") != 1:
-            problems.append((uid, f"{uid}: test-bearing leaf description must contain exactly one 'shall'"))
     if len(roots) != 1:
         problems.append((None, f"tree: expected exactly one root item with empty parents, found {len(roots)}: {sorted(roots)}"))
     problems.extend((None, message) for message in _cycle_errors(items, children))

@@ -1,0 +1,4 @@
+header: Bot sandbox
+description: |
+  Bot execution sandbox which enables isolated bot execution on historical data
+parents: [BOT-EXEC]

@@ -1,0 +1,5 @@
+header: Connection watchdog
+description: |
+  Automatically detect stale connections and re-establish subscriptions
+parents: [DATA-RELIABILITY]
+tests: ~

@@ -1,0 +1,5 @@
+header: Trading API MCP
+description: |
+  MCP providing access to the Trading API for common AI agents
+parents: [TRADE-API]
+order: 90

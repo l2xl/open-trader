@@ -1,5 +1,0 @@
-header: Tarding API
-description: |
-  API used to setup orders
-parents: [ENGINE]
-order: 20

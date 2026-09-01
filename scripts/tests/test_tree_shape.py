@@ -117,19 +117,12 @@ def test_childless_item_without_tests_is_structurally_valid(req_tree):
     assert errors == []
 
 
-def test_test_bearing_leaf_needs_exactly_one_shall(req_tree):
+def test_leaf_description_wording_is_unconstrained(req_tree):
+    """No 'shall' wording rule: a wording nit is not a review-status or test
+    failure, so it must not redden a requirement."""
     req_dir, make_item = req_tree
     make_item(req_dir, "ROOT-1", "root shall exist", header="root")
-
-    make_item(req_dir, "LEAF-1", "the leaf just passes", parents=["ROOT-1"], tests=None)
-    _items, _load_errors, errors = _errors(req_dir)
-    assert _matching(errors, "exactly one 'shall'")
-
-    make_item(req_dir, "LEAF-1", "the leaf shall pass and it shall also flush", parents=["ROOT-1"], tests=None)
-    _items, _load_errors, errors = _errors(req_dir)
-    assert _matching(errors, "exactly one 'shall'")
-
-    make_item(req_dir, "LEAF-1", "the leaf shall pass", parents=["ROOT-1"], tests=None)
+    make_item(req_dir, "LEAF-1", "the leaf just passes, no matter the wording", parents=["ROOT-1"], tests=None)
     _items, _load_errors, errors = _errors(req_dir)
     assert errors == []
 

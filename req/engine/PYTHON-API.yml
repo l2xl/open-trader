@@ -1,0 +1,5 @@
+header: Python binding
+description: |
+  Python binding for Trading API
+parents: [TRADE-API]
+order: 80

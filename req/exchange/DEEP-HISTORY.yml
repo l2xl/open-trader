@@ -1,0 +1,5 @@
+header: Load historical data
+description: |
+  Subscriptions and queries do not allow to request historical public trade data (at least ByBit API has this limitation). However the historical data available to download from separate URL as compressed archive. Provide functionality to download such historical trades file and pass to data pipeline
+parents: [DATA-RELIABILITY, BOT-SANDBOX]
+order: 40

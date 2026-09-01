@@ -1,0 +1,5 @@
+header: Bot execution env
+description: |
+  Environment to execute trading bots
+parents: [ENGINE]
+order: 60

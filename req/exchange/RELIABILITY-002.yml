@@ -1,0 +1,5 @@
+header: Auto request snapshot
+description: |
+  Automatically request snapshot as subscription feed established
+parents: [DATA-RELIABILITY]
+tests: ~

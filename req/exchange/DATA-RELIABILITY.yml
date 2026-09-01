@@ -1,0 +1,4 @@
+header: Data reliability
+description: |
+  Common facility to provide relieble and contignous data sequnces for an exchange both public and private data feeds
+parents: [EXCHANGE]

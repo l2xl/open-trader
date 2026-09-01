@@ -1,5 +1,5 @@
-header: Wallet API
+header: Wallet data
 description: |
-  API to provide user balances
+  Pipeline to retrieve user balances
 parents: [ENGINE]
 order: 30

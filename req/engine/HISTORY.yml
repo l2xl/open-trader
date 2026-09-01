@@ -1,5 +1,5 @@
-header: Order History API
+header: Order History
 description: |
-  API to provide user trade and order history
+  User trade and order history retrieval pipeline implementation
 parents: [ENGINE]
 order: 40

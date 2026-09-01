@@ -1,0 +1,5 @@
+header: ByBit historical trades
+description: |
+  Authomatically Load historical trades data file and pass to public marketdata pipeline
+parents: [DEEP-HISTORY]
+tests: ~

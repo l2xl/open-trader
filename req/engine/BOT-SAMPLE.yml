@@ -1,0 +1,8 @@
+header: Sample trading bot
+description: |
+  Sample bot:
+  1. immediately sends limit order to exchange,
+  2. follows the price closely (updating order) to ensure near-time execution
+  3. Waits for order execution and stops
+parents: [BOT-EXEC]
+tests: ~

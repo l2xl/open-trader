@@ -1,5 +1,5 @@
 header: Market data
 description: |
-  Public market data basic instruments
+  Public market data retrieval pipeline
 parents: [ENGINE]
 order: 10

@@ -1,0 +1,6 @@
+header: Showtrades
+description: |
+  Market data graph shall show private trades
+parents: [MARKET_DATA_SCENE]
+order: 50
+tests: ~
