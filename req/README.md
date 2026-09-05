@@ -28,6 +28,8 @@ tests: ~
 reviewed: <sha256 hex, present only after user review>
 ```
 
+- `header` — a minimal noun phrase naming the behaviour (`Per-subscription condition`), no mechanism and no
+  restated assertion; the description carries the contract.
 - `description` — exactly one "shall" on test-bearing leaves.
 - `order` — optional, presentation-only sibling sort key; siblings sort by `(order, UID)`.
   Excluded from the reviewed stamp: reordering a report never triggers re-review.
@@ -70,8 +72,11 @@ file named by `REQ_COVERAGE_FILE` (no emission when unset).
 
 - `req new <UID> --parent <UID> [--dir req/<folder>] [--order N]` — scaffold an item.
 - `req review <UID>` — **user-only**: validates the item, discovers its bindings, runs the bound
-  tests, and only on success stamps routine shas + `reviewed`. `req clear <UID>` removes the stamp
-  (and reverts shas to `~`).
+  tests, and stamps routine shas + `reviewed` once every binding resolves to exactly one runnable
+  routine — whether that routine currently passes or fails. A failing routine still freezes and the
+  leaf simply rolls up as `test_failed` (TDD red state) until the implementation lands; only a
+  binding that can't be run at all (ambiguous, unresolved, or not built) blocks stamping. `req clear
+  <UID>` removes the stamp (and reverts shas to `~`).
 - `req validate [--coverage FILE …] [--strict]` — structural validation + frozen-routine checks
   (+ coverage join when given files; `--strict` requires every item reviewed). CI entry:
   `ci/gate.sh` (bootstraps `.venv-req`: pyyaml, pytest, jinja2; `GATE_STRICT=1` adds `--strict`).
@@ -105,7 +110,8 @@ Coverage gaps are deliberately not item problems: an unrun binding already rolls
 # Process Rules (TDD gate)
 
 - **Test-first, then freeze.** The covering routine is tagged with the leaf's UID before
-  implementation; the user approves via `req review`, which freezes the routine by hash.
+  implementation; the user approves via `req review`, which freezes the routine by hash while it is
+  still red — approval fixes *which* routine and *what it says*, not whether it already passes.
 - **Frozen routines are immutable.** Editing a reviewed leaf's bound routine reddens the gate until
   a user-approved `req clear` + re-review.
 - **Two-commit re-approval** (`scripts/check_self_approval.py`, CI `approval` job): a commit that

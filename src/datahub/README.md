@@ -154,7 +154,7 @@ datahub hosts no request type — only the two generic encoders above, turning a
 - Abstract data feed concept. Every feed exposes:
   - `cache_type` — concrete container holding the cache (`CacheContainer<Entity>`)
   - `subscription_type` — the matching `datahub::subscription<cache_type, Extra...>` spec the feed dispatches into
-  - `subscribe(weak_ptr<subscription_type>)` — registers a subscriber; fires current cache as snapshot synchronously if non-empty
+  - `subscribe(weak_ptr<subscription_type>, condition_type = {})` — registers a subscriber paired with its own condition; fires current cache as snapshot synchronously if non-empty
   - `data_acceptor<InputRange>()` — returns a `(InputRange&&) -> void` callable that merges into the cache and notifies subscribers
   - `get_snapshot() -> const cache_type&` — direct read access to the live cache
 
@@ -179,7 +179,7 @@ Each feed takes a template-template `CacheContainer` parameter (default `std::de
 - DB feed which translates query with condition into resulting range with DB cursor
 TODO
 
-All feed types accept an optional `shared_ptr<data_condition<Entity>>` at creation or via `set_condition()`.
+Filtering is per subscriber, not per feed: `subscribe(sub, condition)` pairs the subscriber's `weak_ptr` with its own `data_condition` in the feed's subscriber list, and that subscriber is to see only matching records in the attach snapshot and in every later update (an empty condition matches every record). The subscription object carries no condition and the feed has no condition of its own.
 
 ### data_condition<Entity> (`src/datahub/data_condition.hpp`)
 - Composite AND filter dual-purpose: in-memory predicate and SQL `QueryCondition` generation

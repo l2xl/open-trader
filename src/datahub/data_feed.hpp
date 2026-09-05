@@ -9,6 +9,7 @@
 #include <functional>
 #include <deque>
 #include <list>
+#include <utility>
 #include <algorithm>
 #include <concepts>
 #include <ranges>
@@ -34,14 +35,13 @@ public:
     using subscription_type = data_subscription<cache_type, const_iterator>;
 private:
     cache_type m_cache;
-    std::list<std::weak_ptr<subscription_type>> m_subscriptions;
-    std::shared_ptr<condition_type> m_condition;
+    std::list<std::pair<std::weak_ptr<subscription_type>, condition_type>> m_subscriptions;
 
     void push_snapshot()
     {
         auto it = m_subscriptions.begin();
         while (it != m_subscriptions.end()) {
-            if (auto sub = it->lock()) {
+            if (auto sub = it->first.lock()) {
                 sub->handle_data(update_kind::snapshot, m_cache, m_cache.cbegin(), m_cache.cend());
                 ++it;
             }
@@ -53,7 +53,7 @@ private:
     {
         auto it = m_subscriptions.begin();
         while (it != m_subscriptions.end()) {
-            if (auto sub = it->lock()) {
+            if (auto sub = it->first.lock()) {
                 sub->handle_data(update_kind::increment, m_cache, first, last);
                 ++it;
             }
@@ -62,21 +62,17 @@ private:
     }
 
 public:
-    explicit sorted_data_feed(std::shared_ptr<condition_type> condition = {})
-        : m_condition(std::move(condition))
-    {}
+    sorted_data_feed() = default;
 
-    static std::shared_ptr<sorted_data_feed> create(std::shared_ptr<condition_type> condition = {})
-    { return std::make_shared<sorted_data_feed>(std::move(condition)); }
+    static std::shared_ptr<sorted_data_feed> create()
+    { return std::make_shared<sorted_data_feed>(); }
 
-    void set_condition(std::shared_ptr<condition_type> condition) { m_condition = std::move(condition); }
-
-    void subscribe(std::weak_ptr<subscription_type> sub)
+    void subscribe(std::weak_ptr<subscription_type> sub, condition_type condition = {})
     {
         if (!m_cache.empty())
             if (auto locked = sub.lock())
                 locked->handle_data(update_kind::snapshot, m_cache, m_cache.cbegin(), m_cache.cend());
-        m_subscriptions.emplace_back(std::move(sub));
+        m_subscriptions.emplace_back(std::move(sub), std::move(condition));
     }
 
     const cache_type& get_snapshot() const { return m_cache; }
@@ -91,10 +87,7 @@ public:
         return [ref](InputRange&& entities) {
             if (auto self = ref.lock()) {
 
-                // Phase 1: Filter incoming by condition
-                auto incoming = std::forward<InputRange>(entities)
-                    | std::views::filter([&](const entity_type& e) { return !self->m_condition || self->m_condition->matches(e); })
-                    /*| std::ranges::to<cache_type>()*/;
+                auto incoming = std::views::all(std::forward<InputRange>(entities));
                 if (incoming.empty()) return;
 
                 size_t inserted = 0;
@@ -170,14 +163,13 @@ public:
 
 private:
     cache_type m_cache;
-    std::list<std::weak_ptr<subscription_type>> m_subscriptions;
-    std::shared_ptr<condition_type> m_condition;
+    std::list<std::pair<std::weak_ptr<subscription_type>, condition_type>> m_subscriptions;
 
     void push_to_subscriptions()
     {
         auto it = m_subscriptions.begin();
         while (it != m_subscriptions.end()) {
-            if (auto sub = it->lock()) {
+            if (auto sub = it->first.lock()) {
                 sub->handle_data(update_kind::snapshot, m_cache);
                 ++it;
             }
@@ -186,21 +178,17 @@ private:
     }
 
 public:
-    explicit sorted_snapshot_data_feed(std::shared_ptr<condition_type> condition = {})
-        : m_condition(std::move(condition))
-    {}
+    sorted_snapshot_data_feed() = default;
 
-    static std::shared_ptr<sorted_snapshot_data_feed> create(std::shared_ptr<condition_type> condition = {})
-    { return std::make_shared<sorted_snapshot_data_feed>(std::move(condition)); }
+    static std::shared_ptr<sorted_snapshot_data_feed> create()
+    { return std::make_shared<sorted_snapshot_data_feed>(); }
 
-    void set_condition(std::shared_ptr<condition_type> condition) { m_condition = std::move(condition); }
-
-    void subscribe(std::weak_ptr<subscription_type> sub)
+    void subscribe(std::weak_ptr<subscription_type> sub, condition_type condition = {})
     {
         if (!m_cache.empty())
             if (auto locked = sub.lock())
                 locked->handle_data(update_kind::snapshot, m_cache);
-        m_subscriptions.emplace_back(std::move(sub));
+        m_subscriptions.emplace_back(std::move(sub), std::move(condition));
     }
 
     const cache_type& get_snapshot() const { return m_cache; }
@@ -214,8 +202,7 @@ public:
         std::weak_ptr ref = this->weak_from_this();
         return [ref](InputRange&& entities) {
             if (auto self = ref.lock()) {
-                auto incoming = std::forward<InputRange>(entities)
-                    | std::views::filter([&](const entity_type& e) { return !self->m_condition || self->m_condition->matches(e); });
+                auto incoming = std::views::all(std::forward<InputRange>(entities));
                 if (std::ranges::begin(incoming) == std::ranges::end(incoming)) return;
 
                 size_t inserted = 0;
@@ -268,14 +255,13 @@ public:
 
 private:
     cache_type m_cache;
-    std::list<std::weak_ptr<subscription_type>> m_subscriptions;
-    std::shared_ptr<condition_type> m_condition;
+    std::list<std::pair<std::weak_ptr<subscription_type>, condition_type>> m_subscriptions;
 
     void push_to_subscriptions()
     {
         auto it = m_subscriptions.begin();
         while (it != m_subscriptions.end()) {
-            if (auto sub = it->lock()) {
+            if (auto sub = it->first.lock()) {
                 sub->handle_data(update_kind::snapshot, m_cache);
                 ++it;
             }
@@ -284,21 +270,17 @@ private:
     }
 
 public:
-    explicit keyed_snapshot_data_feed(std::shared_ptr<condition_type> condition = {})
-        : m_condition(std::move(condition))
-    {}
+    keyed_snapshot_data_feed() = default;
 
-    static std::shared_ptr<keyed_snapshot_data_feed> create(std::shared_ptr<condition_type> condition = {})
-    { return std::make_shared<keyed_snapshot_data_feed>(std::move(condition)); }
+    static std::shared_ptr<keyed_snapshot_data_feed> create()
+    { return std::make_shared<keyed_snapshot_data_feed>(); }
 
-    void set_condition(std::shared_ptr<condition_type> condition) { m_condition = std::move(condition); }
-
-    void subscribe(std::weak_ptr<subscription_type> sub)
+    void subscribe(std::weak_ptr<subscription_type> sub, condition_type condition = {})
     {
         if (!m_cache.empty())
             if (auto locked = sub.lock())
                 locked->handle_data(update_kind::snapshot, m_cache);
-        m_subscriptions.emplace_back(std::move(sub));
+        m_subscriptions.emplace_back(std::move(sub), std::move(condition));
     }
 
     const cache_type& get_snapshot() const { return m_cache; }
@@ -313,7 +295,6 @@ public:
             if (auto self = ref.lock()) {
                 bool changed = false;
                 for (auto in_it = std::ranges::begin(entities); in_it != std::ranges::end(entities); ++in_it) {
-                    if (self->m_condition && !self->m_condition->matches(*in_it)) continue;
                     auto cache_it = std::ranges::find_if(self->m_cache, [&](const entity_type& e) { return key_val(e) == key_val(*in_it); });
                     if (cache_it == self->m_cache.end())
                         self->m_cache.emplace_back(std::move(*in_it));

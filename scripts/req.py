@@ -58,12 +58,13 @@ def _run_python(locations):
 
 
 def _run_cpp(locations, uid, name, build_dir):
+    """None if a binary is missing (the binding can't be run at all); else the pass/fail bool."""
     ok = True
     for loc in locations:
         binary = ROOT / build_dir / Path(loc.path).stem
         if not binary.is_file():
             print(f"test binary not built: {binary} (build target {Path(loc.path).stem} first)", file=sys.stderr)
-            return False
+            return None
         tag = reqlib.binding_tag(uid, name)
         print(f"running {binary.name} \"{tag}\"")
         ok &= subprocess.run([str(binary), tag], cwd=ROOT).returncode == 0
@@ -114,18 +115,23 @@ def _review_one(items, structural, discovered, uid, build_dir):
         resolved[name] = locations[0]
     python_locations = [loc for loc in resolved.values() if loc.path.endswith(".py")]
     cpp_locations = {name: loc for name, loc in resolved.items() if not loc.path.endswith(".py")}
-    ok = True
+    passed = True
     if python_locations:
-        ok &= _run_python(python_locations)
+        passed &= _run_python(python_locations)
     for name, loc in cpp_locations.items():
-        ok &= _run_cpp([loc], uid, name, build_dir)
-    if not ok:
-        print(f"{uid}: bound tests failed; not stamping", file=sys.stderr)
-        return False
+        result = _run_cpp([loc], uid, name, build_dir)
+        if result is None:
+            print(f"{uid}: bound test could not be run; not stamping", file=sys.stderr)
+            return False
+        passed &= result
+    # Test-first TDD: the routine is frozen by hash as soon as it runs and resolves
+    # unambiguously, whether it currently passes or fails. A stamped-but-failing leaf
+    # rolls up as test_failed until the covering implementation lands and turns it green.
     item.tests = {name: reqlib.routine_sha(loc) for name, loc in resolved.items()}
     item.reviewed = reqlib.compute_stamp(item)
     reqlib.write_item(item)
-    print(f"{uid}: reviewed ({item.reviewed})")
+    state = "passing" if passed else "FAILING -- red, pending implementation"
+    print(f"{uid}: reviewed ({item.reviewed}) -- bound test currently {state}")
     return True
 
 
@@ -234,7 +240,7 @@ def main():
     p.add_argument("--order", type=int, default=0)
     p.set_defaults(func=cmd_new)
 
-    p = sub.add_parser("review", help="user-only: run bound tests, stamp routine shas + reviewed")
+    p = sub.add_parser("review", help="user-only: run bound tests, stamp routine shas + reviewed (stamps even on a failing test -- TDD red state)")
     p.add_argument("uid", nargs="+", help="UID(s) or glob pattern(s) like 'BUOY-00?' / 'BUOY-*' (quote patterns for the shell); patterns select leaves only")
     p.add_argument("--build-dir", default="cmake-build-debug-clang")
     p.set_defaults(func=cmd_review)

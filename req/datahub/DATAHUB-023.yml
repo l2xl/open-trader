@@ -1,0 +1,6 @@
+header: Persisted records restored into the initial snapshot
+description: |
+  A pipeline re-created over a data_model that already holds records shall replay the stored records into its feed, so a subscriber attaching to the re-created feed receives the previously ingested records as its initial snapshot before any new data arrives.
+parents: [DATAHUB-020]
+order: 30
+tests: ~

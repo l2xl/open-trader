@@ -1,0 +1,6 @@
+header: Per-subscription condition
+description: |
+  A subscriber attaching with its own condition to any feed type (sorted_data_feed, sorted_snapshot_data_feed, keyed_snapshot_data_feed) shall receive only the records matching that condition, whether they were replayed from a populated data_model, were already cached by the feed at attach time or arrive at runtime afterwards, independently of the conditions of other subscribers on the same feed.
+parents: [DATAHUB-020]
+order: 90
+tests: ~
