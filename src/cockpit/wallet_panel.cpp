@@ -226,7 +226,7 @@ WalletPanel::WalletPanel()
     HudScene().add(mLayer.get());
 }
 
-void WalletPanel::OnWallet(datahub::update_kind /*kind*/, const wallet_feed_type::cache_type& wallets)
+void WalletPanel::OnWallet(datahub::update_kind /*kind*/, wallet_feed_type::view_type wallets)
 {
     auto it = std::ranges::find(wallets, bybit::AccountType::UNIFIED, &bybit::WalletBalance::accountType);
     if (it == wallets.end()) it = wallets.begin();

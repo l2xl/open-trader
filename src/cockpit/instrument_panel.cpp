@@ -261,19 +261,17 @@ void InstrumentPanel::SetInstrument(bybit::InstrumentInfo info)
     mSizeDecimals = base_decimals > 0 ? base_decimals : 8;
 }
 
-void InstrumentPanel::OnPublicTrades(datahub::update_kind kind,
-                                    IDataController::public_trades_feed_type::const_iterator first,
-                                    IDataController::public_trades_feed_type::const_iterator last)
+void InstrumentPanel::OnPublicTrades(datahub::update_kind kind, IDataController::public_trades_feed_type::view_type trades)
 {
     // Data path entry point (data/worker thread): take the data mutex — the same lock DoUpdate
     // and Render hold — so the series mutation is serialised against the UI-thread readers, then
-    // hand the feed's native PublicTrade subrange [first,last) straight to the quote scratcher
-    // for ingestion + price autoscale (no copy; the scratcher reads price/size as currency and
-    // only converts to scene points at the ThorVG boundary). Geometry re-emission and the UI
-    // redraw ride the next 25 ms heartbeat, so nothing is posted here.
+    // hand the feed's PublicTrade window view straight to the quote scratcher for ingestion +
+    // price autoscale (no copy; the scratcher reads price/size as currency and only converts
+    // to scene points at the ThorVG boundary). Geometry re-emission and the UI redraw ride the
+    // next 25 ms heartbeat, so nothing is posted here.
     std::lock_guard lock(mDataMutex);
     if (mQuoteScratcher)
-        mQuoteScratcher->IngestAndScale(*this, kind, std::ranges::subrange(first, last));
+        mQuoteScratcher->IngestAndScale(*this, kind, trades);
 }
 
 } // namespace scratcher::cockpit

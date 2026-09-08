@@ -52,15 +52,13 @@ int MainWindow::Run()
     // (raced past startup), the synchronous current-snapshot delivery fills mInstruments
     // before MakeLeaf consults it.
     std::weak_ptr<cycfi::elements::view> wview = mView;
-    mInstrumentSubId = mCockpit->SubscribeInstruments([this, wview](const auto& cache) {
+    mInstrumentSubId = mCockpit->SubscribeInstruments([this, wview](auto cache) {
             // Marshal off the data thread. View::post is thread-safe. The cockpit
-            // hands us a const ref into the feed's std::list cache (zero-copy
-            // delivery); we project to the symbol-vector form the dropdown widget
-            // wants once here at the UI boundary, replacing the chain of three
-            // full-vector copies the cockpit previously performed.
+            // hands us a lazy view over the feed's cache (zero-copy delivery, valid
+            // for this callback only); we project to the symbol-vector form the
+            // dropdown widget wants once here at the UI boundary.
             if (auto v = wview.lock()) {
                 std::vector<std::string> symbols;
-                symbols.reserve(cache.size());
                 for (const auto& i : cache) symbols.push_back(i.symbol);
                 v->post([this, symbols = std::move(symbols)]() mutable {
                     OnSymbolsArrived(std::move(symbols));

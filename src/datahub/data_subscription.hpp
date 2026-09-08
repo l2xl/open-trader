@@ -14,96 +14,124 @@
 
 namespace datahub {
 
-// A single `subscription<Range, Extra...>` template with two partial
+// A single `data_subscription<View, Extra...>` template with two partial
 // specialisations, one per feed shape:
 //
-//   subscription<Range>                                   — snapshot-only feeds
+//   data_subscription<View>                               — snapshot-only feeds
 //     (sorted_snapshot_data_feed, keyed_snapshot_data_feed). Dispatch passes
-//     just (update_kind, const Range&).
+//     just (update_kind, View).
 //
-//   subscription<Range, It, It>                           — incremental feeds
-//     (sorted_data_feed). Dispatch passes the changed window directly as
-//     [first, last) — no synthetic iterators for snapshots-as-increments.
+//   data_subscription<View, Window>                       — incremental feeds
+//     (sorted_data_feed). Dispatch passes the full view plus the changed
+//     window as a second view — no synthetic windows for snapshots-as-increments.
 //
+// A view is whatever the feed builds over its cache for that subscriber (a lazy
+// filter by the subscriber's own condition); the contract never names the cache
+// container. Views are passed by value: they are cheap handles, and a
+// filter_view has to be non-const to be iterated. They borrow the cache for the
+// duration of the callback and must not be kept.
 // Polymorphism uses the single virtual `handle_data` of whichever spec the
 // feed picked; the impl holds the user's Callable as a direct member.
-template<std::ranges::input_range Range, typename... Extra>
+template<std::ranges::view View, typename... Extra>
 class data_subscription;
 
-template<std::ranges::input_range Range>
-class data_subscription<Range>
+template<std::ranges::view View>
+class data_subscription<View>
 {
 public:
-    using range_type = Range;
+    using view_type = View;
     virtual ~data_subscription() = default;
-    virtual void handle_data(update_kind kind, const Range& full) = 0;
+    virtual void handle_data(update_kind kind, View full) = 0;
 };
 
-template<std::ranges::input_range Range, typename It>
-class data_subscription<Range, It>
+template<std::ranges::view View, std::ranges::view Window>
+class data_subscription<View, Window>
 {
 public:
-    using range_type = Range;
-    using const_iterator = It;
+    using view_type = View;
+    using window_type = Window;
     virtual ~data_subscription() = default;
-    virtual void handle_data(update_kind kind, const Range& full, It first, It last) = 0;
+    virtual void handle_data(update_kind kind, View full, Window window) = 0;
+};
+
+// The default gate of a subscription: a delivery reaches the handler only when the decisive
+// view — the window of an increment, the full view of a snapshot — holds a record inside the
+// subscriber's condition. The feed pushes every update; what to suppress is decided here, at
+// the subscription end, and any other gate (or `[](auto&&...) { return true; }` for none) can
+// be passed to make_subscription instead.
+struct skip_empty
+{
+    template<std::ranges::view View>
+    bool operator()(update_kind, View& full) const { return full.begin() != full.end(); }
+
+    template<std::ranges::view View, std::ranges::view Window>
+    bool operator()(update_kind, View&, Window& window) const { return window.begin() != window.end(); }
 };
 
 namespace detail {
 
-template<std::ranges::input_range Range, typename Callable, typename... Extra>
+template<std::ranges::view View, typename Callable, typename Gate, typename... Extra>
 class subscription_impl;
 
-template<std::ranges::input_range Range, typename Callable>
-class subscription_impl<Range, Callable> : public data_subscription<Range>
+template<std::ranges::view View, typename Callable, typename Gate>
+class subscription_impl<View, Callable, Gate> : public data_subscription<View>
 {
     Callable m_cb;
+    Gate m_gate;
 public:
-    template<typename C>
-    explicit subscription_impl(C&& cb) : m_cb(std::forward<C>(cb)) {}
-    void handle_data(update_kind kind, const Range& full) override
-    { m_cb(kind, full); }
+    template<typename C, typename G>
+    subscription_impl(C&& cb, G&& gate) : m_cb(std::forward<C>(cb)), m_gate(std::forward<G>(gate)) {}
+    void handle_data(update_kind kind, View full) override
+    {
+        if (m_gate(kind, full))
+            m_cb(kind, std::move(full));
+    }
 };
 
-template<std::ranges::input_range Range, typename Callable, typename It>
-class subscription_impl<Range, Callable, It> : public data_subscription<Range, It>
+template<std::ranges::view View, typename Callable, typename Gate, std::ranges::view Window>
+class subscription_impl<View, Callable, Gate, Window> : public data_subscription<View, Window>
 {
     Callable m_cb;
+    Gate m_gate;
 public:
-    template<typename C>
-    explicit subscription_impl(C&& cb) : m_cb(std::forward<C>(cb)) {}
-    void handle_data(update_kind kind, const Range& full, It first, It last) override
-    { m_cb(kind, full, first, last); }
+    template<typename C, typename G>
+    subscription_impl(C&& cb, G&& gate) : m_cb(std::forward<C>(cb)), m_gate(std::forward<G>(gate)) {}
+    void handle_data(update_kind kind, View full, Window window) override
+    {
+        if (m_gate(kind, full, window))
+            m_cb(kind, std::move(full), std::move(window));
+    }
 };
 
 template<typename> inline constexpr bool dependent_false_v = false;
 
 } // namespace detail
 
-// Single factory — statically dispatches on the Callable's arity to the matching
-// subscription spec. Wrong-arity callables fail at the static_assert with a
-// readable diagnostic; right-arity callables for the wrong feed kind fail at
-// the feed's subscribe() call where the shared_ptr conversion is rejected.
-template<std::ranges::input_range Range, typename Callable>
-auto make_subscription(Callable&& cb)
+// Single factory keyed on the feed, so callers never spell view types —
+// statically dispatches on the Callable's arity to the matching subscription
+// spec. Wrong-arity callables fail at the static_assert with a readable
+// diagnostic; right-arity callables for the wrong feed kind fail at the feed's
+// subscribe() call where the shared_ptr conversion is rejected.
+template<typename Feed, typename Callable, typename Gate = skip_empty>
+auto make_subscription(Callable&& cb, Gate&& gate = {})
 {
     using cb_t = std::decay_t<Callable>;
-    using It   = std::ranges::iterator_t<const Range>;
+    using gate_t = std::decay_t<Gate>;
+    using View = typename Feed::view_type;
 
-    if constexpr (std::is_invocable_v<cb_t&, update_kind, const Range&>) {
-        return std::shared_ptr<data_subscription<Range>>(
-            std::make_shared<detail::subscription_impl<Range, cb_t>>(std::forward<Callable>(cb)));
+    if constexpr (std::is_invocable_v<cb_t&, update_kind, View>) {
+        return std::shared_ptr<data_subscription<View>>(
+            std::make_shared<detail::subscription_impl<View, cb_t, gate_t>>(std::forward<Callable>(cb), std::forward<Gate>(gate)));
     }
-    else if constexpr (std::is_invocable_v<cb_t&, update_kind, const Range&, It, It>) {
-        return std::shared_ptr<data_subscription<Range, It>>(
-            std::make_shared<detail::subscription_impl<Range, cb_t, It>>(std::forward<Callable>(cb)));
+    else if constexpr (std::is_invocable_v<cb_t&, update_kind, View, View>) {
+        return std::shared_ptr<data_subscription<View, View>>(
+            std::make_shared<detail::subscription_impl<View, cb_t, gate_t, View>>(std::forward<Callable>(cb), std::forward<Gate>(gate)));
     }
     else {
         static_assert(detail::dependent_false_v<cb_t>,
-                      "datahub::make_subscription requires a Callable invocable as "
-                      "(update_kind, const Range&) for snapshot-only feeds, or "
-                      "(update_kind, const Range&, const_iterator, const_iterator) "
-                      "for incremental feeds.");
+                      "datahub::make_subscription<Feed> requires a Callable invocable as "
+                      "(update_kind, Feed::view_type) for snapshot-only feeds, or "
+                      "(update_kind, Feed::view_type, Feed::view_type) for incremental feeds.");
     }
 }
 

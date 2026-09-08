@@ -68,6 +68,8 @@ private:
     CLI::App&                                  m_config;
     std::optional<credentials>                 m_credentials;
     db_strand_type                             m_db_strand;
+    // Every public-stream batch merges on this strand; feed subscribes are posted to it too.
+    db_strand_type                             m_public_strand;
 
     std::shared_ptr<instrument_feed_type>        m_instrument_feed;
     std::shared_ptr<private_order_feed_type>     m_private_order_feed;

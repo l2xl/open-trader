@@ -191,7 +191,7 @@ public:
         trade.price;
         trade.size;
     }
-    void IngestTrades(const Range& trades);
+    void IngestTrades(Range&& trades);
 
     void OnAttach(InstrumentPanel& panel) override;
     void CalculateSize(InstrumentPanel& panel) override;
@@ -200,7 +200,7 @@ public:
 
     // Data path: ingest a snapshot|increment of trades and rescale the price axis. Called by
     // the panel under its data mutex — the only entry point that mutates the series. `trades`
-    // is the feed's native bybit::PublicTrade cache subrange (any forward range whose value
+    // is the feed's PublicTrade window view (any forward range whose value
     // exposes time/price/size), passed straight through with no copy. A snapshot rebuilds the
     // append-only series from scratch; an increment appends the new tail. Trade dedup makes a
     // re-sent overlap harmless.
@@ -210,7 +210,7 @@ public:
         trade.price;
         trade.size;
     }
-    void IngestAndScale(InstrumentPanel& panel, datahub::update_kind kind, const Range& trades);
+    void IngestAndScale(InstrumentPanel& panel, datahub::update_kind kind, Range&& trades);
 
 protected:
     // Data-path price-window autoscale (visible-buoy extent + price refloor). Sets the scene
@@ -238,7 +238,7 @@ protected:
         trade.price;
         trade.size;
     }
-    void IngestTradesAt(const Range& trades, uint64_t now_ts);
+    void IngestTradesAt(Range&& trades, uint64_t now_ts);
 };
 
 template <std::ranges::forward_range Range>
@@ -247,7 +247,7 @@ requires requires(std::ranges::range_value_t<Range> trade) {
     trade.price;
     trade.size;
 }
-void QuoteScratcher::IngestTrades(const Range& trades)
+void QuoteScratcher::IngestTrades(Range&& trades)
 {
     // sys_clock (not utc_clock) so now_ts uses the same Unix-ms convention as
     // wire trade timestamps. get_timestamp(utc_clock::now()) would carry leap
@@ -265,7 +265,7 @@ requires requires(std::ranges::range_value_t<Range> trade) {
     trade.price;
     trade.size;
 }
-void QuoteScratcher::IngestTradesAt(const Range& trades, uint64_t now_ts)
+void QuoteScratcher::IngestTradesAt(Range&& trades, uint64_t now_ts)
 {
     auto begin = std::ranges::begin(trades);
     const auto end = std::ranges::end(trades);
@@ -311,7 +311,7 @@ requires requires(std::ranges::range_value_t<Range> trade) {
     trade.price;
     trade.size;
 }
-void QuoteScratcher::IngestAndScale(InstrumentPanel& panel, datahub::update_kind kind, const Range& trades)
+void QuoteScratcher::IngestAndScale(InstrumentPanel& panel, datahub::update_kind kind, Range&& trades)
 {
     // A snapshot rebuilds the append-only series from scratch (Reset clears the trade
     // bookmarks so nothing is deduped away); an increment appends the new tail.

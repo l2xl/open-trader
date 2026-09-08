@@ -30,8 +30,8 @@ struct Update {
 
 auto subscribe_log(std::shared_ptr<ItemFeed> feed, std::vector<Update>& log)
 {
-    auto sub = make_subscription<std::deque<Item>>(
-        [&log](update_kind kind, const std::deque<Item>& full) {
+    auto sub = make_subscription<ItemFeed>(
+        [&log](update_kind kind, auto full) {
             Update u{kind, {}, {}};
             for (const auto& item : full) { u.ids.push_back(item.id); u.values.push_back(item.value); }
             log.push_back(std::move(u));

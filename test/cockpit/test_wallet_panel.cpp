@@ -86,7 +86,9 @@ TEST_CASE("Wallet view-model rows sort by USD value and trim quantity zeros down
 TEST_CASE("Wallet panel binds the SVG template and renders the form headlessly", "[wallet_panel]")
 {
     HeadlessWalletPanel panel;
-    panel.OnWallet(datahub::update_kind::snapshot, std::deque<bybit::WalletBalance>{SampleWallet()});
+    const std::deque<bybit::WalletBalance> wallets{SampleWallet()};
+    const datahub::data_condition<bybit::WalletBalance> any_account;
+    panel.OnWallet(datahub::update_kind::snapshot, datahub::filtered_view(wallets.cbegin(), wallets.cend(), any_account));
 
     constexpr uint32_t w = 420, h = 320;
     panel.AllocatePixelBuffer(w, h);

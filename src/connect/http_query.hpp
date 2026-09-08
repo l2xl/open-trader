@@ -131,7 +131,7 @@ void http_query<RequestPolicy>::operator()(std::string query, std::string body)
                 path_query += "&";
             else if (m_query.empty() && query[0] == '&')
                 query = query.substr(1);
-            path_query += std::move(query);
+            path_query += query;
         }
     }
 

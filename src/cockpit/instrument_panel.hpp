@@ -98,7 +98,7 @@ public:
     std::size_t SizeDecimals() const
     { return mSizeDecimals; }
 
-    void OnPublicTrades(datahub::update_kind kind, IDataController::public_trades_feed_type::const_iterator first, IDataController::public_trades_feed_type::const_iterator last);
+    void OnPublicTrades(datahub::update_kind kind, IDataController::public_trades_feed_type::view_type trades);
 
     void SetTradeSubscription(std::shared_ptr<IDataController::public_trades_feed_type::subscription_type> sub)
     { mTradeSubscription = std::move(sub); }

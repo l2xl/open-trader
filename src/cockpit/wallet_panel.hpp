@@ -56,7 +56,7 @@ public:
 
     CanvasExtent MinimalCanvasSize() const override { return CanvasExtent{300, 240}; }
 
-    void OnWallet(datahub::update_kind kind, const wallet_feed_type::cache_type& wallets);
+    void OnWallet(datahub::update_kind kind, wallet_feed_type::view_type wallets);
 
     void SetWalletSubscription(std::shared_ptr<wallet_feed_type::subscription_type> sub)
     { mWalletSubscription = std::move(sub); }

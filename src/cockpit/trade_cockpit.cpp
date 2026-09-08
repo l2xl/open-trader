@@ -33,10 +33,10 @@ std::shared_ptr<TradeCockpit> TradeCockpit::Create(std::shared_ptr<scheduler> sc
 {
     auto self = std::make_shared<TradeCockpit>(std::move(sched), app, std::move(db), EnsurePrivate{});
 
-    self->mInstrumentSub = datahub::make_subscription<IDataController::instrument_container_type>(
-        [weak = std::weak_ptr(self)](datahub::update_kind /*kind*/, const IDataController::instrument_container_type& cache) {
+    self->mInstrumentSub = datahub::make_subscription<IDataController::instruments_feed_type>(
+        [weak = std::weak_ptr(self)](datahub::update_kind /*kind*/, IDataController::instruments_feed_type::view_type instruments) {
             if (auto s = weak.lock())
-                s->OnInstrumentsLoaded(cache);
+                s->OnInstrumentsLoaded(std::move(instruments));
         });
 
     self->mDataManager->SubscribeInstrumentList(self->mInstrumentSub);
@@ -128,16 +128,16 @@ panel_id TradeCockpit::RegisterInstrumentPanel(const std::string& symbol, std::s
 
     // Bind the panel's instrument (derives the fixed-point decimals used at render time), then
     // build the public-trade subscription the panel OWNS and hand a weak_ptr to the data manager.
-    // The subscription's callable pins the panel via its weak_ptr and forwards the feed's native
-    // PublicTrade cache subrange straight to OnPublicTrades (snapshot or increment) — no copy, no
+    // The subscription's callable pins the panel via its weak_ptr and forwards the feed's
+    // PublicTrade window view straight to OnPublicTrades (snapshot or increment) — no copy, no
     // adapter record. The panel owning the subscription means dropping the panel unsubscribes by
     // RAII. This is the sole trade-ingestion path; the heartbeat tick only advances the clock.
     panel->SetInstrument(std::move(info));
 
     using pubtrade_feed = IDataController::public_trades_feed_type;
-    auto trade_sub = datahub::make_subscription<pubtrade_feed::cache_type>(
-        [weak_panel = std::weak_ptr(panel)](datahub::update_kind kind, const pubtrade_feed::cache_type& /*full*/, pubtrade_feed::const_iterator first, pubtrade_feed::const_iterator last) {
-            if (auto p = weak_panel.lock()) p->OnPublicTrades(kind, first, last);
+    auto trade_sub = datahub::make_subscription<pubtrade_feed>(
+        [weak_panel = std::weak_ptr(panel)](datahub::update_kind kind, pubtrade_feed::view_type /*full*/, pubtrade_feed::view_type window) {
+            if (auto p = weak_panel.lock()) p->OnPublicTrades(kind, std::move(window));
         });
     panel->SetTradeSubscription(trade_sub);
     mDataManager->SubscribeInstrument(symbol, trade_sub);
@@ -148,9 +148,9 @@ panel_id TradeCockpit::RegisterInstrumentPanel(const std::string& symbol, std::s
 panel_id TradeCockpit::RegisterWalletPanel(std::shared_ptr<WalletPanel> panel)
 {
     using wallet_feed = IDataController::wallet_feed_type;
-    auto wallet_sub = datahub::make_subscription<wallet_feed::cache_type>(
-        [weak_panel = std::weak_ptr(panel)](datahub::update_kind kind, const wallet_feed::cache_type& wallets) {
-            if (auto p = weak_panel.lock()) p->OnWallet(kind, wallets);
+    auto wallet_sub = datahub::make_subscription<wallet_feed>(
+        [weak_panel = std::weak_ptr(panel)](datahub::update_kind kind, wallet_feed::view_type wallets) {
+            if (auto p = weak_panel.lock()) p->OnWallet(kind, std::move(wallets));
         });
     panel->SetWalletSubscription(wallet_sub);
     mDataManager->SubscribeWallet(wallet_sub);
@@ -166,13 +166,13 @@ TradeCockpit::subscription_id TradeCockpit::SubscribeInstruments(InstrumentsCall
         id = mNextSubId++;
         mInstrumentSubscribers[id] = cb;
     }
-    // Late-subscriber synchronous delivery uses the live feed cache directly.
-    // by_const_ref is safe to hand through the callback for std::list — refs
-    // remain valid for as long as the data manager owns the feed.
+    // Late-subscriber synchronous delivery: a view over the live feed cache, the same shape
+    // the feed itself delivers. Element references stay valid for as long as the data manager
+    // owns the stable_vector-backed feed; the view is for this call only.
     if (cb) {
-
+        const IDataController::instruments_feed_type::condition_type every_instrument;
         const auto& cache = mDataManager->getInstrumentsFeed().get_snapshot();
-        if (!cache.empty()) cb(cache);
+        if (!cache.empty()) cb(datahub::filtered_view(cache.cbegin(), cache.cend(), every_instrument));
     }
     return id;
 }
@@ -183,7 +183,7 @@ void TradeCockpit::UnsubscribeInstruments(subscription_id id)
     mInstrumentSubscribers.erase(id);
 }
 
-void TradeCockpit::OnInstrumentsLoaded(const IDataController::instrument_container_type& cache)
+void TradeCockpit::OnInstrumentsLoaded(IDataController::instruments_feed_type::view_type instruments)
 {
     std::vector<InstrumentsCallback> subs;
     {
@@ -196,7 +196,7 @@ void TradeCockpit::OnInstrumentsLoaded(const IDataController::instrument_contain
         }
     }
 
-    for (auto& cb : subs) if (cb) cb(cache);
+    for (auto& cb : subs) if (cb) cb(instruments);
 }
 
 } // namespace scratcher::cockpit

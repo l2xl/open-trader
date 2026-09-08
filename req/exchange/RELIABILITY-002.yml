@@ -1,5 +1,5 @@
 header: Auto request snapshot
 description: |
-  Automatically request snapshot as subscription feed established
+  Automatically request snapshot as subscription feed established or data gap detected in any way
 parents: [DATA-RELIABILITY]
 tests: ~

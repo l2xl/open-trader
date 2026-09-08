@@ -8,6 +8,7 @@
 #include <memory>
 #include <functional>
 #include <deque>
+#include <iterator>
 #include <list>
 #include <utility>
 #include <algorithm>
@@ -18,10 +19,39 @@
 
 namespace datahub {
 
+// What a subscriber sees over a cache window: a lazy standard filter by its own
+// condition, no element copied. An empty condition matches everything, so the
+// unconditioned subscriber takes the same path.
+template<typename Entity, std::forward_iterator It>
+auto filtered_view(It first, It last, const data_condition<Entity>& condition)
+{
+    return std::ranges::subrange(first, last) | std::views::filter([&condition](const Entity& e) { return condition.matches(e); });
+}
+
+namespace detail {
+
+// The generic_handler technique for a feed's history: the provider callable is held as a
+// direct member of the subclass implementing the feed's virtual provide().
+template<typename Feed, typename Provider>
+class provided_feed : public Feed
+{
+    Provider m_provider;
+
+public:
+    template<typename P>
+    explicit provided_feed(P&& provider) : m_provider(std::forward<P>(provider)) {}
+
+protected:
+    typename Feed::cache_type provide(const typename Feed::condition_type& condition) override
+    { return std::ranges::to<typename Feed::cache_type>(m_provider(condition)); }
+};
+
+} // namespace detail
+
 // CacheContainer selects the feed's cache type. Default std::deque<Entity>
 // keeps existing call sites unchanged; pick a CacheContainer with stable
 // references (e.g. std::list, boost::container::stable_vector) when
-// subscribers will hold the const-ref handed to the callback past the
+// subscribers will hold element references from the delivered view past the
 // callback's return — std::deque references survive push_back only.
 template<typename Entity, auto SortField, auto KeyField, template<typename...> class CacheContainer = std::deque>
 class sorted_data_feed : public std::enable_shared_from_this<sorted_data_feed<Entity, SortField, KeyField, CacheContainer>>
@@ -31,8 +61,9 @@ public:
     using cache_type = CacheContainer<Entity>;
     using condition_type = data_condition<entity_type>;
     using const_iterator = std::ranges::iterator_t<const cache_type>;
-    // Incremental feed: subscribers see [first, last) of the new tail directly.
-    using subscription_type = data_subscription<cache_type, const_iterator>;
+    using view_type = decltype(filtered_view(const_iterator{}, const_iterator{}, condition_type{}));
+    // Incremental feed: subscribers see the full view plus the new tail as a second view.
+    using subscription_type = data_subscription<view_type, view_type>;
 private:
     cache_type m_cache;
     std::list<std::pair<std::weak_ptr<subscription_type>, condition_type>> m_subscriptions;
@@ -42,7 +73,7 @@ private:
         auto it = m_subscriptions.begin();
         while (it != m_subscriptions.end()) {
             if (auto sub = it->first.lock()) {
-                sub->handle_data(update_kind::snapshot, m_cache, m_cache.cbegin(), m_cache.cend());
+                sub->handle_data(update_kind::snapshot, filtered_view(m_cache.cbegin(), m_cache.cend(), it->second), filtered_view(m_cache.cbegin(), m_cache.cend(), it->second));
                 ++it;
             }
             else { it = m_subscriptions.erase(it); }
@@ -54,12 +85,15 @@ private:
         auto it = m_subscriptions.begin();
         while (it != m_subscriptions.end()) {
             if (auto sub = it->first.lock()) {
-                sub->handle_data(update_kind::increment, m_cache, first, last);
+                sub->handle_data(update_kind::increment, filtered_view(m_cache.cbegin(), m_cache.cend(), it->second), filtered_view(first, last, it->second));
                 ++it;
             }
             else { it = m_subscriptions.erase(it); }
         }
     }
+
+protected:
+    virtual cache_type provide(const condition_type&) { return {}; }
 
 public:
     sorted_data_feed() = default;
@@ -67,11 +101,18 @@ public:
     static std::shared_ptr<sorted_data_feed> create()
     { return std::make_shared<sorted_data_feed>(); }
 
+    // The provider answers "the stored records for this condition"; it is asked on every
+    // subscribe and its answer goes through the acceptor like any other batch.
+    template<typename Provider>
+    static std::shared_ptr<sorted_data_feed> create(Provider&& provider)
+    { return std::make_shared<detail::provided_feed<sorted_data_feed, std::decay_t<Provider>>>(std::forward<Provider>(provider)); }
+
     void subscribe(std::weak_ptr<subscription_type> sub, condition_type condition = {})
     {
+        data_acceptor<cache_type>()(provide(condition));
         if (!m_cache.empty())
             if (auto locked = sub.lock())
-                locked->handle_data(update_kind::snapshot, m_cache, m_cache.cbegin(), m_cache.cend());
+                locked->handle_data(update_kind::snapshot, filtered_view(m_cache.cbegin(), m_cache.cend(), condition), filtered_view(m_cache.cbegin(), m_cache.cend(), condition));
         m_subscriptions.emplace_back(std::move(sub), std::move(condition));
     }
 
@@ -158,8 +199,10 @@ public:
     using entity_type = Entity;
     using cache_type = CacheContainer<Entity>;
     using condition_type = data_condition<entity_type>;
-    // Snapshot-only feed: every dispatch is a full-cache snapshot.
-    using subscription_type = data_subscription<cache_type>;
+    using const_iterator = std::ranges::iterator_t<const cache_type>;
+    using view_type = decltype(filtered_view(const_iterator{}, const_iterator{}, condition_type{}));
+    // Snapshot-only feed: every dispatch is a full-cache view.
+    using subscription_type = data_subscription<view_type>;
 
 private:
     cache_type m_cache;
@@ -170,12 +213,15 @@ private:
         auto it = m_subscriptions.begin();
         while (it != m_subscriptions.end()) {
             if (auto sub = it->first.lock()) {
-                sub->handle_data(update_kind::snapshot, m_cache);
+                sub->handle_data(update_kind::snapshot, filtered_view(m_cache.cbegin(), m_cache.cend(), it->second));
                 ++it;
             }
             else { it = m_subscriptions.erase(it); }
         }
     }
+
+protected:
+    virtual cache_type provide(const condition_type&) { return {}; }
 
 public:
     sorted_snapshot_data_feed() = default;
@@ -183,11 +229,16 @@ public:
     static std::shared_ptr<sorted_snapshot_data_feed> create()
     { return std::make_shared<sorted_snapshot_data_feed>(); }
 
+    template<typename Provider>
+    static std::shared_ptr<sorted_snapshot_data_feed> create(Provider&& provider)
+    { return std::make_shared<detail::provided_feed<sorted_snapshot_data_feed, std::decay_t<Provider>>>(std::forward<Provider>(provider)); }
+
     void subscribe(std::weak_ptr<subscription_type> sub, condition_type condition = {})
     {
+        data_acceptor<cache_type>()(provide(condition));
         if (!m_cache.empty())
             if (auto locked = sub.lock())
-                locked->handle_data(update_kind::snapshot, m_cache);
+                locked->handle_data(update_kind::snapshot, filtered_view(m_cache.cbegin(), m_cache.cend(), condition));
         m_subscriptions.emplace_back(std::move(sub), std::move(condition));
     }
 
@@ -250,8 +301,10 @@ public:
     using entity_type = Entity;
     using cache_type = CacheContainer<Entity>;
     using condition_type = data_condition<entity_type>;
-    // Snapshot-only feed: every dispatch is a full-cache snapshot.
-    using subscription_type = data_subscription<cache_type>;
+    using const_iterator = std::ranges::iterator_t<const cache_type>;
+    using view_type = decltype(filtered_view(const_iterator{}, const_iterator{}, condition_type{}));
+    // Snapshot-only feed: every dispatch is a full-cache view.
+    using subscription_type = data_subscription<view_type>;
 
 private:
     cache_type m_cache;
@@ -262,12 +315,15 @@ private:
         auto it = m_subscriptions.begin();
         while (it != m_subscriptions.end()) {
             if (auto sub = it->first.lock()) {
-                sub->handle_data(update_kind::snapshot, m_cache);
+                sub->handle_data(update_kind::snapshot, filtered_view(m_cache.cbegin(), m_cache.cend(), it->second));
                 ++it;
             }
             else { it = m_subscriptions.erase(it); }
         }
     }
+
+protected:
+    virtual cache_type provide(const condition_type&) { return {}; }
 
 public:
     keyed_snapshot_data_feed() = default;
@@ -275,11 +331,16 @@ public:
     static std::shared_ptr<keyed_snapshot_data_feed> create()
     { return std::make_shared<keyed_snapshot_data_feed>(); }
 
+    template<typename Provider>
+    static std::shared_ptr<keyed_snapshot_data_feed> create(Provider&& provider)
+    { return std::make_shared<detail::provided_feed<keyed_snapshot_data_feed, std::decay_t<Provider>>>(std::forward<Provider>(provider)); }
+
     void subscribe(std::weak_ptr<subscription_type> sub, condition_type condition = {})
     {
+        data_acceptor<cache_type>()(provide(condition));
         if (!m_cache.empty())
             if (auto locked = sub.lock())
-                locked->handle_data(update_kind::snapshot, m_cache);
+                locked->handle_data(update_kind::snapshot, filtered_view(m_cache.cbegin(), m_cache.cend(), condition));
         m_subscriptions.emplace_back(std::move(sub), std::move(condition));
     }
 

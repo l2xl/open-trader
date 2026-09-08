@@ -7,6 +7,7 @@
 #include <cstdlib>
 #include <memory>
 #include <future>
+#include <iterator>
 #include <iostream>
 
 #include "scheduler.hpp"
@@ -65,13 +66,14 @@ TEST_CASE("ByBitDataManager receives instrument list", "[bybit][integration]")
     std::promise<size_t> promise;
     auto future = promise.get_future();
 
-    auto sub = datahub::make_subscription<scratcher::IDataController::instrument_container_type>(
-        [&promise](datahub::update_kind, const auto& cache) {
+    auto sub = datahub::make_subscription<scratcher::IDataController::instruments_feed_type>(
+        [&promise](datahub::update_kind, auto instruments) {
             static bool fired = false;
             if (!fired) {
                 fired = true;
-                std::clog << "Received " << cache.size() << " instruments" << std::endl;
-                promise.set_value(cache.size());
+                const auto count = static_cast<size_t>(std::ranges::distance(instruments));
+                std::clog << "Received " << count << " instruments" << std::endl;
+                promise.set_value(count);
             }
         });
 

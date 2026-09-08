@@ -72,6 +72,13 @@ namespace {
         return hex(bytes);
     }
 
+    // History a public-trade feed replays to a new subscriber: bounded so opening a panel never
+    // pulls a whole table; the subscriber's own condition still applies on delivery.
+    constexpr auto PUBLIC_TRADE_HISTORY = std::chrono::hours{1};
+
+    int64_t public_trade_history_since()
+    { return std::chrono::duration_cast<std::chrono::milliseconds>((std::chrono::system_clock::now() - PUBLIC_TRADE_HISTORY).time_since_epoch()).count(); }
+
 } // anonymous namespace
 
 const std::string ByBitDataManager::BYBIT = "ByBit";
@@ -82,9 +89,7 @@ ByBitDataManager::ByBitDataManager(std::shared_ptr<scheduler> scheduler, CLI::Ap
     , m_config(config)
     , m_credentials(read_credentials(config))
     , m_db_strand(boost::asio::make_strand(m_context->io().get_executor()))
-    , m_instrument_feed(instrument_feed_type::create())
-    , m_private_order_feed(private_order_feed_type::create())
-    , m_private_trade_feed(private_trade_feed_type::create())
+    , m_public_strand(boost::asio::make_strand(m_context->io().get_executor()))
     , m_order_ack_feed(order_ack_feed_type::create())
     , m_wallet_feed(wallet_feed_type::create())
     { }
@@ -97,12 +102,15 @@ std::shared_ptr<ByBitDataManager> ByBitDataManager::Create(std::shared_ptr<sched
     auto error_cb = [ref](std::exception_ptr e){ HandleError(ref, e); };
 
     auto instrument_model = datahub::data_model<InstrumentInfo, &InstrumentInfo::symbol>::create(self->m_db, self->m_db_strand, {});
+    self->m_instrument_feed = instrument_feed_type::create([instrument_model](const auto&) { return instrument_model->query(); });
     self->m_instrument_sink = datahub::make_data_sink(std::move(instrument_model), self->m_instrument_feed->data_acceptor<std::deque<InstrumentInfo>>(), error_cb);
 
     auto order_model = datahub::data_model<Order, &Order::orderId>::create(self->m_db, self->m_db_strand, {});
+    self->m_private_order_feed = private_order_feed_type::create([order_model](const auto&) { return order_model->query(); });
     self->m_private_order_sink = datahub::make_data_sink(std::move(order_model), self->m_private_order_feed->data_acceptor<std::deque<Order>>(), error_cb);
 
     auto trade_model = datahub::data_model<Trade, &Trade::execId>::create(self->m_db, self->m_db_strand, {});
+    self->m_private_trade_feed = private_trade_feed_type::create([trade_model](const auto&) { return trade_model->query(); });
     self->m_private_trade_sink = datahub::make_data_sink(std::move(trade_model), self->m_private_trade_feed->data_acceptor<std::deque<Trade>>(), error_cb);
 
     self->SetupInstrumentDataSource();
@@ -149,7 +157,7 @@ void ByBitDataManager::SetupPublicDataSource()
     auto error_cb = [ref](std::exception_ptr e){ HandleError(ref, e); };
 
     m_public_stream = connect::websock_connection<>::create(m_context, stream_base(m_config) + STREAM_PUBLIC_SPOT,
-        datahub::make_data_dispatcher(m_context->io().get_executor(),
+        datahub::make_data_dispatcher(m_public_strand,
 
             datahub::make_data_adapter<WsApiPayload<std::deque<WsPublicTrade>>>(
                 [ref](WsApiPayload<std::deque<WsPublicTrade>>&& payload) {
@@ -286,31 +294,35 @@ void ByBitDataManager::SubscribeInstrument(std::string symbol, std::weak_ptr<pub
 
     // Materialise the order-book stream once per symbol and attach a manager-owned (TBD-handler)
     // consumer built the same way as the public-trade subscription — a datahub::make_subscription
-    // over the feed's native cache. The feed keeps only a weak_ptr, so the manager holds the shared.
+    // keyed on the feed. The feed keeps only a weak_ptr, so the manager holds the shared.
     if (!streams.ob_feed) {
         streams.ob_feed = orderbook_feed_type::create();
         streams.ob_sink = datahub::make_data_sink(
             OrderBook::Create(streams.ob_feed->template data_acceptor<std::deque<OrderBookLevel>>()),
             [](orderbook_sink_type::cache_type&&) {},
             error_cb);
-        streams.ob_consumer = datahub::make_subscription<orderbook_feed_type::cache_type>(
-            [](datahub::update_kind, const orderbook_feed_type::cache_type&) { /* TBD order-book consumption */ });
+        streams.ob_consumer = datahub::make_subscription<orderbook_feed_type>(
+            [](datahub::update_kind, orderbook_feed_type::view_type) { /* TBD order-book consumption */ });
         streams.ob_feed->subscribe(streams.ob_consumer);
         (*m_public_stream)(subscribe_message("orderbook.50." + symbol));
     }
 
     // Materialise the public-trade stream once per symbol.
     if (!streams.pt_feed) {
-        streams.pt_feed = pubtrade_feed_type::create();
         auto model = datahub::data_model<PublicTrade, &PublicTrade::execId>::create(m_db, m_db_strand, "_" + symbol);
+        streams.pt_feed = pubtrade_feed_type::create([model](const auto&) {
+            return model->query(datahub::QueryCondition::where("time", datahub::QueryOperator::GreaterThanOrEqual), public_trade_history_since());
+        });
         streams.pt_sink = datahub::make_data_sink(std::move(model), streams.pt_feed->data_acceptor<std::deque<PublicTrade>>(), std::move(error_cb));
         (*m_public_stream)(subscribe_message("publicTrade." + symbol));
     }
 
-    // Wire the caller-owned subscription to the public-trade feed. The feed keeps a weak_ptr and
-    // delivers an immediate snapshot if its cache is already populated; the subscriber (panel)
-    // owns the shared_ptr, so dropping it unsubscribes. An already-expired sub is simply ignored.
-    streams.pt_feed->subscribe(std::move(trade_sub));
+    // Wire the caller-owned subscription to the public-trade feed. Subscribing pulls the stored
+    // history into the feed and delivers the snapshot, so it runs on the public strand where the
+    // live batches merge — queued before any frame the stream can answer with — and never races
+    // them. The feed keeps a weak_ptr; the subscriber (panel) owns the shared_ptr, so dropping it
+    // unsubscribes. An already-expired sub is simply ignored.
+    boost::asio::post(m_public_strand, [feed = streams.pt_feed, trade_sub = std::move(trade_sub)]() mutable { feed->subscribe(std::move(trade_sub)); });
 }
 
 void ByBitDataManager::SubscribeOrders(std::weak_ptr<IDataController::private_orders_feed_type::subscription_type> sub)

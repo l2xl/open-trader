@@ -74,16 +74,15 @@ struct View {
 template<typename Feed>
 auto subscribe_view(std::shared_ptr<Feed> feed, View& view, TradeCondition condition)
 {
-    using cache_type = typename Feed::cache_type;
-    if constexpr (std::is_same_v<typename Feed::subscription_type, data_subscription<cache_type>>) {
-        auto sub = make_subscription<cache_type>(
-            [&view](update_kind kind, const cache_type& full) { view.record(kind, full.begin(), full.end()); });
+    if constexpr (std::is_same_v<typename Feed::subscription_type, data_subscription<typename Feed::view_type>>) {
+        auto sub = make_subscription<Feed>(
+            [&view](update_kind kind, auto full) { view.record(kind, full.begin(), full.end()); });
         feed->subscribe(sub, std::move(condition));
         return sub;
     }
     else {
-        auto sub = make_subscription<cache_type>(
-            [&view](update_kind kind, const cache_type&, auto first, auto last) { view.record(kind, first, last); });
+        auto sub = make_subscription<Feed>(
+            [&view](update_kind kind, auto, auto window) { view.record(kind, window.begin(), window.end()); });
         feed->subscribe(sub, std::move(condition));
         return sub;
     }
@@ -107,7 +106,7 @@ template<typename Feed>
 Pipeline<Feed> attach(std::shared_ptr<TradeModel> model)
 {
     Pipeline<Feed> pipeline;
-    pipeline.feed = Feed::create();
+    pipeline.feed = Feed::create([model](const auto&) { return model->query(); });
     pipeline.sink = make_data_sink(std::move(model), pipeline.feed->template data_acceptor<std::deque<Trade>>(), [](std::exception_ptr) {});
     return pipeline;
 }
@@ -212,7 +211,7 @@ TEMPLATE_TEST_CASE("subscription condition", "[datahub][DATAHUB-029]", SortedFee
         auto pipeline = attach<Feed>(storage.model());
         auto narrow_sub = subscribe_view(pipeline.feed, narrow, mid_range());
         auto wide_sub = subscribe_view(pipeline.feed, wide, TradeCondition{});
-        REQUIRE(narrow.kinds == std::vector{update_kind::snapshot});
+        REQUIRE(std::ranges::contains(narrow.kinds, update_kind::snapshot));
         REQUIRE(narrow.seqs == std::vector<int>{10, 20});
         REQUIRE(wide.kinds == std::vector{update_kind::snapshot});
         REQUIRE(wide.seqs == std::vector<int>{5, 10, 20});

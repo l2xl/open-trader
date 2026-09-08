@@ -32,7 +32,7 @@ namespace scratcher::cockpit {
 class TradeCockpit : public std::enable_shared_from_this<TradeCockpit>
 {
 public:
-    using InstrumentsCallback = std::function<void(const IDataController::instrument_container_type&)>;
+    using InstrumentsCallback = std::function<void(IDataController::instruments_feed_type::view_type)>;
     using subscription_id = uint64_t;
 
 private:
@@ -49,7 +49,7 @@ private:
 
     struct EnsurePrivate {};
 
-    void OnInstrumentsLoaded(const IDataController::instrument_container_type& cache);
+    void OnInstrumentsLoaded(IDataController::instruments_feed_type::view_type instruments);
 
     static boost::asio::awaitable<void> coUpdate(std::weak_ptr<TradeCockpit> ref);
 

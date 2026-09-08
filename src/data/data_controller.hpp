@@ -23,16 +23,9 @@
 
 namespace scratcher {
 
-// Callers build a subscription with datahub::make_subscription<Range>(callable) — the
-// factory statically picks the matching subscription<Range, Extra...> spec from the
-// callable's arity. The controller takes weak_ptr<...subscription_type>; dropping the
-// shared_ptr = unsubscribe (RAII). The instrument feed uses
-// boost::container::stable_vector so const-refs handed to the callback survive the
-// feed's later in-place updates and appends — safe to hold past the callback.
 struct IDataController
 {
     using instruments_feed_type = datahub::keyed_snapshot_data_feed<bybit::InstrumentInfo, &bybit::InstrumentInfo::symbol, boost::container::stable_vector>;
-    using instrument_container_type = instruments_feed_type::cache_type;
 
     using orderbook_feed_type    = datahub::sorted_snapshot_data_feed<OrderBookLevel, &OrderBookLevel::price, &OrderBookLevel::price>;
     using public_trades_feed_type = datahub::sorted_data_feed<bybit::PublicTrade, &bybit::PublicTrade::time, &bybit::PublicTrade::execId>;
