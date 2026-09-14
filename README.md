@@ -1,5 +1,7 @@
 # Open Trader
 
+![Open Trader — Buoy candle notation (HLMV)](assets/hlmv.png)
+
 Looking for angels! [Online Pitch-Deck](https://xscratcher.space/investor/) if you are interested in investing Open Trader
 
 ## What is it
