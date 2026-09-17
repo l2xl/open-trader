@@ -3,9 +3,9 @@
 # Copyright (c) 2026 l2xl (l2xl/at/proton.me)
 # Distributed under the Intellectual Property Reserve License, v2 (IPRL)
 
-"""Write the requirements-status report to the GitHub Actions job summary.
+"""Write the syngate status report to the GitHub Actions job summary.
 
-Renders the same navigable tree as the 'Requirements Status' check run so the
+Renders the same navigable tree as the 'Syngate Status' check run so the
 report is readable directly on the job report page.
 """
 
@@ -22,12 +22,12 @@ from publish_check_run import load_status, load_validation, render_summary  # no
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--status", default=ROOT / "req_status.json")
+    parser.add_argument("--status", default=ROOT / "syngate_status.json")
     parser.add_argument("--validation", help="captured ci/gate.sh output to fold into the report")
     args = parser.parse_args()
 
     report = load_status(args.status)
-    summary = "# Requirements status\n\n" + render_summary(report, load_validation(args.validation)) + "\n"
+    summary = "# Syngate status\n\n" + render_summary(report, load_validation(args.validation)) + "\n"
     summary_path = os.environ.get("GITHUB_STEP_SUMMARY")
     if summary_path:
         with open(summary_path, "a", encoding="utf-8") as f:

@@ -3,13 +3,13 @@
 # Copyright (c) 2026 l2xl (l2xl/at/proton.me)
 # Distributed under the Intellectual Property Reserve License, v2 (IPRL)
 
-"""Requirements gate: re-approval of a frozen item must be a separate commit.
+"""Syngate: re-approval of a frozen item must be a separate commit.
 
 A commit is self-approving when it changes an item's approval (the reviewed
 stamp or a stamped routine sha in `tests`) and in the same commit changes the
 item's substance (description, parents, or binding names). The correct flow is
 two commits: the edit (stamp goes stale), then the user-approved
-'req clear' + 'req review'.
+'syngate clear' + 'syngate review'.
 
 Binding locations are discovered from tags, not recorded in items, so the
 exact frozen routine's file is unknown per commit; instead, an approval-changing
@@ -22,7 +22,7 @@ import sys
 
 import yaml
 
-REQ_GLOB = "req/"
+SYNGATE_GLOB = "syngate/"
 TEST_TREES = ("scripts/tests/", "test/")
 
 
@@ -61,7 +61,7 @@ def check_commit(commit, cwd):
     changed = git(["diff-tree", "--no-commit-id", "--name-only", "-r", commit], cwd).stdout.split()
     problems = []
     for path in changed:
-        if not (path.startswith(REQ_GLOB) and path.endswith(".yml")):
+        if not (path.startswith(SYNGATE_GLOB) and path.endswith(".yml")):
             continue
         old = show_yaml(f"{commit}^", path, cwd)
         new = show_yaml(commit, path, cwd)

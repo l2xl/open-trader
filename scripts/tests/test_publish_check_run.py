@@ -8,7 +8,7 @@ from unittest.mock import patch, MagicMock
 
 from publish_check_run import build_check_run_body, load_status, publish, render_summary
 
-FAILED_GATE = "validate: 1 error(s):\n  BUOY-001: reviewed stamp does not match item content\ngate: FAILED (req validate exited 1)\n"
+FAILED_GATE = "validate: 1 error(s):\n  BUOY-001: reviewed stamp does not match item content\ngate: FAILED (syngate validate exited 1)\n"
 
 
 def _entry(status, header="Node", description="Node text", children=None, tests=None):
@@ -90,7 +90,7 @@ def test_failed_gate_output_is_folded_into_the_report_and_reddens_it():
     assert body["conclusion"] == "failure"
     assert "gate failed" in body["output"]["title"]
     summary = body["output"]["summary"]
-    assert "Requirements gate failed" in summary
+    assert "Syngate failed" in summary
     assert "BUOY-001: reviewed stamp does not match item content" in summary
     assert "<b>A</b>" in summary  # the tree is still rendered alongside
 
@@ -98,7 +98,7 @@ def test_failed_gate_output_is_folded_into_the_report_and_reddens_it():
 def test_passing_gate_output_is_reported_without_reddening_the_check():
     body = build_check_run_body({"A": _entry("test_passed")}, "gate: OK\n")
     assert body["conclusion"] == "success"
-    assert "Requirements gate passed" in body["output"]["summary"]
+    assert "Syngate passed" in body["output"]["summary"]
 
 
 def test_pip_bootstrap_noise_is_kept_out_of_the_gate_block():
@@ -111,8 +111,8 @@ def test_pip_bootstrap_noise_is_kept_out_of_the_gate_block():
 def test_missing_rollup_still_produces_a_report(tmp_path, capsys):
     body = build_check_run_body(load_status(tmp_path / "absent.json"), FAILED_GATE)
     assert body["conclusion"] == "failure"
-    assert "No requirements tree available" in body["output"]["summary"]
-    assert "Requirements gate failed" in body["output"]["summary"]
+    assert "No syngate tree available" in body["output"]["summary"]
+    assert "Syngate failed" in body["output"]["summary"]
 
 
 def test_summary_is_truncated_under_the_checks_api_byte_limit():

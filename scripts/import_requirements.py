@@ -3,7 +3,7 @@
 # Copyright (c) 2026 l2xl (l2xl/at/proton.me)
 # Distributed under the Intellectual Property Reserve License, v2 (IPRL)
 
-"""Decompose requirements_plan.md (sections 1-5) into the Doorstop tree under req/.
+"""Decompose requirements_plan.md (sections 1-5) into the Doorstop tree under syngate/.
 
 PRODUCT receives one heading item per branch and per feature plus one normative
 item per case; component documents (CORE/DATA_MODEL/TRADER_HUD/APP/INFRA)

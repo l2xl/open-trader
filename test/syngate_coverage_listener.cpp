@@ -31,14 +31,14 @@ std::string json_escaped(const std::string& text)
     return out;
 }
 
-class req_coverage_listener : public Catch::EventListenerBase {
+class syngate_coverage_listener : public Catch::EventListenerBase {
 public:
     using Catch::EventListenerBase::EventListenerBase;
 
     void testCaseEnded(const Catch::TestCaseStats& stats) override
     {
         // getenv is a C API boundary: const char* is the mandated return type.
-        const char* coverage_file = std::getenv("REQ_COVERAGE_FILE");
+        const char* coverage_file = std::getenv("SYNGATE_COVERAGE_FILE");
         if (!coverage_file) return;
 
         // Catch2 sorts and dedupes tags, so the source adjacency that names a
@@ -59,4 +59,4 @@ public:
 
 } // namespace
 
-CATCH_REGISTER_LISTENER(req_coverage_listener)
+CATCH_REGISTER_LISTENER(syngate_coverage_listener)

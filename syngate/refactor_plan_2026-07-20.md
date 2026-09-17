@@ -1,5 +1,7 @@
 # Requirements Tooling Refactor — Design & Plan (pending user review)
 
+> **Historical record.** On 2026-09-18 the toolkit described here was renamed to Synergy Context Gate: `req/` → `syngate/`, `scripts/reqlib.py` → `scripts/syngatelib.py`, `scripts/req.py` → `scripts/syngate.py`, `@pytest.mark.req` → `@pytest.mark.syngate`, `REQ_COVERAGE_FILE` → `SYNGATE_COVERAGE_FILE`. The plan below keeps the names of its time.
+
 Status: **plan for review, nothing implemented**. The live system is still Doorstop-based; its
 former documentation is in git history of this file (commit 986d18c and earlier).
 

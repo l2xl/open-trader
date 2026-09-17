@@ -3,13 +3,13 @@
 # Copyright (c) 2026 l2xl (l2xl/at/proton.me)
 # Distributed under the Intellectual Property Reserve License, v2 (IPRL)
 
-"""One-shot Doorstop -> reqlib schema converter.
+"""One-shot Doorstop -> syngatelib schema converter.
 
 Parents are synthesized from `links:` where present (INFRA) and from level
 containment within a document otherwise (PRODUCT); `order` is assigned from the
 old sibling level ordering (10, 20, ...). Items with `references:` become
 default-binding leaves (`tests: ~`); reviewed stamps are dropped — stamping is
-user-only and happens via `req review` after the bound tests carry req tags.
+user-only and happens via `syngate review` after the bound tests carry item tags.
 Removes the per-document `.doorstop.yml` files. Run once, review, commit.
 """
 
@@ -20,8 +20,8 @@ import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-import reqlib
-from reqlib import ROOT, REQ_DIR, Item
+import syngatelib
+from syngatelib import ROOT, SYNGATE_DIR, Item
 
 
 def level_tuple(data):
@@ -48,7 +48,7 @@ def containment_parents(document_items):
 
 def main():
     documents = {}  # doc_dir -> {uid: old data}
-    for path in sorted(REQ_DIR.rglob("*.yml")):
+    for path in sorted(SYNGATE_DIR.rglob("*.yml")):
         if path.name == ".doorstop.yml":
             continue
         documents.setdefault(path.parent, {})[path.stem] = {"path": path, **yaml.safe_load(path.read_text(encoding="utf-8"))}
@@ -79,12 +79,12 @@ def main():
             item.order = max(item.order, position * 10)
 
     for item in converted:
-        reqlib.write_item(item)
+        syngatelib.write_item(item)
     for doc_dir in documents:
         doorstop_yml = doc_dir / ".doorstop.yml"
         if doorstop_yml.exists():
             doorstop_yml.unlink()
-    print(f"converted {len(converted)} items in {len(documents)} folder(s); stamps dropped (re-stamp via 'req review')")
+    print(f"converted {len(converted)} items in {len(documents)} folder(s); stamps dropped (re-stamp via 'syngate review')")
     return 0
 
 

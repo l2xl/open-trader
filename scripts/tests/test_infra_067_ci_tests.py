@@ -9,7 +9,7 @@ import pytest
 from workflow_doc import load, steps
 
 
-@pytest.mark.req("INFRA-067")
+@pytest.mark.syngate("INFRA-067")
 def test_ci_runs_the_test_suite_against_the_built_tree_after_build():
     assert load()["jobs"]["test"]["needs"] == "build"
     build_steps = " | ".join(steps("build"))
@@ -18,5 +18,5 @@ def test_ci_runs_the_test_suite_against_the_built_tree_after_build():
     assert "download-artifact" in test_steps and "build-tree" in test_steps
     assert "ctest" in test_steps
     assert "-LE live" in test_steps
-    assert "REQ_COVERAGE_FILE" in test_steps
-    assert "req-coverage-cpp" in test_steps
+    assert "SYNGATE_COVERAGE_FILE" in test_steps
+    assert "syngate-coverage-cpp" in test_steps

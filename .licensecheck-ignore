@@ -10,4 +10,4 @@ cmake/CPM.cmake
 contrib/
 
 # Local tooling virtualenv (third-party packages)
-.venv-req/
+.venv-syngate/

@@ -3,7 +3,7 @@
 # Copyright (c) 2026 l2xl (l2xl/at/proton.me)
 # Distributed under the Intellectual Property Reserve License, v2 (IPRL)
 
-"""Render req_status.json as a static, navigable list + per-requirement card site."""
+"""Render syngate_status.json as a static, navigable list + per-item card site."""
 
 import argparse
 import json
@@ -65,12 +65,12 @@ details.testlog pre { background: #eef1ee; border: 1px solid #dde1e6; border-rad
 
 NAV = Markup('<nav class="views"><a href="index.html">List</a><a href="tree.html">Tree</a></nav>')
 
-INDEX_TEMPLATE = """<!doctype html><meta charset="utf-8"><title>Requirements Status</title><style>{{ css }}</style>
+INDEX_TEMPLATE = """<!doctype html><meta charset="utf-8"><title>Syngate Status</title><style>{{ css }}</style>
 {{ nav }}
-<h1>Requirements Status</h1>
+<h1>Syngate Status</h1>
 <p>{{ items|length }} items -- {% for k, v in counts.items() %}{{ v }} {{ k }} {% endfor %}</p>
 <table>
-<tr><th>UID</th><th>Folder</th><th>Requirement</th><th>Status</th></tr>
+<tr><th>UID</th><th>Folder</th><th>Item</th><th>Status</th></tr>
 {% for it in items %}
 <tr>
 <td><a href="items/{{ it.uid }}.html">{{ it.uid }}</a></td>
@@ -83,7 +83,7 @@ INDEX_TEMPLATE = """<!doctype html><meta charset="utf-8"><title>Requirements Sta
 """
 
 ITEM_TEMPLATE = """<!doctype html><meta charset="utf-8"><title>{{ uid }}</title><style>{{ css }}</style>
-<a class="back" href="../index.html">&larr; all requirements</a>
+<a class="back" href="../index.html">&larr; all items</a>
 <nav class="views"><a href="../index.html">List</a><a href="../tree.html">Tree</a></nav>
 <div class="card">
 <h1>{{ uid }} <span class="status status-{{ status_class }}"><span class="ball"></span>{{ status_label }}</span></h1>
@@ -107,9 +107,9 @@ ITEM_TEMPLATE = """<!doctype html><meta charset="utf-8"><title>{{ uid }}</title>
 </div>
 """
 
-TREE_PAGE_TEMPLATE = """<!doctype html><meta charset="utf-8"><title>Requirements Tree</title><style>{{ css }}</style>
+TREE_PAGE_TEMPLATE = """<!doctype html><meta charset="utf-8"><title>Syngate Tree</title><style>{{ css }}</style>
 {{ nav }}
-<h1>Requirements Tree</h1>
+<h1>Syngate Tree</h1>
 <p>Nodes reachable from more than one parent (a DAG merge point, not a tree edge) are rendered again at each
 place they're referenced, marked <span class="tree-dup">(also under ...)</span>.</p>
 {{ tree_html }}
@@ -208,7 +208,7 @@ def run(status_path, out_dir):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--status", type=Path, default=ROOT / "req_status.json")
+    parser.add_argument("--status", type=Path, default=ROOT / "syngate_status.json")
     parser.add_argument("--out", type=Path, default=ROOT / "site")
     args = parser.parse_args()
     run(args.status, args.out)

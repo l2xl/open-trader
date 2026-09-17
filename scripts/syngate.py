@@ -3,7 +3,7 @@
 # Copyright (c) 2026 l2xl (l2xl/at/proton.me)
 # Distributed under the Intellectual Property Reserve License, v2 (IPRL)
 
-"""Requirements CLI: new / review / clear / validate / report.
+"""Synergy Context Gate (syngate) CLI: new / review / clear / validate / report.
 
 `review` and `clear` are user-only: the reviewed stamp is the record of the
 user's approval. `validate` is the CI gate entry point; `report` computes the
@@ -18,12 +18,12 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-import reqlib
-from reqlib import ROOT, REQ_DIR, Item
+import syngatelib
+from syngatelib import ROOT, SYNGATE_DIR, Item
 
 
 def _load_or_die():
-    items, errors = reqlib.load_tree()
+    items, errors = syngatelib.load_tree()
     if errors:
         for line in errors:
             print(f"  {line}", file=sys.stderr)
@@ -32,21 +32,21 @@ def _load_or_die():
 
 
 def cmd_new(args):
-    items, _ = reqlib.load_tree()
+    items, _ = syngatelib.load_tree()
     if args.uid in items:
         print(f"{args.uid}: already exists at {items[args.uid].path}", file=sys.stderr)
         return 1
-    if not reqlib.UID_RE.match(args.uid):
+    if not syngatelib.UID_RE.match(args.uid):
         print(f"{args.uid}: not a valid UID", file=sys.stderr)
         return 1
     for parent in args.parent:
         if parent not in items:
             print(f"unknown parent '{parent}'", file=sys.stderr)
             return 1
-    directory = ROOT / args.dir if args.dir else REQ_DIR
+    directory = ROOT / args.dir if args.dir else SYNGATE_DIR
     directory.mkdir(parents=True, exist_ok=True)
     item = Item(uid=args.uid, path=directory / f"{args.uid}.yml", header="TODO", description="TODO: The component shall ...\n", parents=list(args.parent), order=args.order, tests={None: None})
-    reqlib.write_item(item)
+    syngatelib.write_item(item)
     print(f"created {item.path.relative_to(ROOT)}")
     return 0
 
@@ -65,7 +65,7 @@ def _run_cpp(locations, uid, name, build_dir):
         if not binary.is_file():
             print(f"test binary not built: {binary} (build target {Path(loc.path).stem} first)", file=sys.stderr)
             return None
-        tag = reqlib.binding_tag(uid, name)
+        tag = syngatelib.binding_tag(uid, name)
         print(f"running {binary.name} \"{tag}\"")
         ok &= subprocess.run([str(binary), tag], cwd=ROOT).returncode == 0
     return ok
@@ -106,7 +106,7 @@ def _review_one(items, structural, discovered, uid, build_dir):
         return False
     resolved = {}
     for name in item.tests:
-        tag = reqlib.binding_tag(uid, name)
+        tag = syngatelib.binding_tag(uid, name)
         locations = discovered.get((uid, name), [])
         if len(locations) != 1:
             found = ", ".join(l.name for l in locations) or "none"
@@ -127,9 +127,9 @@ def _review_one(items, structural, discovered, uid, build_dir):
     # Test-first TDD: the routine is frozen by hash as soon as it runs and resolves
     # unambiguously, whether it currently passes or fails. A stamped-but-failing leaf
     # rolls up as test_failed until the covering implementation lands and turns it green.
-    item.tests = {name: reqlib.routine_sha(loc) for name, loc in resolved.items()}
-    item.reviewed = reqlib.compute_stamp(item)
-    reqlib.write_item(item)
+    item.tests = {name: syngatelib.routine_sha(loc) for name, loc in resolved.items()}
+    item.reviewed = syngatelib.compute_stamp(item)
+    syngatelib.write_item(item)
     state = "passing" if passed else "FAILING -- red, pending implementation"
     print(f"{uid}: reviewed ({item.reviewed}) -- bound test currently {state}")
     return True
@@ -142,8 +142,8 @@ def cmd_review(args):
         for line in errors:
             print(line, file=sys.stderr)
         return 1
-    structural = reqlib.validate_structure(items)
-    discovered = reqlib.discover_bindings()
+    structural = syngatelib.validate_structure(items)
+    discovered = syngatelib.discover_bindings()
     failed = [uid for uid in uids if not _review_one(items, structural, discovered, uid, args.build_dir)]
     if failed:
         print(f"review: {len(failed)}/{len(uids)} item(s) not stamped: {' '.join(failed)}", file=sys.stderr)
@@ -173,23 +173,23 @@ def cmd_clear(args):
         item.reviewed = None
         if item.tests is not None:
             item.tests = {name: None for name in item.tests}
-        reqlib.write_item(item)
+        syngatelib.write_item(item)
         print(f"{uid}: review stamp cleared")
     return ret
 
 
 def cmd_validate(args):
-    items, errors = reqlib.load_tree()
-    errors.extend(reqlib.validate_structure(items))
-    discovered = reqlib.discover_bindings()
-    errors.extend(reqlib.check_frozen(items, discovered))
+    items, errors = syngatelib.load_tree()
+    errors.extend(syngatelib.validate_structure(items))
+    discovered = syngatelib.discover_bindings()
+    errors.extend(syngatelib.check_frozen(items, discovered))
     if args.coverage:
-        records, coverage_errors = reqlib.load_coverage(args.coverage)
+        records, coverage_errors = syngatelib.load_coverage(args.coverage)
         errors.extend(coverage_errors)
-        errors.extend(reqlib.check_coverage(items, records))
+        errors.extend(syngatelib.check_coverage(items, records))
     if args.strict:
         errors.extend(f"{uid}: not reviewed (strict mode)" for uid, item in sorted(items.items()) if not item.reviewed)
-    pending = reqlib.check_bindings_exist(items, discovered)
+    pending = syngatelib.check_bindings_exist(items, discovered)
     if pending:
         print(f"validate: {len(pending)} unreviewed binding(s) without a tagged routine yet (pending, non-fatal)")
     if errors:
@@ -203,13 +203,13 @@ def cmd_validate(args):
 
 def cmd_report(args):
     items = _load_or_die()
-    records, coverage_errors = reqlib.load_coverage(args.coverage)
+    records, coverage_errors = syngatelib.load_coverage(args.coverage)
     for line in coverage_errors:
         print(f"warning: {line}", file=sys.stderr)
     # Validation problems land on the items that own them, not on whichever
-    # requirement's tooling found them.
-    problems = reqlib.item_problems(items, reqlib.discover_bindings())
-    report = reqlib.compute_status(items, records, problems)
+    # item's tooling found them.
+    problems = syngatelib.item_problems(items, syngatelib.discover_bindings())
+    report = syngatelib.compute_status(items, records, problems)
     out = Path(args.out)
     import json
     out.write_text(json.dumps(report, indent=2, sort_keys=True))
@@ -218,25 +218,25 @@ def cmd_report(args):
         counts[entry["status"]] = counts.get(entry["status"], 0) + 1
     print(f"wrote {out} -- {counts}")
     if args.html:
-        import render_req_report
-        render_req_report.run(out, Path(args.html))
+        import render_syngate_report
+        render_syngate_report.run(out, Path(args.html))
         print(f"rendered site to {args.html}")
     return 0
 
 
 def cmd_ui(args):
-    import req_ui
-    return req_ui.serve(port=args.port, coverage=args.coverage, build_dir=args.build_dir, open_browser=not args.no_browser)
+    import syngate_ui
+    return syngate_ui.serve(port=args.port, coverage=args.coverage, build_dir=args.build_dir, open_browser=not args.no_browser)
 
 
 def main():
-    parser = argparse.ArgumentParser(prog="req", description=__doc__)
+    parser = argparse.ArgumentParser(prog="syngate", description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
 
-    p = sub.add_parser("new", help="scaffold a requirement item")
+    p = sub.add_parser("new", help="scaffold a syngate item")
     p.add_argument("uid")
     p.add_argument("--parent", action="append", required=True)
-    p.add_argument("--dir", help="folder under the repo root, e.g. req/infra")
+    p.add_argument("--dir", help="folder under the repo root, e.g. syngate/infra")
     p.add_argument("--order", type=int, default=0)
     p.set_defaults(func=cmd_new)
 
@@ -250,19 +250,19 @@ def main():
     p.set_defaults(func=cmd_clear)
 
     p = sub.add_parser("validate", help="structural + frozen + coverage checks (CI gate)")
-    p.add_argument("--coverage", action="append", default=[], help="req_coverage.jsonl file(s); repeatable")
+    p.add_argument("--coverage", action="append", default=[], help="syngate_coverage.jsonl file(s); repeatable")
     p.add_argument("--strict", action="store_true", help="require every item reviewed")
     p.set_defaults(func=cmd_validate)
 
     p = sub.add_parser("report", help="recursive status rollup + optional HTML site")
-    p.add_argument("--coverage", action="append", default=[], help="req_coverage.jsonl file(s); repeatable")
-    p.add_argument("--out", default=str(ROOT / "req_status.json"))
+    p.add_argument("--coverage", action="append", default=[], help="syngate_coverage.jsonl file(s); repeatable")
+    p.add_argument("--out", default=str(ROOT / "syngate_status.json"))
     p.add_argument("--html", help="output directory for the static site")
     p.set_defaults(func=cmd_report)
 
     p = sub.add_parser("ui", help="serve the local tree editor in the browser (loopback + session token)")
     p.add_argument("--port", type=int, default=8712, help="listen port on 127.0.0.1 (default 8712, 0 = ephemeral)")
-    p.add_argument("--coverage", action="append", default=[], help="req_coverage.jsonl file(s) to color statuses; repeatable (default: well-known local files)")
+    p.add_argument("--coverage", action="append", default=[], help="syngate_coverage.jsonl file(s) to color statuses; repeatable (default: well-known local files)")
     p.add_argument("--build-dir", default="cmake-build-debug-clang", help="build tree with the Catch2 test binaries for review runs")
     p.add_argument("--no-browser", action="store_true", help="do not open the browser automatically")
     p.set_defaults(func=cmd_ui)

@@ -75,10 +75,10 @@ CMakeLists.txt.user*
 build/**
 cmake-build-*/**
 .idea/**
-.venv-req/**
-req_status.json
-req_status_junit.xml
-req_validate.log
+.venv-syngate/**
+syngate_status.json
+syngate_status_junit.xml
+syngate_validate.log
 pytest-results.xml
 *coverage.jsonl
 /site/**

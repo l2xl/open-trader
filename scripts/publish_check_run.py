@@ -3,9 +3,9 @@
 # Copyright (c) 2026 l2xl (l2xl/at/proton.me)
 # Distributed under the Intellectual Property Reserve License, v2 (IPRL)
 
-"""Publish req_status.json as a native GitHub Check Run via the Checks API directly.
+"""Publish syngate_status.json as a native GitHub Check Run via the Checks API directly.
 
-The requirement tree's genuinely nested, DAG-capable shape (branch -> feature
+The syngate tree's genuinely nested, DAG-capable shape (branch -> feature
 -> case, with multi-parent duplication) does not match the flat 2-level
 structure most JUnit-consuming actions expect, and that mismatch is opaque
 to debug without action-internal logs. This sidesteps the whole JUnit bridge:
@@ -45,7 +45,7 @@ MAX_LOG_LINES = 60
 MAX_VALIDATION_LINES = 80
 
 # ci/gate.sh's verdict line; its presence in the captured gate output is what
-# marks requirements validation as failed for this report.
+# marks syngate validation as failed for this report.
 GATE_FAILED_MARKER = "gate: FAILED"
 
 
@@ -139,8 +139,8 @@ def _render_validation(validation):
     itself here instead of only in the job log."""
     failed = gate_failed(validation)
     ball = _bullet("test_failed" if failed else "test_passed")
-    title = "Requirements gate failed" if failed else "Requirements gate passed"
-    # gate.sh bootstraps .venv-req on a cold runner, so pip's upgrade banner
+    title = "Syngate failed" if failed else "Syngate passed"
+    # gate.sh bootstraps .venv-syngate on a cold runner, so pip's upgrade banner
     # rides along on the captured output; it says nothing about the gate.
     lines = [line for line in validation.strip().splitlines() if not line.startswith("[notice]")]
     if len(lines) > MAX_VALIDATION_LINES:
@@ -156,7 +156,7 @@ def render_summary(report, validation=None):
     if validation:
         lines.append(_render_validation(validation))
     if not report:
-        lines.append("_No requirements tree available for this run._\n")
+        lines.append("_No syngate tree available for this run._\n")
     lines.extend(["| Status | Count |", "|---|---|"])
     for status in ("test_passed", "test_failed", "partially_implemented", "not_implemented"):
         if status in counts:
@@ -184,7 +184,7 @@ def build_check_run_body(report, validation=None):
     }
 
 
-def publish(repo, sha, token, body, name="Requirements Status"):
+def publish(repo, sha, token, body, name="Syngate Status"):
     payload = dict(body, name=name, head_sha=sha)
     req = urllib.request.Request(
         f"https://api.github.com/repos/{repo}/check-runs",
@@ -210,7 +210,7 @@ def load_status(path):
     try:
         return json.loads(Path(path).read_text())
     except (OSError, json.JSONDecodeError) as exc:
-        print(f"warning: no requirements rollup at {path}: {exc}", file=sys.stderr)
+        print(f"warning: no syngate rollup at {path}: {exc}", file=sys.stderr)
         return {}
 
 
@@ -225,7 +225,7 @@ def load_validation(path):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--status", type=Path, default=ROOT / "req_status.json")
+    parser.add_argument("--status", type=Path, default=ROOT / "syngate_status.json")
     parser.add_argument("--validation", type=Path, help="captured ci/gate.sh output to fold into the report")
     parser.add_argument("--repo", default=os.environ.get("GITHUB_REPOSITORY"))
     parser.add_argument("--sha", default=os.environ.get("GITHUB_SHA"))

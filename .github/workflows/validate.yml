@@ -28,7 +28,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Check two-step requirement re-approval
+      - name: Check two-step item re-approval
         env:
           EVENT: ${{ github.event_name }}
           BASE: ${{ github.event.pull_request.base.sha }}
@@ -49,7 +49,7 @@ jobs:
     # Every downstream job states its own condition on the actual results of
     # its needs instead of relying on implicit skip propagation. Tolerating
     # 'skipped' keeps the chain alive if an entry check ever becomes
-    # conditional again; any failure still stops build-test-requirements.
+    # conditional again; any failure still stops build-test-syngate.
     if: ${{ !cancelled() && needs.license.result == 'success' && contains(fromJSON('["success", "skipped"]'), needs.approval.result) }}
     permissions:
       contents: read
@@ -128,7 +128,7 @@ jobs:
     needs: build
     # Explicit condition on build's result: without it a skipped job anywhere
     # up the chain (e.g. a conditional entry check) skips this job too, and
-    # requirements then dies downloading the ctest-results artifact that was
+    # syngate then dies downloading the ctest-results artifact that was
     # never uploaded.
     if: ${{ !cancelled() && needs.build.result == 'success' }}
     permissions:
@@ -181,7 +181,7 @@ jobs:
         # pipefail` needs bash (see the build job's Configure step).
         shell: bash
         env:
-          REQ_COVERAGE_FILE: ${{ github.workspace }}/build-ci/req_coverage.jsonl
+          SYNGATE_COVERAGE_FILE: ${{ github.workspace }}/build-ci/syngate_coverage.jsonl
         run: |
           set -o pipefail
           ctest --test-dir build-ci -LE live --output-on-failure 2>&1 | tee build-ci/ctest.log
@@ -204,14 +204,14 @@ jobs:
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v6
         with:
-          name: req-coverage-cpp
-          path: build-ci/req_coverage.jsonl
+          name: syngate-coverage-cpp
+          path: build-ci/syngate_coverage.jsonl
           if-no-files-found: warn
 
-  requirements:
+  syngate:
     runs-on: ubuntu-latest
     needs: [build, test]
-    # Runs even when the test job failed so failed requirements are published red;
+    # Runs even when the test job failed so failed items are published red;
     # skipped only when there is nothing to roll up (build failed or run cancelled).
     if: ${{ !cancelled() && needs.build.result == 'success' }}
     permissions:
@@ -224,31 +224,31 @@ jobs:
         with:
           python-version: '3.12'
 
-      # Single source of truth for requirements validation: ci/gate.sh bootstraps
-      # .venv-req and runs `req validate` (structural + frozen-routine checks).
+      # Single source of truth for syngate validation: ci/gate.sh bootstraps
+      # .venv-syngate and runs `syngate validate` (structural + frozen-routine checks).
       #
       # The gate's verdict decides whether this job is red -- it must not decide
-      # whether the run gets a requirements report at all. A red gate is exactly
+      # whether the run gets a syngate report at all. A red gate is exactly
       # when the tree is most worth reading, so every step below runs on
       # `!cancelled()` rather than on this step's outcome, and the gate's output
-      # is teed into req_validate.log so the report itself carries the reason.
-      - name: Validate requirements
+      # is teed into syngate_validate.log so the report itself carries the reason.
+      - name: Validate syngate tree
         id: validate
         shell: bash
         run: |
           set -o pipefail
-          bash ci/gate.sh 2>&1 | tee -a req_validate.log
+          bash ci/gate.sh 2>&1 | tee -a syngate_validate.log
 
       - name: Install actionlint
         if: ${{ !cancelled() }}
         run: |
           bash <(curl -s https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash)
           sudo mv ./actionlint /usr/local/bin/
-      - name: Run requirements tooling tests (pytest)
+      - name: Run syngate tooling tests (pytest)
         if: ${{ !cancelled() }}
         env:
-          REQ_COVERAGE_FILE: ${{ github.workspace }}/pytest-coverage.jsonl
-        run: .venv-req/bin/python -m pytest scripts/tests
+          SYNGATE_COVERAGE_FILE: ${{ github.workspace }}/pytest-coverage.jsonl
+        run: .venv-syngate/bin/python -m pytest scripts/tests
 
       # continue-on-error, not a hard dependency: when the test job died before
       # uploading, the report is still rendered from whatever coverage exists.
@@ -257,7 +257,7 @@ jobs:
         continue-on-error: true
         uses: actions/download-artifact@v7
         with:
-          name: req-coverage-cpp
+          name: syngate-coverage-cpp
           path: build-ci
 
       - name: Check coverage against the tree
@@ -265,26 +265,26 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
-          bash ci/gate.sh --coverage pytest-coverage.jsonl --coverage build-ci/req_coverage.jsonl 2>&1 | tee -a req_validate.log
+          bash ci/gate.sh --coverage pytest-coverage.jsonl --coverage build-ci/syngate_coverage.jsonl 2>&1 | tee -a syngate_validate.log
 
-      - name: Compute recursive requirement status
+      - name: Compute recursive syngate status
         if: ${{ !cancelled() }}
         run: >
-          .venv-req/bin/python scripts/req.py report
+          .venv-syngate/bin/python scripts/syngate.py report
           --coverage pytest-coverage.jsonl
-          --coverage build-ci/req_coverage.jsonl
-          --out req_status.json
+          --coverage build-ci/syngate_coverage.jsonl
+          --out syngate_status.json
 
-      - name: Write requirements report to the job summary
+      - name: Write syngate report to the job summary
         if: ${{ !cancelled() }}
         run: >
-          .venv-req/bin/python ci/write_status_summary.py
-          --validation req_validate.log
+          .venv-syngate/bin/python ci/write_status_summary.py
+          --validation syngate_validate.log
 
-      - name: Publish requirements tree as a Check Run
+      - name: Publish syngate tree as a Check Run
         if: ${{ !cancelled() }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: >
-          .venv-req/bin/python scripts/publish_check_run.py --status req_status.json
-          --validation req_validate.log
+          .venv-syngate/bin/python scripts/publish_check_run.py --status syngate_status.json
+          --validation syngate_validate.log

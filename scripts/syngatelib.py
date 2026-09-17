@@ -2,9 +2,9 @@
 # Copyright (c) 2026 l2xl (l2xl/at/proton.me)
 # Distributed under the Intellectual Property Reserve License, v2 (IPRL)
 
-"""Self-owned requirements toolkit core (no doorstop).
+"""Synergy Context Gate (syngate) toolkit core (no doorstop).
 
-Tree layout: every `*.yml` under `req/` (any depth) is a requirement item; the
+Tree layout: every `*.yml` under `syngate/` (any depth) is a syngate item; the
 UID is the file stem; folders carry no semantics. Item schema:
 
     header: one-line title
@@ -17,16 +17,16 @@ UID is the file stem; folders carry no semantics. Item schema:
 
 A binding is identified purely by tags: the default binding is the `[UID]` tag
 alone, a named binding is the `[UID][name]` tag pair (binding name immediately
-after the UID tag; requirement tags go last in the tag list). Test locations are
+after the UID tag; item tags go last in the tag list). Test locations are
 discovered from tags at check time, never declared in items.
 
 The reviewed stamp is transparent: sha256 hex over the canonical JSON
     {"description": ..., "header": ..., "parents": [...], "tests": {name: sha} | null}
 serialized with sort_keys=True, separators=(",", ":"), ensure_ascii=False,
 UTF-8 encoded (default binding name is ""; unstamped shas are ""). Verify with:
-    python3 -c 'import reqlib,sys; print(reqlib.compute_stamp(reqlib.load_tree()[0][sys.argv[1]]))' <UID>
+    python3 -c 'import syngatelib,sys; print(syngatelib.compute_stamp(syngatelib.load_tree()[0][sys.argv[1]]))' <UID>
 
-Coverage joins `req_coverage.jsonl` records `{"tags": [...], "passed": bool}`
+Coverage joins `syngate_coverage.jsonl` records `{"tags": [...], "passed": bool}`
 (optional "name"/"log") emitted by the pytest conftest hook and the Catch2
 listener against the items' `tests` bindings.
 """
@@ -41,7 +41,7 @@ from pathlib import Path
 import yaml
 
 ROOT = Path(__file__).resolve().parent.parent
-REQ_DIR = ROOT / "req"
+SYNGATE_DIR = ROOT / "syngate"
 
 UID_RE = re.compile(r"^[A-Z][A-Z_]*(-[A-Z0-9_]+)*$")
 BINDING_NAME_RE = re.compile(r"^[a-z0-9_]+$")
@@ -103,13 +103,13 @@ def _parse_sha(sha, errors, uid):
     return sha
 
 
-def load_tree(req_dir=REQ_DIR):
+def load_tree(syngate_dir=SYNGATE_DIR):
     """Return ({uid: Item}, [errors]); items with unusable YAML are skipped."""
     items, errors = {}, []
-    for path in sorted(req_dir.rglob("*.yml")):
+    for path in sorted(syngate_dir.rglob("*.yml")):
         uid = path.stem
         if uid in items:
-            errors.append(f"{uid}: duplicate UID ({path.relative_to(req_dir)} and {items[uid].path.relative_to(req_dir)})")
+            errors.append(f"{uid}: duplicate UID ({path.relative_to(syngate_dir)} and {items[uid].path.relative_to(syngate_dir)})")
             continue
         try:
             data = yaml.safe_load(path.read_text(encoding="utf-8"))
@@ -119,7 +119,7 @@ def load_tree(req_dir=REQ_DIR):
         if not isinstance(data, dict):
             errors.append(f"{uid}: item file is not a mapping")
             continue
-        item = Item(uid=uid, path=path, folder=str(path.parent.relative_to(req_dir.parent)))
+        item = Item(uid=uid, path=path, folder=str(path.parent.relative_to(syngate_dir.parent)))
         for key in sorted(set(data) - KNOWN_FIELDS):
             errors.append(f"{uid}: unknown field '{key}'")
         item.header = str(data.get("header") or "").strip()
@@ -178,7 +178,7 @@ def layout_problems(items):
 
     Deliberately free of review state. A stale stamp is the tree's *data*, not a
     defect of its layout, so it reddens the item that carries it (see
-    `review_problems`) instead of whatever requirement describes the layout.
+    `review_problems`) instead of whatever item describes the layout.
     Tree-wide problems that name no single item carry a None uid."""
     problems = []
     children = children_map(items)
@@ -293,7 +293,7 @@ def _python_locations(root):
             for node in ast.walk(tree):
                 if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                     continue
-                for binding in _req_marks(node):
+                for binding in _syngate_marks(node):
                     first = min([node.lineno] + [d.lineno for d in node.decorator_list])
                     span = "".join(lines[first - 1:node.end_lineno])
                     rel = str(path.relative_to(root))
@@ -301,9 +301,9 @@ def _python_locations(root):
     return found
 
 
-def _req_marks(node):
+def _syngate_marks(node):
     for decorator in node.decorator_list:
-        if not (isinstance(decorator, ast.Call) and isinstance(decorator.func, ast.Attribute) and decorator.func.attr == "req"):
+        if not (isinstance(decorator, ast.Call) and isinstance(decorator.func, ast.Attribute) and decorator.func.attr == "syngate"):
             continue
         args = [a.value for a in decorator.args if isinstance(a, ast.Constant) and isinstance(a.value, str)]
         if args:
@@ -424,7 +424,7 @@ def check_coverage(items, records):
     known_bindings = {(uid, name) for uid, item in items.items() if item.is_leaf for name in item.tests}
     for (uid, name) in sorted(records, key=lambda b: (b[0], b[1] or "")):
         if uid not in items:
-            errors.append(f"coverage: records tagged {binding_tag(uid, name)} match no known requirement")
+            errors.append(f"coverage: records tagged {binding_tag(uid, name)} match no known item")
         elif items[uid].is_leaf and (uid, name) not in known_bindings:
             errors.append(f"{uid}: coverage records for undeclared binding {binding_tag(uid, name)}")
     return errors
@@ -458,7 +458,7 @@ def aggregate(child_statuses):
 def compute_status(items, records, problems=None):
     """`problems` ({uid: [message]}, see `item_problems`) reddens the exact items
     it names. A bad stamp is a defect of that item, so it is reported there and
-    aggregates up through its own parents -- never against the requirement whose
+    aggregates up through its own parents -- never against the item whose
     tooling detected it."""
     problems = problems or {}
     children = children_map(items)

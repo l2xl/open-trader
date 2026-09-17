@@ -1,0 +1,887 @@
+<!doctype html>
+<!--
+  Open Trader
+  Copyright (c) 2026 l2xl (l2xl/at/proton.me)
+  Distributed under the Intellectual Property Reserve License, v2 (IPRL)
+
+  Single-page frontend for syngate_ui.py: outline tree carrying every structured
+  field of an item + text panel (description, tests) + review console.
+  Vanilla JS, no build step, no external assets; talks JSON to /api/*.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Synergy Context Gate</title>
+<style>
+:root {
+  --bg: #f6f7f9; --panel: #ffffff; --line: #dde1e6; --text: #1b222b; --dim: #5b6472;
+  --accent: #2e5c6e; --accent-soft: #2e5c6e18;
+  --gray: #7a7f87; --yellow: #d9a63d; --yellow-text: #9a6f1c; --green: #3f7d52; --red: #a8482e;
+  --console-bg: #10151b; --console-text: #d6dde6;
+  --indent: 1.05rem;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #12161b; --panel: #1a2027; --line: #2c343e; --text: #d6dde6; --dim: #8b96a5;
+    --accent: #6fa8c0; --accent-soft: #6fa8c022;
+    --yellow-text: #d9a63d;
+  }
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body { margin: 0; font: 14px/1.45 -apple-system, "Segoe UI", system-ui, sans-serif; background: var(--bg); color: var(--text); display: flex; flex-direction: column; }
+button { font: inherit; color: inherit; background: var(--panel); border: 1px solid var(--line); border-radius: 4px; padding: 0.3em 0.8em; cursor: pointer; }
+button:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+button:disabled { opacity: 0.45; cursor: default; }
+button.danger:hover:not(:disabled) { border-color: var(--red); color: var(--red); }
+input, textarea { font: inherit; color: var(--text); background: var(--panel); border: 1px solid var(--line); border-radius: 4px; padding: 0.3em 0.5em; }
+input:focus, textarea:focus, button:focus-visible { outline: 2px solid var(--accent-soft); border-color: var(--accent); }
+code, .mono { font-family: ui-monospace, "Cascadia Code", Menlo, Consolas, monospace; }
+
+header { display: flex; align-items: center; gap: 0.8rem; padding: 0.55rem 1rem; background: var(--panel); border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+header h1 { font-size: 1rem; margin: 0; white-space: nowrap; }
+header .counts { display: flex; gap: 0.4rem; }
+#filter { width: 14rem; }
+#gate-banner { color: var(--red); font-size: 0.82rem; }
+#save-state { font-size: 0.8rem; color: var(--dim); white-space: nowrap; }
+#save-state.unsaved { color: var(--yellow-text); }
+#save-state.failed { color: var(--red); cursor: pointer; }
+.conflict { display: flex; gap: 0.6rem; align-items: center; padding: 0.35rem 1rem; font-size: 0.85rem; color: var(--yellow-text); background: #b8862b18; border-bottom: 1px solid var(--line); }
+.spacer { flex: 1; }
+
+main { flex: 1; display: flex; min-height: 0; }
+#tree-pane { width: 40rem; min-width: 18rem; max-width: 75vw; resize: horizontal; overflow: auto; border-right: 1px solid var(--line); padding: 0.6rem 0.4rem 2rem; }
+#detail-pane { flex: 1; overflow: auto; padding: 0.9rem 1.4rem 3rem; }
+
+.chip { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 0.72rem; padding: 0.12em 0.55em 0.12em 0.4em; border-radius: 3px; white-space: nowrap; border: 1px solid transparent; cursor: pointer; background: none; }
+.chip .ball { display: inline-block; width: 0.62em; height: 0.62em; border-radius: 50%; margin-right: 0.35em; }
+.chip.on { border-color: currentColor; }
+.st-not_implemented { background: #7a7f8722; color: var(--gray); }
+.st-not_implemented .ball { background: var(--gray); }
+.st-partially_implemented { background: #b8862b22; color: var(--yellow-text); }
+.st-partially_implemented .ball { background: var(--yellow); }
+.st-test_passed { background: #3f7d5222; color: var(--green); }
+.st-test_passed .ball { background: var(--green); }
+.st-test_failed { background: #a8482e22; color: var(--red); }
+.st-test_failed .ball { background: var(--red); }
+
+.row { position: relative; display: flex; align-items: center; gap: 0.3rem; padding: 0.08rem 0.3rem 0.08rem calc(0.2rem + var(--depth) * var(--indent)); border-radius: 4px; white-space: nowrap; cursor: pointer; }
+.row:hover { background: var(--accent-soft); }
+.row.selected { background: var(--accent-soft); outline: 1px solid var(--accent); }
+.row:focus-visible { outline: 2px solid var(--accent); }
+.row.dragging { opacity: 0.4; }
+.row[data-drop=inside] { outline: 2px solid var(--accent); background: var(--accent-soft); }
+.row[data-drop=before]::before, .row[data-drop=after]::after { content: ""; position: absolute; left: calc(0.2rem + var(--depth) * var(--indent)); right: 0; height: 2px; background: var(--accent); pointer-events: none; }
+.row[data-drop=before]::before { top: -1px; }
+.row[data-drop=after]::after { bottom: -1px; }
+@keyframes flash { from { background: var(--accent); } }
+.row.flash { animation: flash 0.7s ease-out; }
+.cell-node { display: inline-flex; align-items: center; gap: 0.3rem; flex: none; }
+.cell-title { flex: 1; min-width: 6rem; display: flex; }
+.twist { width: 1em; text-align: center; color: var(--dim); flex: none; font-size: 0.75rem; }
+.handle { display: inline-flex; align-items: center; gap: 0.35rem; }
+.handle[draggable=true] { cursor: grab; }
+.dot { width: 0.6em; height: 0.6em; border-radius: 50%; flex: none; }
+.dot.not_implemented { background: var(--gray); } .dot.partially_implemented { background: var(--yellow); }
+.dot.test_passed { background: var(--green); } .dot.test_failed { background: var(--red); }
+.node-uid { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 0.82rem; }
+.title { flex: 1; min-width: 0; font-size: 0.82rem; color: var(--dim); background: transparent; border-color: transparent; padding: 0.05em 0.35em; text-overflow: ellipsis; }
+.title:hover:not([readonly]) { border-color: var(--line); }
+.title:focus { color: var(--text); background: var(--panel); }
+.title[readonly] { cursor: pointer; }
+.badges { display: inline-flex; gap: 0.25rem; align-items: center; }
+.badge { font-size: 0.72rem; flex: none; }
+.badge.fresh { color: var(--green); } .badge[data-act] { cursor: pointer; } .badge.stale { color: var(--yellow-text); } .badge.problem { color: var(--red); }
+.badge.leaf { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 0.66rem; border: 1px solid currentColor; border-radius: 3px; padding: 0 0.3em; color: var(--dim); }
+.badge.leaf.unbound { color: var(--yellow-text); }
+.dupmark { color: var(--dim); font-size: 0.72rem; font-style: italic; }
+.tools { display: none; flex: none; }
+.row:hover .tools, .row.selected .tools, .row:focus-within .tools { display: inline-flex; }
+.tools button { border: none; background: none; padding: 0 0.35em; color: var(--dim); font-size: 0.9rem; line-height: 1.2; }
+.tools button.danger:hover { color: var(--red); }
+.row.adding { cursor: default; }
+.new-uid { width: 14rem; font-size: 0.82rem; padding: 0.05em 0.35em; }
+.row-problems { margin: 0.1rem 0 0.3rem calc(1.6rem + var(--depth) * var(--indent)); padding: 0.3rem 0.6rem; background: #a8482e14; border: 1px solid #a8482e55; border-radius: 4px; font-size: 0.78rem; color: var(--red); white-space: normal; }
+
+#f-description { width: 100%; min-height: 6rem; field-sizing: content; resize: none; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 0.85rem; line-height: 1.5; padding: 0.6rem 0.8rem; }
+#f-description[readonly] { background: transparent; }
+.note { color: var(--dim); font-size: 0.78rem; }
+#tests-section { margin-top: 1.1rem; }
+.section-label { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 0.7rem; text-transform: uppercase; color: var(--dim); margin: 0.9rem 0 0.3rem; letter-spacing: 0.04em; }
+.leaf-toggle { display: inline-flex; gap: 0.4em; align-items: center; font-size: 0.85rem; }
+.binding-row { display: flex; gap: 0.6rem; align-items: baseline; margin: 0.3rem 0; flex-wrap: wrap; }
+.binding-row .name { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 0.85rem; min-width: 7rem; }
+.binding-row .sha { color: var(--dim); font-size: 0.75rem; }
+.binding-row .loc { font-size: 0.78rem; color: var(--accent); }
+.binding-row .miss { color: var(--yellow-text); font-size: 0.78rem; }
+.binding-row button.unbind { border: none; background: none; padding: 0 0.15em; color: var(--dim); }
+.binding-row button.unbind:hover:not(:disabled) { color: var(--red); }
+.actions { display: flex; gap: 0.5rem; margin: 0.9rem 0 0.6rem; flex-wrap: wrap; align-items: center; }
+.testrec summary { cursor: pointer; font-size: 0.85rem; }
+.testrec pre { background: var(--accent-soft); border: 1px solid var(--line); border-radius: 3px; padding: 0.5rem 0.7rem; font-size: 0.75rem; overflow-x: auto; }
+
+#console { border-top: 1px solid var(--line); background: var(--console-bg); color: var(--console-text); display: none; flex-direction: column; max-height: 40vh; }
+#console.open { display: flex; }
+#console .bar { display: flex; gap: 0.8rem; align-items: center; padding: 0.3rem 0.9rem; font-size: 0.8rem; border-bottom: 1px solid #ffffff22; }
+#console .bar .argv { font-family: ui-monospace, Menlo, Consolas, monospace; opacity: 0.8; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#console pre { flex: 1; overflow: auto; margin: 0; padding: 0.6rem 0.9rem; font-size: 0.78rem; }
+#console .bar button { background: none; border-color: #ffffff44; color: var(--console-text); }
+.status-run { color: var(--yellow); } .status-ok { color: #7fc990; } .status-fail { color: #e58a70; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.spinner { display: inline-block; width: 0.85em; height: 0.85em; border: 2px solid #ffffff44; border-top-color: #fff; border-radius: 50%; animation: spin 0.8s linear infinite; vertical-align: -0.1em; }
+
+#toasts { position: fixed; top: 3.2rem; right: 1rem; display: flex; flex-direction: column; gap: 0.5rem; z-index: 30; }
+.toast { background: var(--panel); border: 1px solid var(--red); color: var(--red); border-radius: 4px; padding: 0.5rem 0.9rem; max-width: 26rem; font-size: 0.85rem; box-shadow: 0 2px 10px #0003; }
+.toast.info { border-color: var(--accent); color: var(--accent); }
+.empty { color: var(--dim); margin-top: 3rem; text-align: center; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Synergy Context Gate</h1>
+  <span class="counts" id="counts"></span>
+  <span id="gate-banner" hidden></span>
+  <span class="spacer"></span>
+  <span id="save-state"></span>
+  <input id="filter" type="search" placeholder="filter uid / title  ( / )">
+</header>
+<div id="conflicts"></div>
+<main>
+  <nav id="tree-pane"><div id="tree" role="treegrid" aria-label="Syngate tree"></div></nav>
+  <section id="detail-pane"></section>
+</main>
+<footer id="console">
+  <div class="bar">
+    <span id="job-state"></span>
+    <span class="argv" id="job-argv"></span>
+    <span class="spacer"></span>
+    <button id="console-close">close</button>
+  </div>
+  <pre id="job-out"></pre>
+</footer>
+<div id="toasts"></div>
+
+<script>
+"use strict";
+const TOKEN = new URLSearchParams(location.search).get("token") || "";
+const SAVE_IDLE_MS = 1000, SAVE_MAX_MS = 5000, HOVER_EXPAND_MS = 600;
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+
+const state = {
+  model: null,          // /api/tree payload
+  selected: null,       // uid
+  path: null,           // row path of the selected instance (a multi-parent item has one row per parent)
+  expanded: new Set(JSON.parse(sessionStorage.getItem("syngate-ui-expanded") || "[]")),
+  unlocked: new Set(),  // reviewed items the user opened for editing
+  filter: "",
+  statusFilter: new Set(),
+  rows: [],             // flattened visible tree, in DOM order
+  treeSig: null,        // row structure the DOM was last built for
+  adding: null,         // {parent, path} while the inline new-child row is open
+  drag: null,           // {uid, from, under}
+  job: null,
+  savedAt: null,
+};
+// Autosave: drafts holds the fields typed but not yet stored, keyed "uid field";
+// shown holds the server value each text field was last filled from -- the
+// compare-and-swap base, so an edit never overwrites what the user has not seen.
+const drafts = new Map();
+const shown = new Map();
+const draftKey = (uid, field) => uid + " " + field;
+
+function setHtml(el, html) {
+  if (el._html === html) return;
+  el.innerHTML = html;
+  el._html = html;
+}
+
+async function api(path, payload) {
+  const res = await fetch(path, {
+    method: payload === undefined ? "GET" : "POST",
+    headers: { "X-Syngate-Token": TOKEN, ...(payload !== undefined && { "Content-Type": "application/json" }) },
+    body: payload === undefined ? undefined : JSON.stringify(payload),
+    keepalive: payload !== undefined,
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw Object.assign(new Error(body.error || `${res.status} on ${path}`), { status: res.status, body });
+  return body;
+}
+
+function toast(message, cls = "") {
+  const el = document.createElement("div");
+  el.className = "toast " + cls;
+  el.textContent = message;
+  $("toasts").appendChild(el);
+  setTimeout(() => el.remove(), 6500);
+}
+
+const item = (uid) => state.model.items[uid];
+const filtersActive = () => Boolean(state.filter || state.statusFilter.size);
+const locked = (uid) => Boolean(item(uid).reviewed && item(uid).stamp_fresh && !state.unlocked.has(uid));
+function persistExpanded() { sessionStorage.setItem("syngate-ui-expanded", JSON.stringify([...state.expanded])); }
+
+// ---- autosave ------------------------------------------------------------
+
+function serverValue(uid, field) { return field === "description" ? item(uid).description_raw : item(uid)[field]; }
+
+function syncText(el) {
+  const { uid, field } = el.dataset, key = draftKey(uid, field), draft = drafts.get(key);
+  if (document.activeElement === el) return;
+  if (draft) { if (el.value !== draft.value) el.value = draft.value; return; }
+  const raw = serverValue(uid, field), text = field === "description" ? raw.replace(/\n$/, "") : raw;
+  if (el.value !== text) el.value = text;
+  shown.set(key, raw);
+}
+
+function autoGrow(el) {
+  if (CSS.supports("field-sizing", "content")) return;
+  el.style.height = "auto";
+  el.style.height = el.scrollHeight + 2 + "px";
+}
+
+function edit(uid, field, value) {
+  const key = draftKey(uid, field);
+  const draft = drafts.get(key) || { key, uid, field, base: shown.has(key) ? shown.get(key) : serverValue(uid, field), since: Date.now() };
+  draft.value = value;
+  drafts.set(key, draft);
+  clearTimeout(draft.timer);
+  draft.timer = setTimeout(() => flush(draft), Math.max(0, Math.min(SAVE_IDLE_MS, draft.since + SAVE_MAX_MS - Date.now())));
+  renderSaveState();
+}
+
+async function flush(draft) {
+  clearTimeout(draft.timer);
+  if (draft.saving || "conflict" in draft || drafts.get(draft.key) !== draft) return;
+  draft.saving = true;
+  draft.error = null;
+  renderSaveState();
+  const sent = draft.value;
+  try {
+    const result = await api(`/api/item/${draft.uid}`, { [draft.field]: sent, base: { [draft.field]: draft.base } });
+    draft.base = result.stored[draft.field];
+    shown.set(draft.key, draft.base);
+    draft.saving = false;
+    state.savedAt = new Date();
+    if (draft.value === sent) drafts.delete(draft.key);
+    else { draft.since = Date.now(); draft.timer = setTimeout(() => flush(draft), SAVE_IDLE_MS); }
+    await refresh();
+  } catch (err) {
+    draft.saving = false;
+    if (err.status === 409) draft.conflict = err.body.current[draft.field];
+    else draft.error = err.message;
+  }
+  renderSaveState();
+}
+
+const flushAll = () => Promise.all([...drafts.values()].map(flush));
+
+function renderSaveState() {
+  const all = [...drafts.values()], el = $("save-state");
+  const failed = all.find((d) => d.error);
+  el.className = failed ? "failed" : all.length ? "unsaved" : "";
+  el.title = failed ? failed.error : "";
+  el.textContent = failed ? "✗ save failed — click to retry" : all.some((d) => "conflict" in d) ? "⚠ edit conflict"
+    : all.some((d) => d.saving) ? "saving…" : all.length ? "● unsaved" : state.savedAt ? "✓ saved " + state.savedAt.toLocaleTimeString() : "";
+  setHtml($("conflicts"), all.filter((d) => "conflict" in d).map((d) =>
+    `<div class="conflict">⚠ <span class="mono">${esc(d.uid)}</span> ${esc(d.field)} changed on disk while you were editing it`
+    + `<button data-keep="${esc(d.key)}">keep mine</button><button data-take="${esc(d.key)}">take theirs</button></div>`).join(""));
+}
+
+// ---- tree ----------------------------------------------------------------
+
+function visibleSet() {
+  // An item stays visible when itself or any descendant matches the filters.
+  const m = state.model, needle = state.filter.toLowerCase(), statuses = state.statusFilter;
+  const memo = new Map();
+  const selfMatch = (uid) => {
+    const it = m.items[uid];
+    const text = !needle || uid.toLowerCase().includes(needle) || (it.header || "").toLowerCase().includes(needle);
+    const status = !statuses.size || statuses.has(it.status);
+    return text && status;
+  };
+  const visit = (uid, trail) => {
+    if (memo.has(uid)) return memo.get(uid);
+    if (trail.has(uid)) return false;
+    trail.add(uid);
+    const ok = selfMatch(uid) || m.items[uid].children.some((c) => visit(c, trail));
+    trail.delete(uid);
+    memo.set(uid, ok);
+    return ok;
+  };
+  const visible = new Set();
+  for (const uid of Object.keys(m.items)) if (visit(uid, new Set())) visible.add(uid);
+  return visible;
+}
+
+function flatten() {
+  const m = state.model, visible = visibleSet(), forced = filtersActive(), rows = [];
+  const walk = (uid, parent, trail) => {
+    if (!visible.has(uid)) return;
+    const kids = m.items[uid].children.filter((c) => visible.has(c));
+    const cycle = trail.includes(uid), path = [...trail, uid].join("/");
+    const adding = Boolean(state.adding && state.adding.path === path);
+    const open = !cycle && (adding || (kids.length > 0 && (forced || state.expanded.has(uid))));
+    rows.push({ uid, parent, path, depth: trail.length, kids: kids.length, open, cycle });
+    if (!open) return;
+    for (const c of kids) walk(c, uid, [...trail, uid]);
+    if (adding) rows.push({ adding: true, parent: uid, path: path + "/+", depth: trail.length + 1 });
+  };
+  for (const uid of [...m.roots, ...m.unreachable]) walk(uid, null, []);
+  return rows;
+}
+
+function rowHtml(row) {
+  const indent = `style="--depth:${row.depth}"`;
+  if (row.adding) {
+    return `<div class="row adding" ${indent} role="row"><span class="twist">·</span>`
+      + `<input class="new-uid mono" data-focus-key="adding" spellcheck="false" placeholder="NEW-UID">`
+      + `<span class="note">Enter creates · Esc cancels</span></div>`;
+  }
+  const uid = esc(row.uid), path = esc(row.path);
+  return `<div class="row" ${indent} role="row" tabindex="-1" aria-level="${row.depth + 1}" data-uid="${uid}" data-path="${path}" data-focus-key="row:${path}">`
+    + `<span class="cell-node" role="gridcell"><span class="twist"></span>`
+    + `<span class="handle"><span class="dot"></span><span class="node-uid">${uid}</span></span><span class="badges"></span></span>`
+    + `<span class="cell-title" role="gridcell"><input class="title" type="text" spellcheck="false" data-uid="${uid}" data-field="header" data-focus-key="title:${path}"></span>`
+    + `<span class="tools" role="gridcell"><button data-act="add" title="add a child">+</button>`
+    + `<button data-act="unlink" title="unlink from this parent">⊖</button><button data-act="delete" class="danger" title="delete">✕</button></span>`
+    + (row.cycle ? '<span class="dupmark">(cycle)</span>' : "") + "</div>";
+}
+
+function badgesHtml(uid, it) {
+  const badges = [];
+  if (it.problems.length) badges.push('<span class="badge problem" title="' + esc(it.problems.join("\n")) + '">✗</span>');
+  if (it.reviewed && !it.stamp_fresh) badges.push('<span class="badge stale" title="reviewed, stamp STALE — re-review required">⚠</span>');
+  else if (it.reviewed) badges.push(state.unlocked.has(uid)
+    ? '<span class="badge stale" data-act="lock" title="unlocked: edits make the review stamp stale — click to lock">✓✎</span>'
+    : '<span class="badge fresh" data-act="lock" title="reviewed, stamp fresh — click to unlock for editing">✓</span>');
+  if (it.is_leaf) {
+    const bound = it.bindings.filter((b) => b.locations.length === 1).length;
+    badges.push(`<span class="badge leaf${bound === it.bindings.length ? "" : " unbound"}" title="leaf: ${bound} of ${it.bindings.length} binding(s) resolve to one tagged routine">T${it.bindings.length > 1 ? it.bindings.length : ""}</span>`);
+  }
+  if (it.parents.length > 1) badges.push('<span class="dupmark" title="multiple parents: ' + esc(it.parents.join(", ")) + '">⇈</span>');
+  return badges.join("");
+}
+
+function decorateRow(el, row) {
+  if (row.adding) return;
+  const it = item(row.uid), selected = row.uid === state.selected;
+  el.classList.toggle("selected", selected);
+  el.setAttribute("aria-selected", selected);
+  if (row.kids) el.setAttribute("aria-expanded", row.open); else el.removeAttribute("aria-expanded");
+  el.querySelector(".twist").textContent = row.kids ? (row.open ? "▾" : "▸") : "·";
+  const dot = el.querySelector(".dot");
+  dot.className = "dot " + it.status;
+  dot.title = it.status.replace(/_/g, " ");
+  const handle = el.querySelector(".handle");
+  handle.draggable = it.parents.length > 0;
+  handle.title = it.path + (handle.draggable ? " — drag to move, Ctrl+drag to add one more parent" : "");
+  setHtml(el.querySelector(".badges"), badgesHtml(row.uid, it));
+  const title = el.querySelector(".title");
+  title.readOnly = locked(row.uid);
+  title.placeholder = it.description.slice(0, 60);
+  title.title = title.readOnly ? "reviewed — click ✓ to unlock for editing" : "";
+  syncText(title);
+  el.querySelector('[data-act="unlink"]').hidden = !(row.parent && it.parents.length > 1);
+  el.querySelector('[data-act="delete"]').hidden = it.children.length > 0;
+  if (state.flash === row.uid) el.classList.add("flash");
+}
+
+function selectedRowEl() {
+  const tree = $("tree");
+  return (state.path && tree.querySelector(`.row[data-path="${CSS.escape(state.path)}"]`))
+    || (state.selected && tree.querySelector(`.row[data-uid="${CSS.escape(state.selected)}"]`)) || null;
+}
+
+function renderTree() {
+  const m = state.model, tree = $("tree");
+  state.rows = flatten();
+  const sig = state.rows.map((r) => r.path + (r.open ? "+" : "")).join("\n");
+  let focus = null;
+  if (sig !== state.treeSig) {
+    const active = document.activeElement;
+    if (tree.contains(active) && active.dataset.focusKey) focus = { key: active.dataset.focusKey, value: active.value, start: active.selectionStart, end: active.selectionEnd };
+    state.rebuilding = true;
+    tree.innerHTML = state.rows.map(rowHtml).join("") || '<div class="empty">nothing matches the filter</div>';
+    state.rebuilding = false;
+    state.treeSig = sig;
+  }
+  tree.querySelectorAll(".row").forEach((el, i) => decorateRow(el, state.rows[i]));
+  state.flash = null;
+  if (focus) {
+    const el = tree.querySelector(`[data-focus-key="${CSS.escape(focus.key)}"]`);
+    if (el) {
+      if (focus.key === "adding") el.value = focus.value;
+      el.focus({ preventScroll: true });
+      if (el.setSelectionRange && focus.start != null) el.setSelectionRange(focus.start, focus.end);
+    }
+  }
+  tree.querySelectorAll(".row-problems").forEach((el) => el.remove());
+  const selected = selectedRowEl(), problems = state.selected && item(state.selected) ? item(state.selected).problems : [];
+  if (selected && problems.length) {
+    selected.insertAdjacentHTML("afterend", `<div class="row-problems" style="--depth:${selected.style.getPropertyValue("--depth")}">`
+      + problems.map((p) => "<div>" + esc(p) + "</div>").join("") + "</div>");
+  }
+
+  setHtml($("counts"), ["test_failed", "partially_implemented", "test_passed", "not_implemented"]
+    .filter((s) => m.counts[s])
+    .map((s) => '<button class="chip st-' + s + (state.statusFilter.has(s) ? " on" : "") + '" data-status="' + s + '">'
+      + '<span class="ball"></span>' + m.counts[s] + " " + s.replace(/_/g, " ") + "</button>").join(""));
+  const gate = $("gate-banner");
+  const problemItems = Object.values(m.items).filter((it) => it.problems.length).length;
+  const troubles = m.load_errors.length + problemItems;
+  gate.hidden = !troubles;
+  gate.title = m.load_errors.join("\n");
+  if (troubles) gate.textContent = "⛔ gate: " + (m.load_errors.length ? m.load_errors.length + " tree error(s), " : "") + problemItems + " item(s) with validation problems";
+}
+
+function toggle(uid) {
+  state.expanded.has(uid) ? state.expanded.delete(uid) : state.expanded.add(uid);
+  persistExpanded();
+  renderTree();
+}
+
+function select(uid, path = null, focus = null) {
+  state.selected = uid;
+  state.path = path;
+  renderTree(); renderPanel();
+  const el = selectedRowEl();
+  if (!el) return;
+  el.scrollIntoView({ block: "nearest" });
+  if (focus === "row") el.focus({ preventScroll: true });
+  if (focus === "title") el.querySelector(".title").focus({ preventScroll: true });
+}
+
+// ---- structure edits: add child / delete / unlink / move -----------------
+
+async function ensureBranch(uid) {
+  const it = item(uid);
+  if (!it.is_leaf) return true;
+  if (it.reviewed || it.bindings.some((b) => b.sha)) { toast(`${uid} is a reviewed leaf — clear its review and drop its tests key before giving it children`); return false; }
+  if (!confirm(`${uid} carries a tests key (leaf). Drop it so ${uid} becomes a branch?`)) return false;
+  await api(`/api/item/${uid}`, { tests: null });
+  return true;
+}
+
+function suggestUid(parent) {
+  const numbered = item(parent).children.map((c) => c.match(/^(.*-)\d+$/)).filter(Boolean);
+  const prefix = numbered.length ? numbered[numbered.length - 1][1] : parent.replace(/-?\d*$/, "-");
+  let max = 0, width = 3;
+  for (const uid of Object.keys(state.model.items)) {
+    if (!uid.startsWith(prefix) || !/^\d+$/.test(uid.slice(prefix.length))) continue;
+    const digits = uid.slice(prefix.length);
+    if (Number(digits) >= max) { max = Number(digits); width = digits.length; }
+  }
+  return prefix + String(max + 1).padStart(width, "0");
+}
+
+async function startAdding(row) {
+  try {
+    if (!(await ensureBranch(row.uid))) return;
+    await refresh();
+  } catch (err) { toast(err.message); return; }
+  state.adding = { parent: row.uid, path: row.path };
+  renderTree();
+  const input = $("tree").querySelector(".new-uid");
+  input.value = suggestUid(row.uid);
+  input.focus();
+  input.select();
+}
+
+function stopAdding() {
+  if (!state.adding || state.creating || state.rebuilding) return;
+  state.adding = null;
+  renderTree();
+}
+
+async function createChild(input) {
+  const parent = state.adding.parent, uid = input.value.trim(), kids = item(parent).children;
+  const last = kids.length ? item(kids[kids.length - 1]) : null;
+  state.creating = true;
+  try {
+    await api("/api/new", { uid, parents: [parent], dir: (last || item(parent)).folder, kind: "leaf", order: last ? last.order + 10 : 0 });
+    state.adding = null;
+    state.filter = $("filter").value = "";
+    state.statusFilter.clear();
+    state.expanded.add(parent);
+    persistExpanded();
+    await refresh();
+    select(uid, null, "title");
+    document.activeElement.select();
+  } catch (err) { toast(err.message); input.focus(); }
+  finally { state.creating = false; }
+}
+
+async function deleteItem(uid) {
+  if (!confirm(`Delete ${uid} (${item(uid).path})?`)) return;
+  try {
+    await api(`/api/delete/${uid}`, {});
+    for (const key of [...drafts.keys()]) if (key.startsWith(uid + " ")) { clearTimeout(drafts.get(key).timer); drafts.delete(key); }
+    if (state.selected === uid) state.selected = state.path = null;
+    renderSaveState();
+    await refresh();
+  } catch (err) { toast(err.message); }
+}
+
+async function unlink(row) {
+  const it = item(row.uid);
+  if (it.reviewed && !confirm(`${row.uid} is reviewed: changing its parents makes the stamp stale (re-review needed). Unlink from ${row.parent} anyway?`)) return;
+  try {
+    await api(`/api/item/${row.uid}`, { parents: it.parents.filter((p) => p !== row.parent), base: { parents: it.parents } });
+    state.path = null;
+    await refresh();
+  } catch (err) { toast(err.message); }
+}
+
+function descendants(uid) {
+  const under = new Set(), queue = [...item(uid).children];
+  while (queue.length) {
+    const next = queue.pop();
+    if (under.has(next)) continue;
+    under.add(next);
+    queue.push(...item(next).children);
+  }
+  return under;
+}
+
+async function move(uid, from, to, before, link = false) {
+  if (filtersActive()) { toast("clear the filters to move items", "info"); return; }
+  const it = item(uid), refocus = $("tree").contains(document.activeElement);
+  try {
+    if (!it.parents.includes(to)) {
+      if (!(await ensureBranch(to))) return;
+      if (it.reviewed && !confirm(`${uid} is reviewed: a new parent makes its stamp stale (re-review needed). ${link ? "Link" : "Move"} under ${to} anyway?`)) return;
+    }
+    await api(`/api/move/${uid}`, { from, to, before, link });
+    state.expanded.add(to);
+    persistExpanded();
+    state.flash = uid;
+    await refresh();
+    if (state.selected === uid) select(uid, [...state.rows].find((r) => r.uid === uid && r.parent === to)?.path || null, refocus ? "row" : null);
+  } catch (err) { toast(err.message); }
+}
+
+// Keyboard twin of drag-and-drop: Alt+Shift+arrows move the selected row among
+// its siblings, indent it under the previous sibling or outdent it after its parent.
+function keyboardMove(row, key) {
+  if (!row.parent) return;
+  const sibs = item(row.parent).children, i = sibs.indexOf(row.uid);
+  if (key === "ArrowUp" && i > 0) move(row.uid, row.parent, row.parent, sibs[i - 1]);
+  if (key === "ArrowDown" && i < sibs.length - 1) move(row.uid, row.parent, row.parent, sibs[i + 2] ?? null);
+  if (key === "ArrowRight" && i > 0) move(row.uid, row.parent, sibs[i - 1], null);
+  if (key === "ArrowLeft") {
+    const above = state.rows.find((r) => r.path === row.path.slice(0, row.path.lastIndexOf("/")));
+    if (!above || !above.parent) return;
+    const uncles = item(above.parent).children;
+    move(row.uid, row.parent, above.parent, uncles[uncles.indexOf(above.uid) + 1] ?? null);
+  }
+}
+
+function dropAt(event) {
+  const target = event.target.nodeType === 1 ? event.target : event.target.parentElement;
+  const el = target && target.closest(".row[data-path]"), drag = state.drag;
+  const row = el && state.rows.find((r) => r.path === el.dataset.path);
+  if (!row || row.cycle) return null;
+  const rect = el.getBoundingClientRect(), y = (event.clientY - rect.top) / rect.height;
+  const zone = !row.parent ? "inside" : y < 0.25 ? "before" : y > 0.75 ? "after" : "inside";
+  const into = zone === "inside" || (zone === "after" && row.open);
+  const to = into ? row.uid : row.parent;
+  if (row.uid === drag.uid || to === drag.uid || drag.under.has(to)) return null;
+  const sibs = item(to).children.filter((c) => c !== drag.uid);
+  const before = zone === "inside" ? null : zone === "before" ? row.uid : (into ? sibs[0] : sibs[sibs.indexOf(row.uid) + 1]) ?? null;
+  return { el, row, zone, to, before };
+}
+
+function markDrop(drop) {
+  const marked = $("tree").querySelector("[data-drop]");
+  if (marked && (!drop || marked !== drop.el)) delete marked.dataset.drop;
+  if (drop) drop.el.dataset.drop = drop.zone;
+  const hover = drop && drop.zone === "inside" && drop.row.kids && !drop.row.open ? drop.row.uid : null;
+  if (hover === state.hover) return;
+  clearTimeout(state.hoverTimer);
+  state.hover = hover;
+  if (hover) state.hoverTimer = setTimeout(() => { state.expanded.add(hover); persistExpanded(); renderTree(); }, HOVER_EXPAND_MS);
+}
+
+function endDrag() {
+  state.drag = null;
+  markDrop(null);
+  $("tree").querySelectorAll(".dragging").forEach((el) => el.classList.remove("dragging"));
+}
+
+// ---- text panel: description + tests ------------------------------------
+
+function testsHtml(uid, it) {
+  const off = locked(uid) ? "disabled" : "";
+  let body;
+  if (it.children.length) body = '<div class="note">branch — reviewed through its children</div>';
+  else {
+    body = `<label class="leaf-toggle"><input type="checkbox" id="f-isleaf" ${it.is_leaf ? "checked" : ""} ${off}> carries a <code>tests</code> key (leaf)</label>`;
+    if (it.is_leaf) {
+      body += it.bindings.map((b, i) => {
+        const locHtml = b.locations.length
+          ? b.locations.map((l) => '<span class="loc mono" title="' + esc(l.name) + '">' + esc(l.path) + ":" + l.line + "</span>").join(" ")
+          : '<span class="miss">no tagged routine yet — tag it [' + esc(uid) + "]" + (b.name ? "[" + esc(b.name) + "]" : "") + "</span>";
+        const sha = b.sha ? '<span class="sha" title="' + esc(b.sha) + '">frozen ' + esc(b.sha.slice(0, 12)) + "…</span>" : '<span class="sha">unstamped</span>';
+        const records = b.records ? '<span class="note">' + b.records + " run(s)</span>" : "";
+        return '<div class="binding-row"><span class="name">' + (b.name ? esc(b.name) : "(default)") + "</span>" + sha + locHtml + records
+          + `<button class="unbind" data-unbind="${i}" title="remove binding" ${off}>✕</button></div>`;
+      }).join("");
+      body += `<div class="binding-row"><input type="text" id="f-add-binding" placeholder="binding name (empty = default)" class="mono" style="width:14rem" ${off}><button id="add-binding-btn" ${off}>add binding</button></div>`;
+    }
+  }
+  const actions = (it.is_leaf && !it.children.length ? '<button id="review-btn" title="run the bound tests, then stamp routine shas + reviewed">Review (run tests + stamp)</button>' : "")
+    + (it.reviewed ? '<button id="clear-btn" class="danger" title="drop the reviewed stamp">Clear review</button>' : "");
+  const runs = it.tests.length ? '<div class="section-label">Coverage runs</div>' + it.tests.map((t) =>
+    '<details class="testrec"><summary><span class="chip st-' + (t.passed ? "test_passed" : "test_failed") + '"><span class="ball"></span>' + (t.passed ? "passed" : "failed")
+    + "</span> <span class='mono'>" + esc(t.name) + "</span></summary><pre>" + esc(t.log || "(no captured output)") + "</pre></details>").join("") : "";
+  return '<div class="section-label">Tests</div>' + body + (actions ? '<div class="actions">' + actions + "</div>" : "") + runs;
+}
+
+function renderPanel() {
+  const pane = $("detail-pane"), uid = state.selected, it = uid && item(uid);
+  if (!it) {
+    pane.dataset.uid = "";
+    setHtml(pane, '<div class="empty">Select an item on the left.</div>');
+    return;
+  }
+  if (pane.dataset.uid !== uid) {
+    pane.dataset.uid = uid;
+    pane._html = null;
+    pane.innerHTML = `<textarea id="f-description" data-uid="${esc(uid)}" data-field="description" spellcheck="false" placeholder="The component shall …"></textarea>`
+      + `<section id="tests-section"></section>`;
+  }
+  const text = $("f-description");
+  text.readOnly = locked(uid);
+  text.title = text.readOnly ? "reviewed — click ✓ on its tree row to unlock for editing" : "";
+  syncText(text);
+  autoGrow(text);
+  const adding = $("f-add-binding");
+  if (!(adding && adding === document.activeElement && adding.value)) setHtml($("tests-section"), testsHtml(uid, it));
+}
+
+async function saveTests(uid, names) {
+  const it = item(uid);
+  try { await api(`/api/item/${uid}`, { tests: names, base: { tests: it.is_leaf ? it.bindings.map((b) => b.name) : null } }); }
+  catch (err) { toast(err.message); }
+  await refresh();
+}
+
+function addBinding(uid) {
+  const names = item(uid).bindings.map((b) => b.name), name = $("f-add-binding").value.trim();
+  if (names.includes(name)) { toast(`binding '${name || "(default)"}' already present`); return; }
+  if (name && !/^[a-z0-9_]+$/.test(name)) { toast("binding names are [a-z0-9_]+"); return; }
+  if ((name === "" && names.length) || names.includes("")) { toast("the default binding stands alone; name all bindings to have several"); return; }
+  $("f-add-binding").value = "";
+  saveTests(uid, [...names, name]);
+}
+
+// ---- runs (review / clear) ----------------------------------------------
+
+async function run(action, uids) {
+  await flushAll();
+  if (drafts.size) { toast("resolve the unsaved edits first"); return; }
+  try {
+    const { job } = await api("/api/run", { action, uids });
+    attachJob(job, `${action} ${uids.join(" ")}`);
+  } catch (err) { toast(err.message); }
+}
+
+function attachJob(id, label) {
+  $("console").classList.add("open");
+  $("job-out").textContent = "";
+  $("job-argv").textContent = label;
+  $("job-state").innerHTML = '<span class="spinner"></span> <span class="status-run">running</span>';
+  const es = new EventSource(`/api/job/${id}/events?token=${encodeURIComponent(TOKEN)}`);
+  state.job = { id, es };
+  es.onmessage = (event) => {
+    const out = $("job-out");
+    out.textContent += event.data + "\n";
+    out.scrollTop = out.scrollHeight;
+  };
+  es.addEventListener("done", async (event) => {
+    es.close();
+    state.job = null;
+    const rc = event.data;
+    $("job-state").innerHTML = rc === "0" ? '<span class="status-ok">✓ exit 0</span>' : `<span class="status-fail">✗ exit ${esc(rc)}</span>`;
+    await refresh();
+  });
+  es.onerror = () => { if (state.job && state.job.id === id) { es.close(); state.job = null; $("job-state").innerHTML = '<span class="status-fail">stream lost</span>'; } };
+}
+
+// ---- refresh loop --------------------------------------------------------
+
+let refreshSeq = 0;
+async function refresh() {
+  const seq = ++refreshSeq;
+  let model;
+  try { model = await api("/api/tree"); } catch (err) { toast(err.message); return; }
+  if (seq !== refreshSeq) return;
+  state.model = model;
+  if (state.selected && !model.items[state.selected]) state.selected = state.path = null;
+  if (state.adding && !model.items[state.adding.parent]) state.adding = null;
+  renderTree(); renderPanel();
+}
+
+async function poll() {
+  if (document.hidden || !state.model || state.drag) return;
+  try {
+    const { fingerprint } = await api("/api/fingerprint");
+    if (fingerprint !== state.model.fingerprint) await refresh();
+  } catch (err) { /* server gone; the next interaction reports it */ }
+}
+
+// ---- events --------------------------------------------------------------
+
+const tree = $("tree");
+const rowOf = (el) => state.rows.find((r) => r.path === el.dataset.path);
+
+tree.addEventListener("click", (event) => {
+  const el = event.target.closest(".row[data-path]");
+  if (!el) return;
+  const row = rowOf(el), act = event.target.closest("[data-act]");
+  if (event.target.closest(".twist")) { if (row.kids) toggle(row.uid); return; }
+  if (act) {
+    if (act.dataset.act === "add") startAdding(row);
+    if (act.dataset.act === "unlink") unlink(row);
+    if (act.dataset.act === "delete") deleteItem(row.uid);
+    if (act.dataset.act === "lock") { state.unlocked.has(row.uid) ? state.unlocked.delete(row.uid) : state.unlocked.add(row.uid); renderTree(); renderPanel(); }
+    return;
+  }
+  if (row.uid !== state.selected || row.path !== state.path) select(row.uid, row.path);
+});
+tree.addEventListener("keydown", (event) => {
+  if (!event.target.classList.contains("new-uid")) return;
+  if (event.key === "Enter") createChild(event.target);
+  if (event.key === "Escape") { event.target.blur(); }
+  event.stopPropagation();
+});
+tree.addEventListener("focusout", (event) => { if (event.target.classList.contains("new-uid")) stopAdding(); });
+
+tree.addEventListener("dragstart", (event) => {
+  const handle = event.target.nodeType === 1 && event.target.closest(".handle");
+  if (!handle) return;
+  if (filtersActive()) { event.preventDefault(); toast("clear the filters to move items", "info"); return; }
+  const el = handle.closest(".row"), row = rowOf(el);
+  state.drag = { uid: row.uid, from: row.parent, under: descendants(row.uid) };
+  event.dataTransfer.effectAllowed = "copyMove";
+  event.dataTransfer.setData("text/plain", row.uid);
+  event.dataTransfer.setDragImage(el, 12, 12);
+  el.classList.add("dragging");
+  handle.addEventListener("dragend", endDrag, { once: true });
+});
+tree.addEventListener("dragover", (event) => {
+  const drop = state.drag && dropAt(event);
+  markDrop(drop);
+  if (!drop) return;
+  event.preventDefault();
+  event.dataTransfer.dropEffect = event.ctrlKey ? "copy" : "move";
+});
+tree.addEventListener("dragleave", (event) => { if (!tree.contains(event.relatedTarget)) markDrop(null); });
+tree.addEventListener("drop", (event) => {
+  const drag = state.drag, drop = drag && dropAt(event);
+  endDrag();
+  if (!drop) return;
+  event.preventDefault();
+  move(drag.uid, drag.from, drop.to, drop.before, event.ctrlKey);
+});
+// A rebuilt tree detaches the drag source, and its dragend may then never reach
+// us; a pressed button is proof that no drag is in progress any more.
+document.addEventListener("mousedown", () => { if (state.drag) endDrag(); });
+
+document.addEventListener("input", (event) => {
+  const el = event.target;
+  if (!el.dataset || !el.dataset.field) return;
+  edit(el.dataset.uid, el.dataset.field, el.value);
+  if (el.tagName === "TEXTAREA") autoGrow(el);
+});
+document.addEventListener("focusout", (event) => {
+  const el = event.target;
+  if (state.rebuilding || !el.dataset || !el.dataset.field) return;
+  const draft = drafts.get(draftKey(el.dataset.uid, el.dataset.field));
+  if (draft) flush(draft);
+});
+document.addEventListener("visibilitychange", () => { if (document.hidden) flushAll(); });
+window.addEventListener("pagehide", flushAll);
+
+$("save-state").addEventListener("click", flushAll);
+$("conflicts").addEventListener("click", (event) => {
+  const keep = event.target.dataset.keep, take = event.target.dataset.take, draft = drafts.get(keep || take);
+  if (!draft) return;
+  if (keep) { draft.base = draft.conflict; delete draft.conflict; flush(draft); return; }
+  drafts.delete(take);
+  if (document.activeElement && document.activeElement.dataset.field) document.activeElement.blur();
+  renderSaveState();
+  refresh();
+});
+
+$("detail-pane").addEventListener("click", (event) => {
+  const uid = state.selected, target = event.target;
+  if (!uid) return;
+  if (target.id === "add-binding-btn") addBinding(uid);
+  if (target.id === "review-btn") run("review", [uid]);
+  if (target.id === "clear-btn" && confirm(`Drop the reviewed stamp of ${uid}? Bound routine shas revert to ~.`)) run("clear", [uid]);
+  if (target.dataset.unbind !== undefined) {
+    const bindings = item(uid).bindings, gone = bindings[Number(target.dataset.unbind)];
+    if (gone.sha && !confirm(`Binding '${gone.name || "(default)"}' is frozen; removing it drops its routine sha. Remove?`)) return;
+    saveTests(uid, bindings.filter((b) => b !== gone).map((b) => b.name));
+  }
+});
+$("detail-pane").addEventListener("change", (event) => {
+  if (event.target.id !== "f-isleaf") return;
+  const uid = state.selected, frozen = item(uid).bindings && item(uid).bindings.filter((b) => b.sha).length;
+  if (!event.target.checked && frozen && !confirm(`Dropping the tests key discards ${frozen} frozen routine sha(s). Continue?`)) { event.target.checked = true; return; }
+  saveTests(uid, event.target.checked ? [""] : null);
+});
+$("detail-pane").addEventListener("keydown", (event) => { if (event.target.id === "f-add-binding" && event.key === "Enter") addBinding(state.selected); });
+
+$("counts").addEventListener("click", (event) => {
+  const chip = event.target.closest("[data-status]");
+  if (!chip) return;
+  const s = chip.dataset.status;
+  state.statusFilter.has(s) ? state.statusFilter.delete(s) : state.statusFilter.add(s);
+  $("counts")._html = null;
+  renderTree();
+});
+$("filter").addEventListener("input", () => { state.filter = $("filter").value.trim(); renderTree(); });
+$("console-close").addEventListener("click", () => $("console").classList.remove("open"));
+
+document.addEventListener("keydown", (event) => {
+  const el = document.activeElement, typing = el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA");
+  const onTitle = typing && el.classList.contains("title");
+  if (event.key === "/" && !typing) { event.preventDefault(); $("filter").focus(); return; }
+  if ((typing && !onTitle) || !state.model) return;
+  const rows = state.rows.filter((r) => !r.adding);
+  const index = rows.findIndex((r) => (state.path ? r.path === state.path : r.uid === state.selected)), row = rows[index];
+  if (event.altKey && event.shiftKey && event.key.startsWith("Arrow")) { event.preventDefault(); if (row) keyboardMove(row, event.key); return; }
+  if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey || !rows.length) return;
+  let target = null;
+  if (event.key === "ArrowDown") target = rows[Math.min(rows.length - 1, index + 1)];
+  else if (event.key === "ArrowUp") target = rows[Math.max(0, index - 1)];
+  else if (!row) return;
+  else if (onTitle) {
+    if (event.key !== "Enter" && event.key !== "Escape") return;
+    select(row.uid, row.path, "row");
+  } else if (event.key === "Home") target = rows[0];
+  else if (event.key === "End") target = rows[rows.length - 1];
+  else if (event.key === "ArrowRight") { if (row.kids && !row.open) toggle(row.uid); else if (row.open) target = rows[index + 1]; }
+  else if (event.key === "ArrowLeft") { if (row.open) toggle(row.uid); else target = rows.find((r) => r.path === row.path.slice(0, row.path.lastIndexOf("/"))); }
+  else if (event.key === "Enter" || event.key === "F2") select(row.uid, row.path, "title");
+  else return;
+  event.preventDefault();
+  if (target) select(target.uid, target.path, onTitle ? "title" : "row");
+});
+
+if (!TOKEN) {
+  document.body.innerHTML = '<div class="empty"><h2>Missing session token</h2><p>Open the exact URL printed by <code>syngate ui</code> (it carries <code>?token=…</code>).</p></div>';
+} else {
+  refresh().then(() => {
+    if (state.model) for (const uid of state.model.roots) state.expanded.add(uid);
+    renderTree(); renderPanel();
+  });
+  setInterval(poll, 2000);
+}
+</script>
+</body>
+</html>

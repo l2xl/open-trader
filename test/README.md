@@ -33,7 +33,7 @@ Catch2 CLI options apply, e.g. `--list-tests`, `-c "section name"`, `[tag]`.
 ## Naming and tags
 
 - Name a `TEST_CASE` / `TEMPLATE_TEST_CASE` with a minimal noun phrase for the behaviour under test (`"persisted feed"`, `"subscription condition"`). The file already scopes the component; do not prefix the name with the class under test and do not restate the assertion.
-- Tags carry exactly two entries: the component tag (`[datahub]`, `[connect]`, `[engine]`, `[cockpit]`, `[render]`) and the requirement UID last (`[DATAHUB-023]`). No feature or adjective tags — the requirement id is the classifier.
+- Tags carry exactly two entries: the component tag (`[datahub]`, `[connect]`, `[engine]`, `[cockpit]`, `[render]`) and the syngate item UID last (`[DATAHUB-023]`). No feature or adjective tags — the item UID is the classifier.
 - `SECTION` names are minimal scenario labels (`"runtime records"`, `"cached records"`, `"persisted records"`).
-- A requirement binds to exactly one routine (see `req/README.md`). Cover type variants with one `TEMPLATE_TEST_CASE` over the types and scenarios with `SECTION`s inside it, sharing file-scope test vectors (`seed`, `tail`), instead of adding tagged `TEST_CASE`s per variant.
+- An item binding resolves to exactly one routine (see `syngate/README.md`). Cover type variants with one `TEMPLATE_TEST_CASE` over the types and scenarios with `SECTION`s inside it, sharing file-scope test vectors (`seed`, `tail`), instead of adding tagged `TEST_CASE`s per variant.
 - Comments only where a test vector or fixture encodes a non-obvious invariant; the name and the assertions are the description.

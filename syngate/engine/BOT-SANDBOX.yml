@@ -1,0 +1,4 @@
+header: Bot backtest
+description: |
+  Trading bot backtesing suite which enables isolated bot execution on historical data
+parents: [BOT-EXEC]

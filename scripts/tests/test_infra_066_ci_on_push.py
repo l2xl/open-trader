@@ -9,7 +9,7 @@ import pytest
 from workflow_doc import load, steps
 
 
-@pytest.mark.req("INFRA-066")
+@pytest.mark.syngate("INFRA-066")
 def test_ci_builds_the_project_on_every_push():
     # `on:` parses as the YAML boolean True, not the string "on".
     triggers = load()[True]

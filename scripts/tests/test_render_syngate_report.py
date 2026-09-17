@@ -2,13 +2,13 @@
 # Copyright (c) 2026 l2xl (l2xl/at/proton.me)
 # Distributed under the Intellectual Property Reserve License, v2 (IPRL)
 
-"""Tests for scripts/render_req_report.py -- [INFRA-045]."""
+"""Tests for scripts/render_syngate_report.py -- [INFRA-045]."""
 
 import json
 
 import pytest
 
-from render_req_report import run
+from render_syngate_report import run
 
 
 def _write_status(path, entries):
@@ -19,20 +19,20 @@ def _status_entries():
     return {
         "ROOT-001": {
             "status": "test_passed", "header": "Root", "description": "Root",
-            "parents": [], "children": ["INFRA-001"], "order": 0, "folder": "req",
+            "parents": [], "children": ["INFRA-001"], "order": 0, "folder": "syngate",
             "reviewed": False, "tests": [],
         },
         "INFRA-001": {
             "status": "test_passed", "header": "", "description": "Leaf",
-            "parents": ["ROOT-001"], "children": [], "order": 0, "folder": "req/infra",
+            "parents": ["ROOT-001"], "children": [], "order": 0, "folder": "syngate/infra",
             "reviewed": False, "tests": [],
         },
     }
 
 
-@pytest.mark.req("INFRA-045")
+@pytest.mark.syngate("INFRA-045")
 def test_render_produces_index_and_navigable_cards(tmp_path):
-    status_path = tmp_path / "req_status.json"
+    status_path = tmp_path / "syngate_status.json"
     _write_status(status_path, _status_entries())
     out_dir = tmp_path / "site"
     run(status_path, out_dir)
@@ -55,7 +55,7 @@ def test_item_card_shows_collapsible_test_logs(tmp_path):
         {"binding": "", "name": "test/data/test_currency.cpp", "passed": True, "log": "All tests passed"},
         {"binding": "dao", "name": "test/datahub/test_dao.cpp", "passed": False, "log": "FAILED: REQUIRE( rows == 1 )"},
     ]
-    status_path = tmp_path / "req_status.json"
+    status_path = tmp_path / "syngate_status.json"
     _write_status(status_path, entries)
     out_dir = tmp_path / "site"
     run(status_path, out_dir)
@@ -69,15 +69,15 @@ def test_item_card_shows_collapsible_test_logs(tmp_path):
 
 def test_item_card_shows_folder_and_reviewed(tmp_path):
     entries = _status_entries()
-    entries["INFRA-001"]["folder"] = "req/infra"
+    entries["INFRA-001"]["folder"] = "syngate/infra"
     entries["INFRA-001"]["reviewed"] = True
-    status_path = tmp_path / "req_status.json"
+    status_path = tmp_path / "syngate_status.json"
     _write_status(status_path, entries)
     out_dir = tmp_path / "site"
     run(status_path, out_dir)
 
     leaf_card = (out_dir / "items" / "INFRA-001.html").read_text()
-    assert "req/infra" in leaf_card
+    assert "syngate/infra" in leaf_card
     assert "True" in leaf_card
 
 
@@ -85,12 +85,12 @@ def test_tree_page_renders_root_and_marks_dag_merge_duplicates(tmp_path):
     entries = _status_entries()
     entries["INFRA-002"] = {
         "status": "test_passed", "header": "", "description": "Shared leaf",
-        "parents": ["ROOT-001", "INFRA-001"], "children": [], "order": 0, "folder": "req/infra",
+        "parents": ["ROOT-001", "INFRA-001"], "children": [], "order": 0, "folder": "syngate/infra",
         "reviewed": False, "tests": [],
     }
     entries["ROOT-001"]["children"] = ["INFRA-001", "INFRA-002"]
     entries["INFRA-001"]["children"] = ["INFRA-002"]
-    status_path = tmp_path / "req_status.json"
+    status_path = tmp_path / "syngate_status.json"
     _write_status(status_path, entries)
     out_dir = tmp_path / "site"
     run(status_path, out_dir)

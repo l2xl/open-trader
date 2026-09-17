@@ -2,17 +2,17 @@
 # Copyright (c) 2026 l2xl (l2xl/at/proton.me)
 # Distributed under the Intellectual Property Reserve License, v2 (IPRL)
 
-"""Local requirements-tree editor: a loopback web UI over reqlib.
+"""Local Synergy Context Gate (syngate) tree editor: a loopback web UI over syngatelib.
 
-`req ui` (or `python scripts/req_ui.py`) serves a single-page editor for the
-tree under `req/`: the DAG with live status rollup, item-field editing through
-the canonical writer, and review / clear runs driven through `req.py`
-subprocesses with output streamed to the browser over SSE. Stamping stays in
-the CLI code path, so the browser button and the terminal command are the same
-user action.
+`syngate ui` (or `python scripts/syngate_ui.py`) serves a single-page editor for the
+tree under `syngate/`: the DAG with live status rollup, per-field item edits
+(autosave) and drag-and-drop placement through the canonical writer, and
+review / clear runs driven through `syngate.py` subprocesses with output streamed
+to the browser over SSE. Stamping stays in the CLI code path, so the browser
+button and the terminal command are the same user action.
 
 The server binds 127.0.0.1 only. Every request must carry the per-session
-token from the URL printed at startup (`X-Req-Token` header or `?token=`),
+token from the URL printed at startup (`X-Syngate-Token` header or `?token=`),
 and the Host header must be a loopback name -- the jupyter-style defense
 against CSRF and DNS rebinding for localhost tools that run subprocesses.
 """
@@ -22,6 +22,7 @@ import hashlib
 import hmac
 import http.server
 import json
+import math
 import re
 import secrets
 import subprocess
@@ -33,21 +34,22 @@ from urllib.parse import parse_qs, urlsplit
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-import reqlib
+import syngatelib
 
 DEFAULT_PORT = 8712
 DEFAULT_BUILD_DIR = "cmake-build-debug-clang"
-# UIDs and the glob patterns req.py accepts for batch review/clear.
+# UIDs and the glob patterns syngate.py accepts for batch review/clear.
 RUN_UID_RE = re.compile(r"^[A-Za-z0-9_\-?*\[\]!]+$")
 LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1"}
 # Coverage files picked up automatically when none are given explicitly.
-DEFAULT_COVERAGE = ("pytest-coverage.jsonl", "req_coverage.jsonl", "build-ci/req_coverage.jsonl")
+DEFAULT_COVERAGE = ("pytest-coverage.jsonl", "syngate_coverage.jsonl", "build-ci/syngate_coverage.jsonl")
 
 
 class ApiError(Exception):
-    def __init__(self, status, message):
+    def __init__(self, status, message, **extra):
         super().__init__(message)
         self.status = status
+        self.extra = extra
 
 
 class Job:
@@ -132,12 +134,12 @@ class JobRunner:
                 job.cond.wait(0.2)
 
 
-class ReqUIApp:
-    def __init__(self, root=reqlib.ROOT, req_dir=None, coverage=(), cli_prefix=None, build_dir=DEFAULT_BUILD_DIR):
+class SyngateUIApp:
+    def __init__(self, root=syngatelib.ROOT, syngate_dir=None, coverage=(), cli_prefix=None, build_dir=DEFAULT_BUILD_DIR):
         self.root = Path(root)
-        self.req_dir = Path(req_dir) if req_dir else self.root / "req"
+        self.syngate_dir = Path(syngate_dir) if syngate_dir else self.root / "syngate"
         self.coverage = [str(p) for p in coverage]
-        self.cli_prefix = cli_prefix or [sys.executable, str(self.root / "scripts" / "req.py")]
+        self.cli_prefix = cli_prefix or [sys.executable, str(self.root / "scripts" / "syngate.py")]
         self.build_dir = build_dir
         self.token = secrets.token_urlsafe(24)
         self.jobs = JobRunner()
@@ -149,7 +151,7 @@ class ReqUIApp:
 
     def fingerprint(self):
         stat = hashlib.sha256()
-        paths = sorted(self.req_dir.rglob("*.yml")) + [Path(p) for p in self._coverage_files()]
+        paths = sorted(self.syngate_dir.rglob("*.yml")) + [Path(p) for p in self._coverage_files()]
         for path in paths:
             try:
                 meta = path.stat()
@@ -159,12 +161,12 @@ class ReqUIApp:
         return stat.hexdigest()
 
     def build_model(self):
-        items, load_errors = reqlib.load_tree(self.req_dir)
-        discovered = reqlib.discover_bindings(self.root)
-        records, coverage_errors = reqlib.load_coverage(self._coverage_files())
-        problems = reqlib.item_problems(items, discovered)
-        report = reqlib.compute_status(items, records, problems)
-        tree_errors = [message for uid, message in reqlib.layout_problems(items) if uid is None]
+        items, load_errors = syngatelib.load_tree(self.syngate_dir)
+        discovered = syngatelib.discover_bindings(self.root)
+        records, coverage_errors = syngatelib.load_coverage(self._coverage_files())
+        problems = syngatelib.item_problems(items, discovered)
+        report = syngatelib.compute_status(items, records, problems)
+        tree_errors = [message for uid, message in syngatelib.layout_problems(items) if uid is None]
 
         payload = {}
         for uid, entry in report.items():
@@ -182,7 +184,7 @@ class ReqUIApp:
                                 is_leaf=item.is_leaf,
                                 description_raw=item.description,
                                 path=str(item.path.relative_to(self.root)) if item.path.is_relative_to(self.root) else str(item.path),
-                                stamp_fresh=(reqlib.compute_stamp(item) == item.reviewed) if item.reviewed else None,
+                                stamp_fresh=(syngatelib.compute_stamp(item) == item.reviewed) if item.reviewed else None,
                                 bindings=bindings)
 
         roots = sorted(uid for uid, item in items.items() if not item.parents)
@@ -212,7 +214,7 @@ class ReqUIApp:
     # -- mutations --------------------------------------------------------
 
     def _load(self):
-        items, _ = reqlib.load_tree(self.req_dir)
+        items, _ = syngatelib.load_tree(self.syngate_dir)
         return items
 
     @staticmethod
@@ -221,11 +223,14 @@ class ReqUIApp:
             raise ApiError(400, "'parents' must be a list of UIDs")
         if len(set(parents)) != len(parents):
             raise ApiError(400, "duplicate parents")
+        linked = items[uid].parents if uid in items else ()
         for parent in parents:
             if parent == uid:
                 raise ApiError(400, "an item cannot be its own parent")
             if parent not in items:
                 raise ApiError(400, f"unknown parent '{parent}'")
+            if parent not in linked and items[parent].is_leaf:
+                raise ApiError(400, f"{parent} carries tests; leaf and branch are mutually exclusive")
         # Climbing the (edited) parent links from each new parent must never
         # reach uid, or the DAG gains a cycle.
         edges = {u: (parents if u == uid else item.parents) for u, item in items.items()}
@@ -248,43 +253,126 @@ class ReqUIApp:
             raise ApiError(400, "'order' must be a number")
         return value
 
+    @staticmethod
+    def _parse_bindings(item, children, names):
+        if names is None:
+            return None
+        if not isinstance(names, list) or not all(isinstance(n, str) for n in names):
+            raise ApiError(400, "'tests' must be null or a list of binding names")
+        if len(set(names)) != len(names):
+            raise ApiError(400, "duplicate binding names")
+        if "" in names and len(names) > 1:
+            raise ApiError(400, "the default binding '' cannot be combined with named bindings")
+        for name in names:
+            if name and not syngatelib.BINDING_NAME_RE.match(name):
+                raise ApiError(400, f"invalid binding name '{name}' (want [a-z0-9_]+)")
+        if children:
+            raise ApiError(400, f"item has children {sorted(children)}; leaf and branch are mutually exclusive")
+        old = item.tests or {}
+        return {(name or None): old.get(name or None) for name in names}
+
+    @staticmethod
+    def _fields(item):
+        """The editable fields in their wire form (bindings as a name list)."""
+        return {"header": item.header, "description": item.description, "parents": list(item.parents), "order": item.order,
+                "tests": None if item.tests is None else [name or "" for name in item.tests]}
+
     def save_item(self, uid, data):
+        """Partial update: only the fields present in `data` change. `base` maps
+        fields to the value the editor started from and turns the write into a
+        per-field compare-and-swap, so an autosave never silently overwrites an
+        edit made on disk (agent, git, IDE) since the page loaded the item."""
         items = self._load()
         item = items.get(uid)
         if item is None:
             raise ApiError(404, f"unknown UID '{uid}'")
-        parents = data.get("parents") or []
-        self._check_parents(items, uid, parents)
-        names = data.get("tests", None)
-        children = reqlib.children_map(items)[uid]
-        if names is None:
-            tests = None
+        before = self._fields(item)
+        if "header" in data:
+            item.header = str(data["header"] or "").strip()
+        if "description" in data:
+            text = str(data["description"] or "")
+            item.description = text if text.endswith("\n") else text + "\n"
+        if "parents" in data:
+            parents = data["parents"] or []
+            self._check_parents(items, uid, parents)
+            item.parents = parents
+        if "order" in data:
+            item.order = self._parse_order(data["order"])
+        if "tests" in data:
+            item.tests = self._parse_bindings(item, syngatelib.children_map(items)[uid], data["tests"])
+        base = data.get("base")
+        if not isinstance(base, dict):
+            base = {}
+        after = self._fields(item)
+        clashed = sorted(f for f in base if f in before and before[f] != base[f] and before[f] != after[f])
+        if clashed:
+            raise ApiError(409, f"{uid}: {', '.join(clashed)} changed on disk since the page loaded it", current={f: before[f] for f in clashed})
+        if after != before:
+            syngatelib.write_item(item)
+        return {"ok": True, "stamp_fresh": (syngatelib.compute_stamp(item) == item.reviewed) if item.reviewed else None, "stored": after}
+
+    @staticmethod
+    def _placement(items, uid, siblings, index):
+        """{uid: order} landing `uid` at `index` among `siblings`: a free integer
+        strictly between the neighbours' keys when there is one (one file
+        written), else the whole family renumbered in steps of 10."""
+        below = items[siblings[index - 1]].order if index else None
+        above = items[siblings[index]].order if index < len(siblings) else None
+        if below is None and above is None:
+            return {}
+        if below is None:
+            key = math.floor(above) - 10
+        elif above is None:
+            key = math.floor(below) + 10
         else:
-            if not isinstance(names, list) or not all(isinstance(n, str) for n in names):
-                raise ApiError(400, "'tests' must be null or a list of binding names")
-            if len(set(names)) != len(names):
-                raise ApiError(400, "duplicate binding names")
-            if "" in names and len(names) > 1:
-                raise ApiError(400, "the default binding '' cannot be combined with named bindings")
-            for name in names:
-                if name and not reqlib.BINDING_NAME_RE.match(name):
-                    raise ApiError(400, f"invalid binding name '{name}' (want [a-z0-9_]+)")
-            if children:
-                raise ApiError(400, f"item has children {sorted(children)}; leaf and branch are mutually exclusive")
-            old = item.tests or {}
-            tests = {(name or None): old.get(name or None) for name in names}
-        item.header = str(data.get("header") or "").strip()
-        item.description = str(data.get("description") or "")
+            key = math.floor((below + above) / 2)
+        if (below is None or below < key) and (above is None or key < above):
+            return {uid: key}
+        return {u: (n + 1) * 10 for n, u in enumerate(siblings[:index] + [uid] + siblings[index:])}
+
+    def move_item(self, uid, data):
+        """Place `uid` under parent `to`, in front of sibling `before` (None =
+        last). Its link to parent `from` is re-pointed at `to`; `link` keeps it
+        and adds `to` as one more parent. `order` is one key per item, so a
+        multi-parent item carries the same key under each of its parents."""
+        items = self._load()
+        item = items.get(uid)
+        if item is None:
+            raise ApiError(404, f"unknown UID '{uid}'")
+        source, target, before = data.get("from"), data.get("to"), data.get("before")
+        if target not in items:
+            raise ApiError(400, f"unknown parent '{target}'")
+        parents = list(item.parents)
+        if target not in parents:
+            if data.get("link") or source not in parents:
+                parents.append(target)
+            else:
+                parents[parents.index(source)] = target
+        elif source != target and source in parents and not data.get("link"):
+            parents.remove(source)
+        self._check_parents(items, uid, parents)
+        relinked = parents != item.parents
         item.parents = parents
-        item.order = self._parse_order(data.get("order", 0))
-        item.tests = tests
-        reqlib.write_item(item)
-        return {"ok": True, "stamp_fresh": (reqlib.compute_stamp(item) == item.reviewed) if item.reviewed else None}
+        family = syngatelib.sorted_children(items, syngatelib.children_map(items), target)
+        siblings = [c for c in family if c != uid]
+        if before is None:
+            index = len(siblings)
+        elif before in siblings:
+            index = siblings.index(before)
+        else:
+            raise ApiError(400, f"'{before}' is not a sibling under {target}")
+        orders = {} if siblings[:index] + [uid] + siblings[index:] == family else self._placement(items, uid, siblings, index)
+        written = {u for u, order in orders.items() if items[u].order != order} | ({uid} if relinked else set())
+        for u, order in orders.items():
+            items[u].order = order
+        for u in sorted(written):
+            syngatelib.write_item(items[u])
+        return {"ok": True, "written": sorted(written)}
 
     def create_item(self, data):
         items = self._load()
         uid = str(data.get("uid") or "")
-        if not reqlib.UID_RE.match(uid):
+        if not syngatelib.UID_RE.match(uid):
             raise ApiError(400, f"'{uid}' is not a valid UID")
         if uid in items:
             raise ApiError(400, f"{uid} already exists at {items[uid].path}")
@@ -292,16 +380,16 @@ class ReqUIApp:
         if not parents:
             raise ApiError(400, "a new item needs at least one parent (the tree has exactly one root)")
         self._check_parents(items, uid, parents)
-        folder = str(data.get("dir") or "").strip() or str(self.req_dir.relative_to(self.root))
+        folder = str(data.get("dir") or "").strip() or str(self.syngate_dir.relative_to(self.root))
         directory = (self.root / folder).resolve()
-        if not directory.is_relative_to(self.req_dir.resolve()):
-            raise ApiError(400, f"directory '{folder}' is outside the requirements tree")
+        if not directory.is_relative_to(self.syngate_dir.resolve()):
+            raise ApiError(400, f"directory '{folder}' is outside the syngate tree")
         tests = None if data.get("kind") == "branch" else {None: None}
         directory.mkdir(parents=True, exist_ok=True)
-        item = reqlib.Item(uid=uid, path=directory / f"{uid}.yml", header="TODO",
+        item = syngatelib.Item(uid=uid, path=directory / f"{uid}.yml", header="TODO",
                            description="TODO: The component shall ...\n", parents=list(parents),
                            order=self._parse_order(data.get("order", 0)), tests=tests)
-        reqlib.write_item(item)
+        syngatelib.write_item(item)
         return {"ok": True, "path": str(item.path.relative_to(self.root))}
 
     def delete_item(self, uid):
@@ -309,7 +397,7 @@ class ReqUIApp:
         item = items.get(uid)
         if item is None:
             raise ApiError(404, f"unknown UID '{uid}'")
-        children = sorted(reqlib.children_map(items)[uid])
+        children = sorted(syngatelib.children_map(items)[uid])
         if children:
             raise ApiError(400, f"{uid} still has children {children}; re-parent or delete them first")
         item.path.unlink()
@@ -330,7 +418,7 @@ class ReqUIApp:
 
 
 def _page_bytes():
-    return (Path(__file__).resolve().parent / "req_ui.html").read_bytes()
+    return (Path(__file__).resolve().parent / "syngate_ui.html").read_bytes()
 
 
 # Served without the token: browsers request it on their own, and it reveals nothing.
@@ -344,7 +432,7 @@ class _Handler(http.server.BaseHTTPRequestHandler):
     app = None  # bound by make_server
     protocol_version = "HTTP/1.1"
 
-    def log_message(self, format, *args):  # keep the terminal for req.py output
+    def log_message(self, format, *args):  # keep the terminal for syngate.py output
         pass
 
     # -- plumbing ---------------------------------------------------------
@@ -369,7 +457,7 @@ class _Handler(http.server.BaseHTTPRequestHandler):
             self._json(403, {"error": "requests must address a loopback host"})
             return False
         query = parse_qs(urlsplit(self.path).query)
-        supplied = self.headers.get("X-Req-Token") or (query.get("token") or [""])[0]
+        supplied = self.headers.get("X-Syngate-Token") or (query.get("token") or [""])[0]
         if not hmac.compare_digest(supplied, self.app.token):
             self._json(401, {"error": "missing or invalid session token"})
             return False
@@ -410,7 +498,7 @@ class _Handler(http.server.BaseHTTPRequestHandler):
             else:
                 self._json(404, {"error": f"no route for GET {path}"})
         except ApiError as exc:
-            self._json(exc.status, {"error": str(exc)})
+            self._json(exc.status, {"error": str(exc), **exc.extra})
         except BrokenPipeError:
             pass
 
@@ -422,6 +510,8 @@ class _Handler(http.server.BaseHTTPRequestHandler):
             payload = self._payload()
             if (match := re.fullmatch(r"/api/item/([A-Za-z0-9_\-]+)", path)):
                 self._json(200, self.app.save_item(match.group(1), payload))
+            elif (match := re.fullmatch(r"/api/move/([A-Za-z0-9_\-]+)", path)):
+                self._json(200, self.app.move_item(match.group(1), payload))
             elif path == "/api/new":
                 self._json(200, self.app.create_item(payload))
             elif (match := re.fullmatch(r"/api/delete/([A-Za-z0-9_\-]+)", path)):
@@ -431,7 +521,7 @@ class _Handler(http.server.BaseHTTPRequestHandler):
             else:
                 self._json(404, {"error": f"no route for POST {path}"})
         except ApiError as exc:
-            self._json(exc.status, {"error": str(exc)})
+            self._json(exc.status, {"error": str(exc), **exc.extra})
 
     def _job_snapshot(self, job_id):
         job = self.app.jobs.get(job_id)
@@ -469,27 +559,27 @@ def make_server(app, port=DEFAULT_PORT):
     return server
 
 
-def serve(port=DEFAULT_PORT, coverage=(), build_dir=DEFAULT_BUILD_DIR, open_browser=True, root=reqlib.ROOT):
+def serve(port=DEFAULT_PORT, coverage=(), build_dir=DEFAULT_BUILD_DIR, open_browser=True, root=syngatelib.ROOT):
     coverage = list(coverage) or [str(Path(root) / name) for name in DEFAULT_COVERAGE if (Path(root) / name).is_file()]
-    app = ReqUIApp(root=root, coverage=coverage, build_dir=build_dir)
+    app = SyngateUIApp(root=root, coverage=coverage, build_dir=build_dir)
     try:
         server = make_server(app, port)
     except OSError as exc:
-        print(f"req ui: cannot bind 127.0.0.1:{port}: {exc}", file=sys.stderr)
+        print(f"syngate ui: cannot bind 127.0.0.1:{port}: {exc}", file=sys.stderr)
         return 1
     url = f"http://127.0.0.1:{server.server_address[1]}/?token={app.token}"
-    print(f"req ui: serving the requirements editor at {url}")
+    print(f"syngate ui: serving the syngate editor at {url}")
     if coverage:
-        print(f"req ui: coloring statuses from {', '.join(coverage)}")
+        print(f"syngate ui: coloring statuses from {', '.join(coverage)}")
     else:
-        print("req ui: no coverage files found; leaf statuses show as not implemented (pass --coverage FILE)")
-    print("req ui: loopback only; the URL token is this session's key. Ctrl+C stops the server.")
+        print("syngate ui: no coverage files found; leaf statuses show as not implemented (pass --coverage FILE)")
+    print("syngate ui: loopback only; the URL token is this session's key. Ctrl+C stops the server.")
     if open_browser:
         webbrowser.open(url)
     try:
         server.serve_forever()
     except KeyboardInterrupt:
-        print("\nreq ui: stopped")
+        print("\nsyngate ui: stopped")
     finally:
         app.jobs.cancel()
         server.server_close()
@@ -499,7 +589,7 @@ def serve(port=DEFAULT_PORT, coverage=(), build_dir=DEFAULT_BUILD_DIR, open_brow
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--port", type=int, default=DEFAULT_PORT, help=f"listen port on 127.0.0.1 (default {DEFAULT_PORT}, 0 = ephemeral)")
-    parser.add_argument("--coverage", action="append", default=[], help="req_coverage.jsonl file(s) to color statuses; repeatable (default: well-known local files)")
+    parser.add_argument("--coverage", action="append", default=[], help="syngate_coverage.jsonl file(s) to color statuses; repeatable (default: well-known local files)")
     parser.add_argument("--build-dir", default=DEFAULT_BUILD_DIR, help="build tree containing the Catch2 test binaries for review runs")
     parser.add_argument("--no-browser", action="store_true", help="do not open the browser automatically")
     args = parser.parse_args()
