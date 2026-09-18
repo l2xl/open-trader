@@ -1,0 +1,6 @@
+header: Bound test run
+description: |
+  The test command shall run the routines bound to the addressed leaf items without stamping them -- pytest routines selected by node id, Catch2 cases by an OR of their tag pairs in one run per test binary -- and, given a coverage output file, replace the previous records of every re-run binding with the fresh ones, recording a binding it cannot run -- no or several tagged routines, test binary not built -- as failed.
+parents: [INFRA-041]
+order: 70
+tests: {selection: ~, supersede: ~, unrun_record: ~}

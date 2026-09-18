@@ -3,5 +3,3 @@ description: |
   A subscriber attaching with its own condition to any feed type (sorted_data_feed, sorted_snapshot_data_feed, keyed_snapshot_data_feed) shall receive only the records matching that condition, whether they were replayed from a populated data_model, were already cached by the feed at attach time or arrive at runtime afterwards, independently of the conditions of other subscribers on the same feed.
 parents: [DATAHUB-020]
 order: 90
-tests: e5a9c07a73745acf7f841439591f2b6d5ec58c514c97f7e7c318818b11dc50c7
-reviewed: 17e78f646ef3b3eb68892f81a8f52477c9ddce9c26255db78043372eb3b1437d

@@ -1,0 +1,6 @@
+header: Bot status/control panel
+description: |
+  Panel to show and control trading bot execution
+parents: [CONTENT_PANEL]
+order: 40
+tests: ~
