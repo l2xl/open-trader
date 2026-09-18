@@ -55,6 +55,13 @@ NOT_IMPLEMENTED = "not_implemented"
 PARTIALLY_IMPLEMENTED = "partially_implemented"
 TEST_PASSED = "test_passed"
 TEST_FAILED = "test_failed"
+UNKNOWN = "unknown"
+NOT_REVIEWED = "not_reviewed"
+REVIEWED = "reviewed"
+REVIEW_VIOLATED = "review_violated"
+# Rollup precedence of the two status axes: the first state present among the children wins.
+TEST_RANK = (TEST_FAILED, UNKNOWN, TEST_PASSED)
+REVIEW_RANK = (REVIEW_VIOLATED, NOT_REVIEWED, REVIEWED)
 
 
 @dataclass
@@ -411,6 +418,26 @@ def load_coverage(paths):
     return records, errors
 
 
+def _record_bindings(line):
+    try:
+        tags = json.loads(line)["tags"]
+    except (json.JSONDecodeError, KeyError, TypeError):
+        return []
+    return bindings_from_tags([t for t in tags if isinstance(t, str)])
+
+
+def merge_coverage(target, fresh):
+    """Fold a re-run's records into `target`. A binding's fresh records replace
+    its old ones: with 'any failed record reddens the leaf', an appended re-run
+    could never turn a once-failed binding green again."""
+    target, fresh = Path(target), Path(fresh)
+    fresh_lines = [line for line in fresh.read_text(encoding="utf-8").splitlines() if line.strip()] if fresh.is_file() else []
+    rerun = {binding for line in fresh_lines for binding in _record_bindings(line)}
+    old_lines = [line for line in target.read_text(encoding="utf-8").splitlines() if line.strip()] if target.is_file() else []
+    kept = [line for line in old_lines if not rerun.intersection(_record_bindings(line))]
+    target.write_text("".join(line + "\n" for line in kept + fresh_lines), encoding="utf-8")
+
+
 def check_coverage(items, records):
     """Reviewed leaf bindings need >=1 executed record; unknown UIDs in records
     are typos."""
@@ -495,6 +522,45 @@ def compute_status(items, records, problems=None):
             "tests": tests,
         }
     return report
+
+
+def leaf_test_status(item, records):
+    per_binding = [records.get((item.uid, name), []) for name in item.tests]
+    if any(not r["passed"] for recs in per_binding for r in recs):
+        return TEST_FAILED
+    if any(not recs for recs in per_binding):
+        return UNKNOWN
+    return TEST_PASSED
+
+
+def _worst(states, rank):
+    present = set(states)
+    return next(state for state in rank if state in present)
+
+
+def compute_axes(items, records, problems=None):
+    """{uid: {"test": …, "review": …}} -- two independent rollups. Tests: a
+    failed leaf fails every ancestor, else one unknown leaf leaves them unknown.
+    Review: an item's own validation problem is a violated review, which
+    outranks not reviewed, which outranks reviewed; a branch is reviewed only
+    through its children."""
+    problems = problems or {}
+    children = children_map(items)
+    memo = {}
+
+    def axes(uid):
+        if uid in memo:
+            return memo[uid]
+        memo[uid] = (UNKNOWN, NOT_REVIEWED)  # cycle guard
+        item, kids = items[uid], [axes(k) for k in children[uid]]
+        if kids:
+            test, review = _worst([t for t, _ in kids], TEST_RANK), _worst([r for _, r in kids], REVIEW_RANK)
+        else:
+            test, review = (leaf_test_status(item, records) if item.is_leaf else UNKNOWN), (REVIEWED if item.reviewed else NOT_REVIEWED)
+        memo[uid] = (test, REVIEW_VIOLATED if problems.get(uid) else review)
+        return memo[uid]
+
+    return {uid: dict(zip(("test", "review"), axes(uid))) for uid in items}
 
 
 class _BlockStr(str):

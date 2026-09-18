@@ -4,8 +4,9 @@
   Copyright (c) 2026 l2xl (l2xl/at/proton.me)
   Distributed under the Intellectual Property Reserve License, v2 (IPRL)
 
-  Single-page frontend for syngate_ui.py: outline tree carrying every structured
-  field of an item + text panel (description, tests) + review console.
+  Single-page frontend for syngate_ui.py: outline tree (the TOC, carrying every
+  structured field of an item, tests popover included) + the whole tree as one
+  document of titled description blocks edited in place + review console.
   Vanilla JS, no build step, no external assets; talks JSON to /api/*.
 -->
 <html lang="en">
@@ -17,6 +18,8 @@
 :root {
   --bg: #f6f7f9; --panel: #ffffff; --line: #dde1e6; --text: #1b222b; --dim: #5b6472;
   --accent: #2e5c6e; --accent-soft: #2e5c6e18;
+  --sel: #4f86c6; --sel-text: #3b6ea8;
+  --sel-line: color-mix(in oklab, var(--sel) 60%, var(--line)); --sel-fill: color-mix(in oklab, var(--sel) 14%, transparent);
   --gray: #7a7f87; --yellow: #d9a63d; --yellow-text: #9a6f1c; --green: #3f7d52; --red: #a8482e;
   --console-bg: #10151b; --console-text: #d6dde6;
   --indent: 1.05rem;
@@ -25,6 +28,7 @@
   :root {
     --bg: #12161b; --panel: #1a2027; --line: #2c343e; --text: #d6dde6; --dim: #8b96a5;
     --accent: #6fa8c0; --accent-soft: #6fa8c022;
+    --sel: #78aee6; --sel-text: #8dbbe9;
     --yellow-text: #d9a63d;
   }
 }
@@ -52,23 +56,22 @@ header .counts { display: flex; gap: 0.4rem; }
 
 main { flex: 1; display: flex; min-height: 0; }
 #tree-pane { width: 40rem; min-width: 18rem; max-width: 75vw; resize: horizontal; overflow: auto; border-right: 1px solid var(--line); padding: 0.6rem 0.4rem 2rem; }
-#detail-pane { flex: 1; overflow: auto; padding: 0.9rem 1.4rem 3rem; }
+#doc-pane { flex: 1; overflow: auto; background: var(--panel); padding: 1.1rem 1.6rem 0; }
+#doc { max-width: 64rem; padding-bottom: 70vh; }
 
 .chip { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 0.72rem; padding: 0.12em 0.55em 0.12em 0.4em; border-radius: 3px; white-space: nowrap; border: 1px solid transparent; cursor: pointer; background: none; }
 .chip .ball { display: inline-block; width: 0.62em; height: 0.62em; border-radius: 50%; margin-right: 0.35em; }
 .chip.on { border-color: currentColor; }
-.st-not_implemented { background: #7a7f8722; color: var(--gray); }
-.st-not_implemented .ball { background: var(--gray); }
-.st-partially_implemented { background: #b8862b22; color: var(--yellow-text); }
-.st-partially_implemented .ball { background: var(--yellow); }
-.st-test_passed { background: #3f7d5222; color: var(--green); }
+.st-unknown { --tint: #7a7f8722; background: var(--tint); color: var(--gray); }
+.st-unknown .ball { background: var(--gray); }
+.st-test_passed { --tint: #3f7d5222; background: var(--tint); color: var(--green); }
 .st-test_passed .ball { background: var(--green); }
-.st-test_failed { background: #a8482e22; color: var(--red); }
+.st-test_failed { --tint: #a8482e22; background: var(--tint); color: var(--red); }
 .st-test_failed .ball { background: var(--red); }
 
 .row { position: relative; display: flex; align-items: center; gap: 0.3rem; padding: 0.08rem 0.3rem 0.08rem calc(0.2rem + var(--depth) * var(--indent)); border-radius: 4px; white-space: nowrap; cursor: pointer; }
 .row:hover { background: var(--accent-soft); }
-.row.selected { background: var(--accent-soft); outline: 1px solid var(--accent); }
+.row.selected { background: var(--sel-fill); outline: 1px solid var(--sel-line); }
 .row:focus-visible { outline: 2px solid var(--accent); }
 .row.dragging { opacity: 0.4; }
 .row[data-drop=inside] { outline: 2px solid var(--accent); background: var(--accent-soft); }
@@ -83,8 +86,7 @@ main { flex: 1; display: flex; min-height: 0; }
 .handle { display: inline-flex; align-items: center; gap: 0.35rem; }
 .handle[draggable=true] { cursor: grab; }
 .dot { width: 0.6em; height: 0.6em; border-radius: 50%; flex: none; }
-.dot.not_implemented { background: var(--gray); } .dot.partially_implemented { background: var(--yellow); }
-.dot.test_passed { background: var(--green); } .dot.test_failed { background: var(--red); }
+.dot.unknown { background: var(--gray); } .dot.test_passed { background: var(--green); } .dot.test_failed { background: var(--red); }
 .node-uid { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 0.82rem; }
 .title { flex: 1; min-width: 0; font-size: 0.82rem; color: var(--dim); background: transparent; border-color: transparent; padding: 0.05em 0.35em; text-overflow: ellipsis; }
 .title:hover:not([readonly]) { border-color: var(--line); }
@@ -102,12 +104,58 @@ main { flex: 1; display: flex; min-height: 0; }
 .tools button.danger:hover { color: var(--red); }
 .row.adding { cursor: default; }
 .new-uid { width: 14rem; font-size: 0.82rem; padding: 0.05em 0.35em; }
-.row-problems { margin: 0.1rem 0 0.3rem calc(1.6rem + var(--depth) * var(--indent)); padding: 0.3rem 0.6rem; background: #a8482e14; border: 1px solid #a8482e55; border-radius: 4px; font-size: 0.78rem; color: var(--red); white-space: normal; }
+.row-problems, .block-problems { padding: 0.3rem 0.6rem; background: #a8482e14; border: 1px solid #a8482e55; border-radius: 4px; font-size: 0.78rem; color: var(--red); white-space: normal; }
+.row-problems { margin: 0.1rem 0 0.3rem calc(1.6rem + var(--depth) * var(--indent)); }
+.block-problems { margin-top: 0.5rem; }
 
-#f-description { width: 100%; min-height: 6rem; field-sizing: content; resize: none; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 0.85rem; line-height: 1.5; padding: 0.6rem 0.8rem; }
-#f-description[readonly] { background: transparent; }
+/* A fieldset's legend knocks its gap out of the border natively, so the UID label stays on the line over any (translucent) fill without a masking background. */
+.block { position: relative; min-width: 0; margin: 0 0 1.05rem calc(var(--depth) * 1.1rem); padding: 0.35rem 0.95rem 0.8rem; border: 1px solid var(--line); border-radius: 8px; scroll-margin-top: 0.6rem; outline: none; transition: border-color 0.15s, background-color 0.15s, box-shadow 0.15s; }
+.block:hover { border-color: color-mix(in oklab, var(--dim) 55%, var(--line)); }
+.block > legend { margin-left: -0.45rem; padding: 0 0.4rem; font: 600 0.66rem/1.3 "Roboto Condensed", "Liberation Sans Narrow", "Arial Narrow", system-ui, sans-serif; font-stretch: condensed; letter-spacing: 0.07em; color: var(--dim); white-space: nowrap; transition: color 0.15s; }
+.block .tag { display: inline-flex; align-items: center; gap: 0.45em; }
+.block .tag .dot { width: 0.75em; height: 0.75em; }
+.block.in-sel { border-color: var(--sel-line); }
+.block.in-sel > legend { color: var(--sel-text); }
+.block.selected { border-color: var(--sel); background: var(--sel-fill); }
+.block.editing { background: color-mix(in oklab, var(--sel) 7%, transparent); box-shadow: 0 0 0 3px var(--sel-fill); }
+.block-text { font-size: 0.9rem; line-height: 1.55; overflow-wrap: anywhere; }
+.md > :first-child { margin-top: 0; } .md > :last-child { margin-bottom: 0; }
+.md p, .md ul, .md ol, .md pre, .md blockquote, .md table { margin: 0.35em 0; }
+.md h1, .md h2, .md h3, .md h4, .md h5, .md h6 { margin: 0.9em 0 0.3em; line-height: 1.3; }
+.md h1 { font-size: 1.25rem; } .md h2 { font-size: 1.1rem; } .md h3 { font-size: 1rem; } .md h4, .md h5, .md h6 { font-size: 0.92rem; }
+.md ul, .md ol { padding-left: 1.5em; } .md li > ul, .md li > ol { margin: 0; }
+.md code { font-family: ui-monospace, "Cascadia Code", Menlo, Consolas, monospace; font-size: 0.86em; background: var(--accent-soft); padding: 0.05em 0.3em; border-radius: 3px; }
+.md pre { padding: 0.5rem 0.7rem; border: 1px solid var(--line); border-radius: 4px; background: var(--accent-soft); overflow-x: auto; }
+.md pre code { background: none; padding: 0; font-size: 0.8rem; }
+.md blockquote { margin-left: 0; padding-left: 0.8em; border-left: 3px solid var(--line); color: var(--dim); }
+.md table { border-collapse: collapse; font-size: 0.85rem; } .md th, .md td { border: 1px solid var(--line); padding: 0.2em 0.6em; vertical-align: top; text-align: left; }
+.md hr { border: none; border-top: 1px solid var(--line); margin: 0.8em 0; }
+.md a { color: var(--sel-text); text-decoration: none; border-bottom: 1px dotted currentColor; cursor: pointer; }
+.md a:hover { border-bottom-style: solid; }
+.md a.jump { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 0.85em; }
+.block.file { border-style: dashed; background: color-mix(in oklab, var(--dim) 5%, transparent); }
+.block.file > legend { font-family: ui-monospace, Menlo, Consolas, monospace; letter-spacing: 0.02em; }
+.block.file .block-body { max-height: 70vh; overflow: auto; }
+.block.file .closer { position: absolute; top: 0; right: 0.8rem; transform: translateY(-50%); width: 1.3rem; height: 1.3rem; padding: 0; border-radius: 50%; font-size: 0.7rem; line-height: 1; color: var(--dim); }
+textarea.block-text { display: block; width: 100%; min-height: 1.55em; padding: 0; border: none; border-radius: 0; background: transparent; field-sizing: content; resize: none; font-family: inherit; }
+textarea.block-text:focus { outline: none; }
+/* In flow, pulled down by the bottom padding plus half a pill: the last pill line straddles the bottom border, earlier lines wrap inside. */
+.block-status { position: relative; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 0.3rem 0.4rem; margin: 0.4rem 0 -1.4rem; }
+.block-status:empty { display: none; }
+.block-status:hover { z-index: 20; }
+.pill { position: relative; font: 0.66rem/1.55 ui-monospace, Menlo, Consolas, monospace; padding: 0 0.65em 0 0.5em; border-radius: 999px; border: 1px solid color-mix(in oklab, currentColor 40%, transparent); background: linear-gradient(var(--tint), var(--tint)), var(--panel); white-space: nowrap; cursor: pointer; }
+.pill .ball { display: inline-block; width: 0.62em; height: 0.62em; border-radius: 50%; margin-right: 0.4em; }
+.pill .rev { margin-left: 0.6em; padding-left: 0.6em; border-left: 1px solid color-mix(in oklab, var(--dim) 45%, transparent); color: var(--dim); }
+.pill .rev.reviewed { color: var(--green); } .pill .rev.review_violated { color: var(--red); }
+body:not(:has(#status-menu:popover-open)) .pill:hover::after { content: attr(data-tip); position: absolute; right: 0; top: calc(100% + 7px); z-index: 20; width: max-content; max-width: min(44rem, 55vw); padding: 0.4rem 0.65rem; border: 1px solid #ffffff22; border-radius: 6px; background: var(--console-bg); color: var(--console-text); font-size: 0.72rem; line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; box-shadow: 0 6px 20px #0005; pointer-events: none; }
 .note { color: var(--dim); font-size: 0.78rem; }
-#tests-section { margin-top: 1.1rem; }
+#tests-pop, #status-menu { position: fixed; inset: auto; margin: 0; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); color: var(--text); box-shadow: 0 8px 28px #0004; }
+#tests-pop { width: min(40rem, 90vw); max-height: 70vh; overflow: auto; padding: 0.1rem 1rem 0.8rem; }
+#status-menu { padding: 0.3rem; }
+#status-menu:popover-open { display: flex; flex-direction: column; }
+#status-menu button { border: none; background: none; padding: 0.35em 0.9em; border-radius: 5px; font-size: 0.85rem; text-align: left; white-space: nowrap; }
+#status-menu button:hover:not(:disabled) { background: var(--sel-fill); color: var(--text); }
+#status-menu button.danger:hover:not(:disabled) { color: var(--red); }
 .section-label { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 0.7rem; text-transform: uppercase; color: var(--dim); margin: 0.9rem 0 0.3rem; letter-spacing: 0.04em; }
 .leaf-toggle { display: inline-flex; gap: 0.4em; align-items: center; font-size: 0.85rem; }
 .binding-row { display: flex; gap: 0.6rem; align-items: baseline; margin: 0.3rem 0; flex-wrap: wrap; }
@@ -117,7 +165,6 @@ main { flex: 1; display: flex; min-height: 0; }
 .binding-row .miss { color: var(--yellow-text); font-size: 0.78rem; }
 .binding-row button.unbind { border: none; background: none; padding: 0 0.15em; color: var(--dim); }
 .binding-row button.unbind:hover:not(:disabled) { color: var(--red); }
-.actions { display: flex; gap: 0.5rem; margin: 0.9rem 0 0.6rem; flex-wrap: wrap; align-items: center; }
 .testrec summary { cursor: pointer; font-size: 0.85rem; }
 .testrec pre { background: var(--accent-soft); border: 1px solid var(--line); border-radius: 3px; padding: 0.5rem 0.7rem; font-size: 0.75rem; overflow-x: auto; }
 
@@ -149,7 +196,7 @@ main { flex: 1; display: flex; min-height: 0; }
 <div id="conflicts"></div>
 <main>
   <nav id="tree-pane"><div id="tree" role="treegrid" aria-label="Syngate tree"></div></nav>
-  <section id="detail-pane"></section>
+  <section id="doc-pane"><div id="doc" aria-label="Syngate document"></div></section>
 </main>
 <footer id="console">
   <div class="bar">
@@ -161,24 +208,31 @@ main { flex: 1; display: flex; min-height: 0; }
   <pre id="job-out"></pre>
 </footer>
 <div id="toasts"></div>
+<div id="tests-pop" popover></div>
+<div id="status-menu" popover role="menu"></div>
 
 <script>
 "use strict";
 const TOKEN = new URLSearchParams(location.search).get("token") || "";
 const SAVE_IDLE_MS = 1000, SAVE_MAX_MS = 5000, HOVER_EXPAND_MS = 600;
+const CALM = matchMedia("(prefers-reduced-motion: reduce)");
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 
 const state = {
   model: null,          // /api/tree payload
   selected: null,       // uid
-  path: null,           // row path of the selected instance (a multi-parent item has one row per parent)
+  path: null,           // row / block path of the selected instance (a multi-parent item has one per parent)
+  editing: null,        // path of the document block in editing mode
+  files: new Map(),     // project files opened from links: path -> {path, anchor, text, sha, writable, error}
   expanded: new Set(JSON.parse(sessionStorage.getItem("syngate-ui-expanded") || "[]")),
   unlocked: new Set(),  // reviewed items the user opened for editing
   filter: "",
   statusFilter: new Set(),
   rows: [],             // flattened visible tree, in DOM order
   treeSig: null,        // row structure the DOM was last built for
+  docRows: [],          // the whole (filtered) tree unfolded: one document block per row
+  docSig: null,
   adding: null,         // {parent, path} while the inline new-child row is open
   drag: null,           // {uid, from, under}
   job: null,
@@ -198,11 +252,12 @@ function setHtml(el, html) {
 }
 
 async function api(path, payload) {
+  const sent = payload === undefined ? undefined : JSON.stringify(payload);
   const res = await fetch(path, {
-    method: payload === undefined ? "GET" : "POST",
-    headers: { "X-Syngate-Token": TOKEN, ...(payload !== undefined && { "Content-Type": "application/json" }) },
-    body: payload === undefined ? undefined : JSON.stringify(payload),
-    keepalive: payload !== undefined,
+    method: sent === undefined ? "GET" : "POST",
+    headers: { "X-Syngate-Token": TOKEN, ...(sent !== undefined && { "Content-Type": "application/json" }) },
+    body: sent,
+    keepalive: sent !== undefined && sent.length < 60000,
   });
   const body = await res.json().catch(() => ({}));
   if (!res.ok) throw Object.assign(new Error(body.error || `${res.status} on ${path}`), { status: res.status, body });
@@ -224,7 +279,11 @@ function persistExpanded() { sessionStorage.setItem("syngate-ui-expanded", JSON.
 
 // ---- autosave ------------------------------------------------------------
 
-function serverValue(uid, field) { return field === "description" ? item(uid).description_raw : item(uid)[field]; }
+function serverValue(uid, field) {
+  if (field === "file") return state.files.get(uid)?.text ?? "";
+  return field === "description" ? item(uid).description_raw : item(uid)[field];
+}
+function currentText(uid, field) { const draft = drafts.get(draftKey(uid, field)); return draft ? draft.value : serverValue(uid, field); }
 
 function syncText(el) {
   const { uid, field } = el.dataset, key = draftKey(uid, field), draft = drafts.get(key);
@@ -259,8 +318,10 @@ async function flush(draft) {
   renderSaveState();
   const sent = draft.value;
   try {
-    const result = await api(`/api/item/${draft.uid}`, { [draft.field]: sent, base: { [draft.field]: draft.base } });
+    const result = draft.field === "file" ? await api("/api/file", { path: draft.uid, text: sent, base: draft.base })
+      : await api(`/api/item/${draft.uid}`, { [draft.field]: sent, base: { [draft.field]: draft.base } });
     draft.base = result.stored[draft.field];
+    if (draft.field === "file" && state.files.has(draft.uid)) Object.assign(state.files.get(draft.uid), { text: draft.base, sha: result.sha });
     shown.set(draft.key, draft.base);
     draft.saving = false;
     state.savedAt = new Date();
@@ -298,7 +359,7 @@ function visibleSet() {
   const selfMatch = (uid) => {
     const it = m.items[uid];
     const text = !needle || uid.toLowerCase().includes(needle) || (it.header || "").toLowerCase().includes(needle);
-    const status = !statuses.size || statuses.has(it.status);
+    const status = !statuses.size || statuses.has(it.test);
     return text && status;
   };
   const visit = (uid, trail) => {
@@ -315,18 +376,27 @@ function visibleSet() {
   return visible;
 }
 
-function flatten() {
-  const m = state.model, visible = visibleSet(), forced = filtersActive(), rows = [];
+function flatten(unfolded = false) {
+  const m = state.model, visible = visibleSet(), forced = unfolded || filtersActive(), rows = [];
   const walk = (uid, parent, trail) => {
     if (!visible.has(uid)) return;
     const kids = m.items[uid].children.filter((c) => visible.has(c));
     const cycle = trail.includes(uid), path = [...trail, uid].join("/");
-    const adding = Boolean(state.adding && state.adding.path === path);
+    const adding = Boolean(!unfolded && state.adding && state.adding.path === path);
     const open = !cycle && (adding || (kids.length > 0 && (forced || state.expanded.has(uid))));
     rows.push({ uid, parent, path, depth: trail.length, kids: kids.length, open, cycle });
+    if (unfolded) panels(path, trail.length + 1);
     if (!open) return;
     for (const c of kids) walk(c, uid, [...trail, uid]);
     if (adding) rows.push({ adding: true, parent: uid, path: path + "/+", depth: trail.length + 1 });
+  };
+  const panels = (anchor, depth) => {
+    for (const f of state.files.values()) {
+      if (f.anchor !== anchor) continue;
+      const path = anchor + "#" + f.path;
+      rows.push({ file: f.path, path, depth });
+      panels(path, depth + 1);
+    }
   };
   for (const uid of [...m.roots, ...m.unreachable]) walk(uid, null, []);
   return rows;
@@ -345,20 +415,20 @@ function rowHtml(row) {
     + `<span class="handle"><span class="dot"></span><span class="node-uid">${uid}</span></span><span class="badges"></span></span>`
     + `<span class="cell-title" role="gridcell"><input class="title" type="text" spellcheck="false" data-uid="${uid}" data-field="header" data-focus-key="title:${path}"></span>`
     + `<span class="tools" role="gridcell"><button data-act="add" title="add a child">+</button>`
-    + `<button data-act="unlink" title="unlink from this parent">⊖</button><button data-act="delete" class="danger" title="delete">✕</button></span>`
+    + `<button data-act="tests" title="tests &amp; review">T</button><button data-act="unlink" title="unlink from this parent">⊖</button><button data-act="delete" class="danger" title="delete">✕</button></span>`
     + (row.cycle ? '<span class="dupmark">(cycle)</span>' : "") + "</div>";
 }
 
-function badgesHtml(uid, it) {
+function badgesHtml(uid, it, leafBadge = true) {
   const badges = [];
   if (it.problems.length) badges.push('<span class="badge problem" title="' + esc(it.problems.join("\n")) + '">✗</span>');
   if (it.reviewed && !it.stamp_fresh) badges.push('<span class="badge stale" title="reviewed, stamp STALE — re-review required">⚠</span>');
   else if (it.reviewed) badges.push(state.unlocked.has(uid)
     ? '<span class="badge stale" data-act="lock" title="unlocked: edits make the review stamp stale — click to lock">✓✎</span>'
     : '<span class="badge fresh" data-act="lock" title="reviewed, stamp fresh — click to unlock for editing">✓</span>');
-  if (it.is_leaf) {
+  if (it.is_leaf && leafBadge) {
     const bound = it.bindings.filter((b) => b.locations.length === 1).length;
-    badges.push(`<span class="badge leaf${bound === it.bindings.length ? "" : " unbound"}" title="leaf: ${bound} of ${it.bindings.length} binding(s) resolve to one tagged routine">T${it.bindings.length > 1 ? it.bindings.length : ""}</span>`);
+    badges.push(`<span class="badge leaf${bound === it.bindings.length ? "" : " unbound"}" data-act="tests" title="leaf: ${bound} of ${it.bindings.length} binding(s) resolve to one tagged routine — click for tests &amp; review">T${it.bindings.length > 1 ? it.bindings.length : ""}</span>`);
   }
   if (it.parents.length > 1) badges.push('<span class="dupmark" title="multiple parents: ' + esc(it.parents.join(", ")) + '">⇈</span>');
   return badges.join("");
@@ -372,8 +442,8 @@ function decorateRow(el, row) {
   if (row.kids) el.setAttribute("aria-expanded", row.open); else el.removeAttribute("aria-expanded");
   el.querySelector(".twist").textContent = row.kids ? (row.open ? "▾" : "▸") : "·";
   const dot = el.querySelector(".dot");
-  dot.className = "dot " + it.status;
-  dot.title = it.status.replace(/_/g, " ");
+  dot.className = "dot " + it.test;
+  dot.title = it.test.replace(/_/g, " ");
   const handle = el.querySelector(".handle");
   handle.draggable = it.parents.length > 0;
   handle.title = it.path + (handle.draggable ? " — drag to move, Ctrl+drag to add one more parent" : "");
@@ -385,6 +455,7 @@ function decorateRow(el, row) {
   syncText(title);
   el.querySelector('[data-act="unlink"]').hidden = !(row.parent && it.parents.length > 1);
   el.querySelector('[data-act="delete"]').hidden = it.children.length > 0;
+  el.querySelector('.tools [data-act="tests"]').hidden = it.children.length > 0;
   if (state.flash === row.uid) el.classList.add("flash");
 }
 
@@ -424,7 +495,7 @@ function renderTree() {
       + problems.map((p) => "<div>" + esc(p) + "</div>").join("") + "</div>");
   }
 
-  setHtml($("counts"), ["test_failed", "partially_implemented", "test_passed", "not_implemented"]
+  setHtml($("counts"), ["test_failed", "unknown", "test_passed"]
     .filter((s) => m.counts[s])
     .map((s) => '<button class="chip st-' + s + (state.statusFilter.has(s) ? " on" : "") + '" data-status="' + s + '">'
       + '<span class="ball"></span>' + m.counts[s] + " " + s.replace(/_/g, " ") + "</button>").join(""));
@@ -442,15 +513,34 @@ function toggle(uid) {
   renderTree();
 }
 
-function select(uid, path = null, focus = null) {
+function docPath(uid, path) {
+  const rows = flatten(true);
+  return (rows.find((r) => r.path === path) || rows.find((r) => r.uid === uid) || { path: null }).path;
+}
+
+// origin "tree": the document scrolls the block to its top; origin "doc": the
+// tree unfolds down to the row and both panes scroll only as far as needed.
+function select(uid, path = null, { focus = null, origin = "tree", smooth = false } = {}) {
+  path = docPath(uid, path);
+  if (state.editing !== path) stopEditing();
   state.selected = uid;
   state.path = path;
-  renderTree(); renderPanel();
-  const el = selectedRowEl();
-  if (!el) return;
-  el.scrollIntoView({ block: "nearest" });
-  if (focus === "row") el.focus({ preventScroll: true });
-  if (focus === "title") el.querySelector(".title").focus({ preventScroll: true });
+  if (origin === "doc" && path) {
+    for (const above of path.split("/").slice(0, -1)) state.expanded.add(above);
+    persistExpanded();
+  }
+  render();
+  const row = selectedRowEl(), block = selectedBlockEl();
+  if (row) row.scrollIntoView({ block: "nearest" });
+  if (block) block.scrollIntoView(origin === "doc" ? { block: "nearest" } : { block: "start", behavior: smooth && !CALM.matches ? "smooth" : "auto" });
+  if (focus === "row" && row) row.focus({ preventScroll: true });
+  if (focus === "title" && row) row.querySelector(".title").focus({ preventScroll: true });
+  if (focus === "block" && block) block.focus({ preventScroll: true });
+}
+
+function toggleLock(uid) {
+  state.unlocked.has(uid) ? state.unlocked.delete(uid) : state.unlocked.add(uid);
+  render();
 }
 
 // ---- structure edits: add child / delete / unlink / move -----------------
@@ -507,7 +597,7 @@ async function createChild(input) {
     state.expanded.add(parent);
     persistExpanded();
     await refresh();
-    select(uid, null, "title");
+    select(uid, null, { focus: "title" });
     document.activeElement.select();
   } catch (err) { toast(err.message); input.focus(); }
   finally { state.creating = false; }
@@ -518,7 +608,7 @@ async function deleteItem(uid) {
   try {
     await api(`/api/delete/${uid}`, {});
     for (const key of [...drafts.keys()]) if (key.startsWith(uid + " ")) { clearTimeout(drafts.get(key).timer); drafts.delete(key); }
-    if (state.selected === uid) state.selected = state.path = null;
+    if (state.selected === uid) state.selected = state.path = state.editing = null;
     renderSaveState();
     await refresh();
   } catch (err) { toast(err.message); }
@@ -558,7 +648,7 @@ async function move(uid, from, to, before, link = false) {
     persistExpanded();
     state.flash = uid;
     await refresh();
-    if (state.selected === uid) select(uid, [...state.rows].find((r) => r.uid === uid && r.parent === to)?.path || null, refocus ? "row" : null);
+    if (state.selected === uid) select(uid, [...state.rows].find((r) => r.uid === uid && r.parent === to)?.path || null, { focus: refocus ? "row" : null });
   } catch (err) { toast(err.message); }
 }
 
@@ -610,7 +700,131 @@ function endDrag() {
   $("tree").querySelectorAll(".dragging").forEach((el) => el.classList.remove("dragging"));
 }
 
-// ---- text panel: description + tests ------------------------------------
+// ---- document: every item a titled block; the selected one edits in place --
+
+// ---- markdown: escape first, then a small CommonMark subset over the escaped text; never raw HTML --
+
+const UID_TAG_RE = /\[([A-Z][A-Z_]*(?:-[A-Z0-9_]+)*)\]/g;
+const dirname = (path) => path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
+const slug = (text) => text.toLowerCase().replace(/<[^>]*>/g, "").replace(/&[a-z#0-9]+;/g, "").replace(/[^\w\- ]/g, "").trim().replace(/\s+/g, "-");
+
+function resolvePath(base, rel) {
+  const parts = rel.startsWith("/") || !base ? [] : base.split("/");
+  for (const seg of rel.split("/")) {
+    if (!seg || seg === ".") continue;
+    if (seg === "..") parts.pop(); else parts.push(seg);
+  }
+  return parts.join("/");
+}
+
+// Links point into the project unless they carry an allowed scheme; other schemes degrade to text.
+function linkHtml(label, href, base) {
+  if (/^(https?:|mailto:)/i.test(href)) return `<a href="${esc(href)}" target="_blank" rel="noopener">${esc(label)}</a>`;
+  if (/^[a-z][a-z0-9+.-]*:/i.test(href)) return esc(label);
+  const [target, frag] = href.split("#"), path = target ? resolvePath(base, target) : "";
+  return `<a class="filelink" data-file="${esc(path)}" data-frag="${esc(frag || "")}" title="${esc(path)}">${esc(label)}</a>`;
+}
+
+function inline(raw, base) {
+  const parts = [], hold = (html) => { parts.push(html); return `\u0000${parts.length - 1}\u0000`; };
+  const text = raw.replace(/`([^`\n]+)`/g, (_, code) => hold(`<code>${esc(code)}</code>`))
+    .replace(/\[([^\]\n]+)\]\(([^)\s]+)\)/g, (_, label, href) => hold(linkHtml(label, href, base)))
+    .replace(/(^|[\s(])(https?:\/\/[^\s<>)]+)/g, (_, pre, url) => pre + hold(linkHtml(url, url, base)))
+    .replace(UID_TAG_RE, (m, uid) => state.model.items[uid] ? hold(`<a class="jump" data-uid="${esc(uid)}">${esc(uid)}</a>`) : m);
+  return esc(text).replace(/\*\*(\S(?:.*?\S)?)\*\*/g, "<strong>$1</strong>").replace(/(^|[^\w*])\*(\S(?:[^*\n]*?\S)?)\*(?![\w*])/g, "$1<em>$2</em>")
+    .replace(/\u0000(\d+)\u0000/g, (_, i) => parts[i]);
+}
+
+function md(text, base) {
+  const lines = text.split("\n"), out = [];
+  const listAt = (line) => /^(\s*)([-*]|\d+[.)])\s+(.*)$/.exec(line);
+  const blockStart = (line) => /^(```|#{1,6}\s|>|\||(-{3,}|\*{3,})\s*$)/.test(line) || listAt(line);
+  let i = 0;
+  while (i < lines.length) {
+    const line = lines[i];
+    if (/^\s*$/.test(line)) { i++; continue; }
+    if (line.startsWith("```")) {
+      const buf = [];
+      for (i++; i < lines.length && !lines[i].startsWith("```"); i++) buf.push(lines[i]);
+      i++;
+      out.push(`<pre><code>${esc(buf.join("\n"))}</code></pre>`);
+      continue;
+    }
+    const heading = /^(#{1,6})\s+(.*?)\s*#*\s*$/.exec(line);
+    if (heading) { const html = inline(heading[2], base); out.push(`<h${heading[1].length} data-slug="${esc(slug(html))}">${html}</h${heading[1].length}>`); i++; continue; }
+    if (/^(-{3,}|\*{3,})\s*$/.test(line)) { out.push("<hr>"); i++; continue; }
+    if (line.startsWith(">")) {
+      const buf = [];
+      for (; i < lines.length && lines[i].startsWith(">"); i++) buf.push(lines[i].replace(/^>\s?/, ""));
+      out.push(`<blockquote>${md(buf.join("\n"), base)}</blockquote>`);
+      continue;
+    }
+    if (line.startsWith("|") && /^\|?\s*:?-+/.test(lines[i + 1] || "")) {
+      const cells = (row) => row.replace(/^\||\|$/g, "").split("|").map((c) => inline(c.trim(), base));
+      out.push(`<table><tr>${cells(line).map((c) => `<th>${c}</th>`).join("")}</tr>`);
+      for (i += 2; i < lines.length && lines[i].startsWith("|"); i++) out.push(`<tr>${cells(lines[i]).map((c) => `<td>${c}</td>`).join("")}</tr>`);
+      out.push("</table>");
+      continue;
+    }
+    if (listAt(line)) {
+      const stack = [];
+      for (; i < lines.length && !/^\s*$/.test(lines[i]); i++) {
+        const at = listAt(lines[i]);
+        if (!at) { out.push(" " + inline(lines[i].trim(), base)); continue; }
+        const indent = at[1].length, tag = /\d/.test(at[2]) ? "ol" : "ul";
+        while (stack.length && indent < stack[stack.length - 1].indent) out.push(`</li></${stack.pop().tag}>`);
+        if (stack.length && indent === stack[stack.length - 1].indent) out.push("</li>");
+        else { stack.push({ indent, tag }); out.push(`<${tag}>`); }
+        out.push(`<li>${inline(at[3], base)}`);
+      }
+      while (stack.length) out.push(`</li></${stack.pop().tag}>`);
+      continue;
+    }
+    const buf = [];
+    for (; i < lines.length && !/^\s*$/.test(lines[i]) && !(buf.length && blockStart(lines[i])); i++) buf.push(lines[i].trim());
+    out.push(`<p>${inline(buf.join(" "), base)}</p>`);
+  }
+  return out.join("");
+}
+
+function blockHtml(row) {
+  if (row.file) {
+    return `<fieldset class="block file" style="--depth:${row.depth}" tabindex="-1" data-file="${esc(row.file)}" data-path="${esc(row.path)}">`
+      + `<legend><span class="tag">📄 <span>${esc(row.file)}</span></span></legend><button class="closer" data-act="close" title="close">✕</button><div class="block-body"></div></fieldset>`;
+  }
+  const uid = esc(row.uid);
+  return `<fieldset class="block" style="--depth:${row.depth}" tabindex="-1" data-depth="${row.depth}" data-uid="${uid}" data-path="${esc(row.path)}">`
+    + `<legend><span class="tag"><span class="dot"></span><span>${uid}</span><span class="badges"></span></span></legend>`
+    + `<div class="block-body"></div><div class="block-status"></div></fieldset>`;
+}
+
+function leavesUnder(uid) { return item(uid).is_leaf ? [uid] : [...descendants(uid)].filter((u) => item(u).is_leaf); }
+const REVIEW_MARK = { reviewed: "✓", not_reviewed: "○", review_violated: "⚠" };
+const where = (l) => `${l.path}:${l.line}` + (l.name.startsWith(l.path + "::") ? " · " + l.name.slice(l.path.length + 2) : "");
+
+// One label per block, both rollup axes; the tooltip explains a leaf by its bindings, a branch by its leaves.
+function statusHtml(uid, it) {
+  let tip;
+  if (it.is_leaf) {
+    tip = it.bindings.map((b) => {
+      const runs = it.tests.filter((t) => t.binding === b.name), result = !runs.length ? "unknown" : runs.some((t) => !t.passed) ? "failed" : "passed";
+      const site = b.locations.length ? b.locations.map(where).join(", ") : `no tagged routine yet — tag it [${uid}]${b.name ? "[" + b.name + "]" : ""}`;
+      return `${b.name || "(default)"} · ${result} · ${site}`;
+    }).join("\n");
+  } else {
+    const leaves = leavesUnder(uid), tally = new Map();
+    for (const leaf of leaves) for (const axis of ["test", "review"]) tally.set(item(leaf)[axis], (tally.get(item(leaf)[axis]) || 0) + 1);
+    tip = `${leaves.length} leaf item(s)` + [...tally].map(([state, n]) => `\n${n} ${state.replace(/_/g, " ")}`).join("");
+  }
+  if (it.problems.length) tip += "\n" + it.problems.join("\n");
+  return `<span class="pill st-${it.test}" data-tip="${esc(tip)}"><span class="ball"></span>${it.test.replace(/_/g, " ")}`
+    + `<span class="rev ${it.review}">${REVIEW_MARK[it.review]} ${it.review.replace(/_/g, " ")}</span></span>`;
+}
+
+function viewHtml(uid, it) {
+  return `<div class="block-text md">${md(currentText(uid, "description"), "")}</div>`
+    + (it.problems.length ? '<div class="block-problems">' + it.problems.map((p) => "<div>" + esc(p) + "</div>").join("") + "</div>" : "");
+}
 
 function testsHtml(uid, it) {
   const off = locked(uid) ? "disabled" : "";
@@ -631,34 +845,174 @@ function testsHtml(uid, it) {
       body += `<div class="binding-row"><input type="text" id="f-add-binding" placeholder="binding name (empty = default)" class="mono" style="width:14rem" ${off}><button id="add-binding-btn" ${off}>add binding</button></div>`;
     }
   }
-  const actions = (it.is_leaf && !it.children.length ? '<button id="review-btn" title="run the bound tests, then stamp routine shas + reviewed">Review (run tests + stamp)</button>' : "")
-    + (it.reviewed ? '<button id="clear-btn" class="danger" title="drop the reviewed stamp">Clear review</button>' : "");
   const runs = it.tests.length ? '<div class="section-label">Coverage runs</div>' + it.tests.map((t) =>
     '<details class="testrec"><summary><span class="chip st-' + (t.passed ? "test_passed" : "test_failed") + '"><span class="ball"></span>' + (t.passed ? "passed" : "failed")
     + "</span> <span class='mono'>" + esc(t.name) + "</span></summary><pre>" + esc(t.log || "(no captured output)") + "</pre></details>").join("") : "";
-  return '<div class="section-label">Tests</div>' + body + (actions ? '<div class="actions">' + actions + "</div>" : "") + runs;
+  return '<div class="section-label">' + esc(uid) + " tests</div>" + body + runs;
 }
 
-function renderPanel() {
-  const pane = $("detail-pane"), uid = state.selected, it = uid && item(uid);
-  if (!it) {
-    pane.dataset.uid = "";
-    setHtml(pane, '<div class="empty">Select an item on the left.</div>');
-    return;
+function renderEditor(body, uid, field, readOnly, why) {
+  if (body.dataset.mode !== "edit") {
+    body.dataset.mode = "edit";
+    body._html = null;
+    body.innerHTML = `<textarea class="block-text" spellcheck="false" placeholder="${field === "file" ? "" : "The component shall …"}" data-uid="${esc(uid)}" data-field="${field}"></textarea>`;
   }
-  if (pane.dataset.uid !== uid) {
-    pane.dataset.uid = uid;
-    pane._html = null;
-    pane.innerHTML = `<textarea id="f-description" data-uid="${esc(uid)}" data-field="description" spellcheck="false" placeholder="The component shall …"></textarea>`
-      + `<section id="tests-section"></section>`;
-  }
-  const text = $("f-description");
-  text.readOnly = locked(uid);
-  text.title = text.readOnly ? "reviewed — click ✓ on its tree row to unlock for editing" : "";
+  const text = body.firstChild;
+  text.readOnly = readOnly;
+  text.title = readOnly ? why : "";
   syncText(text);
   autoGrow(text);
-  const adding = $("f-add-binding");
-  if (!(adding && adding === document.activeElement && adding.value)) setHtml($("tests-section"), testsHtml(uid, it));
+}
+
+function decorateFileBlock(el, row) {
+  const f = state.files.get(row.file), editing = state.editing === row.path, body = el.querySelector(".block-body");
+  el.classList.toggle("in-sel", Boolean(state.path && row.path.startsWith(state.path + "#")));
+  el.classList.toggle("editing", editing);
+  if (editing && f.text != null) renderEditor(body, row.file, "file", !f.writable, "only markdown files are edited here");
+  else {
+    body.dataset.mode = "view";
+    setHtml(body, f.error ? `<div class="block-problems">${esc(f.error)}</div>` : f.text == null ? '<div class="note">loading…</div>'
+      : `<div class="block-text md">${md(currentText(row.file, "file"), dirname(row.file))}</div>`);
+  }
+}
+
+function decorateBlock(el, row) {
+  if (row.file) { decorateFileBlock(el, row); return; }
+  const it = item(row.uid), selected = row.path === state.path, editing = selected && state.editing === row.path;
+  el.classList.toggle("selected", selected);
+  el.classList.toggle("in-sel", selected || Boolean(state.path && row.path.startsWith(state.path + "/")));
+  el.classList.toggle("editing", editing);
+  el.classList.toggle("branch", it.children.length > 0);
+  const dot = el.querySelector(".dot");
+  dot.className = "dot " + it.test;
+  dot.title = it.test.replace(/_/g, " ");
+  setHtml(el.querySelector(".badges"), badgesHtml(row.uid, it, false));
+  const body = el.querySelector(".block-body");
+  if (editing) renderEditor(body, row.uid, "description", locked(row.uid), "reviewed — click ✓ to unlock for editing");
+  else {
+    body.dataset.mode = "view";
+    setHtml(body, viewHtml(row.uid, it));
+  }
+  setHtml(el.querySelector(".block-status"), statusHtml(row.uid, it));
+}
+
+const selectedBlockEl = () => (state.path ? $("doc").querySelector(`.block[data-path="${CSS.escape(state.path)}"]`) : null);
+
+function renderDoc() {
+  const doc = $("doc");
+  state.docRows = flatten(true);
+  const sig = state.docRows.map((r) => r.path).join("\n");
+  if (sig !== state.docSig) {
+    // Blocks are reused by path, so a block being edited keeps its fields (and, restored below, its caret) across a restructure.
+    const active = document.activeElement, keep = doc.contains(active) ? { el: active, start: active.selectionStart, end: active.selectionEnd } : null;
+    const old = new Map([...doc.querySelectorAll(".block")].map((el) => [el.dataset.path, el])), maker = document.createElement("template");
+    state.rebuilding = true;
+    doc.replaceChildren(...state.docRows.map((row) => {
+      if (old.has(row.path)) return old.get(row.path);
+      maker.innerHTML = blockHtml(row);
+      return maker.content.firstChild;
+    }));
+    if (!state.docRows.length) doc.innerHTML = '<div class="empty">nothing matches the filter</div>';
+    if (keep && doc.contains(keep.el)) {
+      keep.el.focus({ preventScroll: true });
+      if (keep.el.setSelectionRange && keep.start != null) keep.el.setSelectionRange(keep.start, keep.end);
+    }
+    state.rebuilding = false;
+    state.docSig = sig;
+  }
+  doc.querySelectorAll(".block").forEach((el, i) => decorateBlock(el, state.docRows[i]));
+}
+
+// ---- tests & review popover, opened from a tree row ---------------------------
+
+function renderTests() {
+  const pop = $("tests-pop");
+  if (!pop.matches(":popover-open")) return;
+  const uid = pop.dataset.uid, adding = $("f-add-binding");
+  if (uid !== state.selected) { pop.hidePopover(); return; }
+  if (!(adding && adding === document.activeElement && adding.value)) setHtml(pop, testsHtml(uid, item(uid)));
+}
+
+function placeBy(pop, anchor) {
+  const at = anchor.getBoundingClientRect(), below = at.bottom + 6 + pop.offsetHeight <= innerHeight;
+  pop.style.left = Math.max(8, Math.min(at.left, innerWidth - pop.offsetWidth - 8)) + "px";
+  pop.style.top = Math.max(8, below ? at.bottom + 6 : at.top - 6 - pop.offsetHeight) + "px";
+}
+
+function openTests(row, anchor) {
+  const pop = $("tests-pop");
+  select(row.uid, row.path);
+  pop.dataset.uid = row.uid;
+  pop.showPopover();
+  renderTests();
+  placeBy(pop, anchor);
+}
+
+function openStatusMenu(uid, anchor) {
+  const menu = $("status-menu"), it = item(uid), n = leavesUnder(uid).length, off = n ? "" : "disabled";
+  menu.dataset.uid = uid;
+  menu.innerHTML = `<button role="menuitem" data-run="test" ${off}>▶ ${it.is_leaf ? "Run test" : `Run tests of ${n} leaf item(s)`}</button>`
+    + `<button role="menuitem" data-run="review" ${off}>✓ ${it.is_leaf ? "Mark reviewed" : `Mark ${n} leaf item(s) reviewed`}</button>`
+    + (it.is_leaf && it.reviewed ? '<button role="menuitem" data-run="clear" class="danger">✕ Clear review</button>' : "");
+  menu.showPopover();
+  placeBy(menu, anchor);
+}
+
+function render() { renderTree(); renderDoc(); renderTests(); }
+
+function startEditing(path = state.path) {
+  if (!path || state.editing === path) return;
+  state.editing = path;
+  renderDoc();
+  const block = $("doc").querySelector(`.block[data-path="${CSS.escape(path)}"]`), text = block && block.querySelector("textarea");
+  if (!text) return;
+  text.focus({ preventScroll: true });
+  text.setSelectionRange(text.value.length, text.value.length);
+  block.scrollIntoView({ block: "nearest" });
+}
+
+// ---- linked project files: one panel per file, hung below the block whose link opened it ----
+
+async function openFile(path, anchor, frag) {
+  const known = state.files.get(path), f = known || { path, anchor, text: null };
+  f.anchor = anchor;
+  state.files.set(path, f);
+  renderDoc();
+  if (!known) {
+    try { Object.assign(f, await api(`/api/file?path=${encodeURIComponent(path)}`), { error: null }); }
+    catch (err) { f.error = err.message; }
+    renderDoc();
+  }
+  const block = $("doc").querySelector(`.block[data-path="${CSS.escape(anchor + "#" + path)}"]`);
+  if (!block) return;
+  const heading = frag && block.querySelector(`[data-slug="${CSS.escape(frag.toLowerCase())}"]`);
+  (heading || block).scrollIntoView({ block: heading ? "start" : "nearest" });
+}
+
+async function closeFile(path) {
+  const draft = drafts.get(draftKey(path, "file"));
+  if (draft) await flush(draft);
+  if (drafts.has(draftKey(path, "file")) && !confirm(`${path} has unsaved changes that could not be stored. Close anyway?`)) return;
+  drafts.delete(draftKey(path, "file"));
+  shown.delete(draftKey(path, "file"));
+  for (const f of state.files.values()) if (f.anchor.startsWith(state.files.get(path).anchor + "#" + path)) state.files.delete(f.path);
+  state.files.delete(path);
+  if (state.editing && state.editing.endsWith("#" + path)) state.editing = null;
+  renderSaveState();
+  renderDoc();
+}
+
+async function reloadFiles() {
+  await Promise.all([...state.files.values()].map(async (f) => {
+    try { Object.assign(f, await api(`/api/file?path=${encodeURIComponent(f.path)}`), { error: null }); }
+    catch (err) { f.error = err.message; }
+  }));
+}
+
+function stopEditing() {
+  if (!state.editing) return;
+  state.editing = null;
+  flushAll();
 }
 
 async function saveTests(uid, names) {
@@ -719,16 +1073,20 @@ async function refresh() {
   try { model = await api("/api/tree"); } catch (err) { toast(err.message); return; }
   if (seq !== refreshSeq) return;
   state.model = model;
-  if (state.selected && !model.items[state.selected]) state.selected = state.path = null;
+  if (state.selected && !model.items[state.selected]) state.selected = null;
+  state.path = state.selected && docPath(state.selected, state.path);
+  if (state.editing && !flatten(true).some((r) => r.path === state.editing)) stopEditing();
   if (state.adding && !model.items[state.adding.parent]) state.adding = null;
-  renderTree(); renderPanel();
+  await reloadFiles();
+  render();
 }
 
 async function poll() {
   if (document.hidden || !state.model || state.drag) return;
   try {
-    const { fingerprint } = await api("/api/fingerprint");
-    if (fingerprint !== state.model.fingerprint) await refresh();
+    const open = [...state.files.values()].filter((f) => f.text != null);
+    const { fingerprint, files } = await api("/api/fingerprint" + (open.length ? "?" + open.map((f) => "file=" + encodeURIComponent(f.path)).join("&") : ""));
+    if (fingerprint !== state.model.fingerprint || open.some((f) => files[f.path] !== f.sha)) await refresh();
   } catch (err) { /* server gone; the next interaction reports it */ }
 }
 
@@ -746,10 +1104,11 @@ tree.addEventListener("click", (event) => {
     if (act.dataset.act === "add") startAdding(row);
     if (act.dataset.act === "unlink") unlink(row);
     if (act.dataset.act === "delete") deleteItem(row.uid);
-    if (act.dataset.act === "lock") { state.unlocked.has(row.uid) ? state.unlocked.delete(row.uid) : state.unlocked.add(row.uid); renderTree(); renderPanel(); }
+    if (act.dataset.act === "lock") toggleLock(row.uid);
+    if (act.dataset.act === "tests") openTests(row, act);
     return;
   }
-  if (row.uid !== state.selected || row.path !== state.path) select(row.uid, row.path);
+  select(row.uid, row.path, { smooth: true });
 });
 tree.addEventListener("keydown", (event) => {
   if (!event.target.classList.contains("new-uid")) return;
@@ -816,25 +1175,58 @@ $("conflicts").addEventListener("click", (event) => {
   refresh();
 });
 
-$("detail-pane").addEventListener("click", (event) => {
+const doc = $("doc");
+doc.addEventListener("click", (event) => {
+  const el = event.target.closest(".block"), target = event.target;
+  if (!el) return;
+  const link = target.closest("a.filelink, a.jump");
+  if (link) {
+    event.preventDefault();
+    if (link.dataset.uid) select(link.dataset.uid, null, { origin: "doc", focus: "block", smooth: true });
+    else openFile(link.dataset.file || el.dataset.file, el.dataset.path, link.dataset.frag);
+    return;
+  }
+  if (target.closest('[data-act="close"]')) { closeFile(el.dataset.file); return; }
+  if (el.dataset.file) return;
+  const uid = el.dataset.uid;
+  if (target.closest('[data-act="lock"]')) { toggleLock(uid); return; }
+  if (state.editing !== el.dataset.path) select(uid, el.dataset.path, { origin: "doc", focus: "block" });
+  if (target.closest(".pill")) openStatusMenu(uid, el.querySelector(".pill"));
+});
+const statusMenu = $("status-menu");
+statusMenu.addEventListener("click", (event) => {
+  const action = event.target.dataset.run, uid = statusMenu.dataset.uid;
+  if (!action) return;
+  statusMenu.hidePopover();
+  if (action === "review" && !item(uid).is_leaf && !confirm(`Run the bound tests of the ${leavesUnder(uid).length} leaf item(s) under ${uid} and stamp every one of them reviewed?`)) return;
+  if (action === "clear" && !confirm(`Drop the reviewed stamp of ${uid}? Bound routine shas revert to ~.`)) return;
+  run(action, [uid]);
+});
+$("doc-pane").addEventListener("scroll", () => { if (statusMenu.matches(":popover-open")) statusMenu.hidePopover(); });
+const testsPop = $("tests-pop");
+testsPop.addEventListener("click", (event) => {
   const uid = state.selected, target = event.target;
-  if (!uid) return;
   if (target.id === "add-binding-btn") addBinding(uid);
-  if (target.id === "review-btn") run("review", [uid]);
-  if (target.id === "clear-btn" && confirm(`Drop the reviewed stamp of ${uid}? Bound routine shas revert to ~.`)) run("clear", [uid]);
   if (target.dataset.unbind !== undefined) {
     const bindings = item(uid).bindings, gone = bindings[Number(target.dataset.unbind)];
     if (gone.sha && !confirm(`Binding '${gone.name || "(default)"}' is frozen; removing it drops its routine sha. Remove?`)) return;
     saveTests(uid, bindings.filter((b) => b !== gone).map((b) => b.name));
   }
 });
-$("detail-pane").addEventListener("change", (event) => {
+doc.addEventListener("dblclick", (event) => {
+  const el = event.target.closest(".block");
+  if (!el || event.target.closest("[data-act], a")) return;
+  if (el.dataset.file) { startEditing(el.dataset.path); return; }
+  if (state.path !== el.dataset.path) select(el.dataset.uid, el.dataset.path, { origin: "doc" });
+  startEditing();
+});
+testsPop.addEventListener("change", (event) => {
   if (event.target.id !== "f-isleaf") return;
   const uid = state.selected, frozen = item(uid).bindings && item(uid).bindings.filter((b) => b.sha).length;
   if (!event.target.checked && frozen && !confirm(`Dropping the tests key discards ${frozen} frozen routine sha(s). Continue?`)) { event.target.checked = true; return; }
   saveTests(uid, event.target.checked ? [""] : null);
 });
-$("detail-pane").addEventListener("keydown", (event) => { if (event.target.id === "f-add-binding" && event.key === "Enter") addBinding(state.selected); });
+testsPop.addEventListener("keydown", (event) => { if (event.target.id === "f-add-binding" && event.key === "Enter") addBinding(state.selected); });
 
 $("counts").addEventListener("click", (event) => {
   const chip = event.target.closest("[data-status]");
@@ -842,35 +1234,53 @@ $("counts").addEventListener("click", (event) => {
   const s = chip.dataset.status;
   state.statusFilter.has(s) ? state.statusFilter.delete(s) : state.statusFilter.add(s);
   $("counts")._html = null;
-  renderTree();
+  render();
 });
-$("filter").addEventListener("input", () => { state.filter = $("filter").value.trim(); renderTree(); });
+$("filter").addEventListener("input", () => { state.filter = $("filter").value.trim(); render(); });
 $("console-close").addEventListener("click", () => $("console").classList.remove("open"));
 
+// One screenful along `pane`, never less than one row.
+function pageTarget(rows, index, dir, pane) {
+  const top = (r) => pane.querySelector(`[data-path="${CSS.escape(r.path)}"]`).getBoundingClientRect().top;
+  const base = top(rows[index]), span = pane.parentElement.clientHeight * 0.9;
+  let i = index;
+  while (rows[i + dir] && Math.abs(top(rows[i + dir]) - base) < span) i += dir;
+  return rows[i === index ? Math.max(0, Math.min(rows.length - 1, index + dir)) : i];
+}
+
+// The pane holding the focus owns the keys: tree rows walk the folded outline, document blocks every item.
 document.addEventListener("keydown", (event) => {
   const el = document.activeElement, typing = el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA");
-  const onTitle = typing && el.classList.contains("title");
+  const onTitle = typing && el.classList.contains("title"), inDoc = Boolean(el && el.closest("#doc"));
   if (event.key === "/" && !typing) { event.preventDefault(); $("filter").focus(); return; }
-  if ((typing && !onTitle) || !state.model) return;
-  const rows = state.rows.filter((r) => !r.adding);
+  if (!state.model) return;
+  if (typing && inDoc && el.dataset.field) {
+    if (event.key === "Escape") { const block = el.closest(".block"); event.preventDefault(); stopEditing(); render(); (selectedBlockEl() || block).focus({ preventScroll: true }); }
+    return;
+  }
+  if (typing && !onTitle) return;
+  const rows = inDoc ? state.docRows.filter((r) => !r.file) : state.rows.filter((r) => !r.adding), pane = inDoc ? doc : tree;
   const index = rows.findIndex((r) => (state.path ? r.path === state.path : r.uid === state.selected)), row = rows[index];
-  if (event.altKey && event.shiftKey && event.key.startsWith("Arrow")) { event.preventDefault(); if (row) keyboardMove(row, event.key); return; }
+  if (event.altKey && event.shiftKey && event.key.startsWith("Arrow")) { event.preventDefault(); if (row && !inDoc) keyboardMove(row, event.key); return; }
   if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey || !rows.length) return;
   let target = null;
   if (event.key === "ArrowDown") target = rows[Math.min(rows.length - 1, index + 1)];
   else if (event.key === "ArrowUp") target = rows[Math.max(0, index - 1)];
+  else if (event.key === "PageDown" || event.key === "PageUp") target = row ? pageTarget(rows, index, event.key === "PageDown" ? 1 : -1, pane) : rows[0];
   else if (!row) return;
   else if (onTitle) {
     if (event.key !== "Enter" && event.key !== "Escape") return;
-    select(row.uid, row.path, "row");
+    select(row.uid, row.path, { focus: "row" });
   } else if (event.key === "Home") target = rows[0];
   else if (event.key === "End") target = rows[rows.length - 1];
+  else if (event.key === "Enter") { if (el.tagName === "BUTTON" || el.tagName === "SUMMARY") return; startEditing(); }
+  else if (inDoc) return;
   else if (event.key === "ArrowRight") { if (row.kids && !row.open) toggle(row.uid); else if (row.open) target = rows[index + 1]; }
   else if (event.key === "ArrowLeft") { if (row.open) toggle(row.uid); else target = rows.find((r) => r.path === row.path.slice(0, row.path.lastIndexOf("/"))); }
-  else if (event.key === "Enter" || event.key === "F2") select(row.uid, row.path, "title");
+  else if (event.key === "F2") select(row.uid, row.path, { focus: "title" });
   else return;
   event.preventDefault();
-  if (target) select(target.uid, target.path, onTitle ? "title" : "row");
+  if (target) select(target.uid, target.path, { origin: inDoc ? "doc" : "tree", focus: onTitle ? "title" : inDoc ? "block" : "row" });
 });
 
 if (!TOKEN) {
@@ -878,7 +1288,7 @@ if (!TOKEN) {
 } else {
   refresh().then(() => {
     if (state.model) for (const uid of state.model.roots) state.expanded.add(uid);
-    renderTree(); renderPanel();
+    render();
   });
   setInterval(poll, 2000);
 }

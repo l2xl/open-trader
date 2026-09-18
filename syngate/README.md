@@ -74,12 +74,17 @@ file named by `SYNGATE_COVERAGE_FILE` (no emission when unset).
 # CLI (`scripts/syngate.py`)
 
 - `syngate new <UID> --parent <UID> [--dir syngate/<folder>] [--order N]` — scaffold an item.
+- `syngate test <UID…> [--build-dir DIR] [--coverage-out FILE]` — run the routines bound to leaf
+  items (literals or glob patterns) without stamping: pytest routines by node id in one process,
+  Catch2 cases by an OR of their tag pairs in one run per test binary. With `--coverage-out` the
+  run's records are folded into FILE, **replacing** the previous records of every re-run binding —
+  with "any failed record reddens the leaf", an appended re-run could never turn a leaf green again.
 - `syngate review <UID>` — **user-only**: validates the item, discovers its bindings, runs the bound
   tests, and stamps routine shas + `reviewed` once every binding resolves to exactly one runnable
   routine — whether that routine currently passes or fails. A failing routine still freezes and the
   leaf simply rolls up as `test_failed` (TDD red state) until the implementation lands; only a
   binding that can't be run at all (ambiguous, unresolved, or not built) blocks stamping. `syngate clear
-  <UID>` removes the stamp (and reverts shas to `~`).
+  <UID>` removes the stamp (and reverts shas to `~`). Takes `--coverage-out` like `test`.
 - `syngate validate [--coverage FILE …] [--strict]` — structural validation + frozen-routine checks
   (+ coverage join when given files; `--strict` requires every item reviewed). CI entry:
   `ci/gate.sh` (bootstraps `.venv-syngate`: pyyaml, pytest, jinja2; `GATE_STRICT=1` adds `--strict`).
@@ -88,9 +93,33 @@ file named by `SYNGATE_COVERAGE_FILE` (no emission when unset).
 - `syngate ui [--port N] [--coverage FILE …] [--build-dir DIR] [--no-browser]` — serve the local tree
   editor (`scripts/syngate_ui.py` + `syngate_ui.html`, stdlib-only) at `http://127.0.0.1:8712`.
   - **The outline tree carries every structured field of an item**: rollup status, UID, problem /
-    review / leaf badges, the header (edited in place) and — by the row's position — `parents` and
-    `order`. The text panel keeps only the raw description and the tests section (bindings, review /
-    clear with output streamed into the page).
+    review / leaf badges, the header (edited in place, F2) and — by the row's position — `parents`
+    and `order`. It doubles as the TOC of the document on the right. A childless row's `T` opens
+    the bindings popover (the `tests` key, its binding names, the recorded runs).
+  - **The document shows the whole tree as one structured text**: every item is a titled frame —
+    the UID sits on the top border, the description inside, validation problems inline. The label on
+    the bottom border carries both status axes of *Status Rollup* — `test passed │ ⚠ review violated`
+    — a leaf's own, a branch's rolled up from below. Hovering a leaf's label shows each binding's
+    result and where its routine lives; a branch's, the tally of its leaves.
+  - **Clicking the label opens the run menu**: *run test* (`syngate test`), *mark reviewed*
+    (`syngate review`) and, on a reviewed leaf, *clear review*; on a branch the first two address
+    every leaf below it (review asks for confirmation). Runs stream into the console and fold their
+    records into `syngate_coverage.jsonl` next to the tree, which the page always reads, so a run
+    recolors the statuses without a CI round trip.
+  - **One selection drives both panes.** Picking a tree row scrolls the document to that block and
+    tints the block's whole subtree blue; clicking a block unfolds the tree down to its row. The
+    selected block itself is filled. Up / Down / PageUp / PageDown / Home / End move the selection
+    in the pane that holds the focus: the tree walks the folded outline, the document every item.
+  - **Double click or Enter turns the selected block into its description editor** (Esc leaves).
+  - **Descriptions are markdown** — paragraphs, lists, headings, tables, code, emphasis, links;
+    never raw HTML (the text is escaped first, so `data_model<Entity>` stays literal). `[UID]` of a
+    known item jumps to its block. **A link to a project file** — root-relative in items,
+    `[datahub guide](src/datahub/README.md#pipeline)`, since item files move freely between folders —
+    opens that file as a panel right below the block holding the link: rendered, `✕` on its top
+    border, double click edits it with the same autosave / keep-mine-take-theirs as item fields.
+    Links inside a panel resolve against that file's folder (as on GitHub) and nest below it.
+    Only git-tracked files and markdown are served, and only markdown is written: keys and
+    databases sit untracked next to the tree.
   - **Row tools**: `+` scaffolds a child inline (UID suggested from the siblings), `✕` deletes a
     childless item, `⊖` drops one parent link of a multi-parent item.
   - **Drag a row by its UID** (keyboard twin: Alt+Shift+arrows): drop on a row's edge to reorder, on
@@ -102,11 +131,27 @@ file named by `SYNGATE_COVERAGE_FILE` (no emission when unset).
     meanwhile (agent, git, IDE) is never silently overwritten — the page offers keep mine / take
     theirs. Reviewed items stay read-only until unlocked through their `✓` badge, since any substance
     edit makes the stamp stale (typing the text back restores it).
-  - Review / clear shell out to the `syngate.py` code path, so stamping semantics (user-only,
+  - Test / review / clear shell out to the `syngate.py` code path, so stamping semantics (user-only,
     test-gated) are identical to the terminal. Loopback-bound; every request needs the per-session
-    token from the printed URL (Jupyter-style defense for localhost tools that execute commands).
+    token from the printed URL (Jupyter-style defense for localhost tools that execute commands);
+    the page runs under a nonce-only `Content-Security-Policy`, the second fence behind the
+    escape-first markdown renderer.
 
 # Status Rollup
+
+Two independent axes per item (`compute_axes`; what the UI shows):
+
+- **Test**: `unknown` | `test_passed` | `test_failed`. Leaf: any failed record → failed; any binding
+  without a record → unknown; else passed. Branch: a failed leaf fails every ancestor, else one
+  unknown leaf leaves them unknown. A run that cannot execute a binding (no or several tagged
+  routines, test binary not built) records it as failed — a test that cannot be found is red.
+- **Review**: `not_reviewed` | `reviewed` | `review_violated`. An item's own validation problem
+  (stale stamp, drifted frozen routine, malformed item) is a violated review; a branch is reviewed
+  only through its children; violated outranks not reviewed, which outranks reviewed.
+
+The single-status rollup below (`compute_status`) is what `syngate report`, the CI summary and the
+check run still publish; its frozen tests (INFRA-043/044/070) define it, so retiring it in favour of
+the axes is a user decision.
 
 Leaf: no executed records → `not_implemented`; any failed record → `test_failed`; all bindings
 covered and passing → `test_passed`; some covered → `partially_implemented`. A childless item

@@ -3,17 +3,21 @@
 # Copyright (c) 2026 l2xl (l2xl/at/proton.me)
 # Distributed under the Intellectual Property Reserve License, v2 (IPRL)
 
-"""Synergy Context Gate (syngate) CLI: new / review / clear / validate / report.
+"""Synergy Context Gate (syngate) CLI: new / test / review / clear / validate / report.
 
 `review` and `clear` are user-only: the reviewed stamp is the record of the
-user's approval. `validate` is the CI gate entry point; `report` computes the
-recursive status rollup from coverage JSONL and renders the static HTML site.
+user's approval. `test` runs the routines bound to items without stamping.
+`validate` is the CI gate entry point; `report` computes the recursive status
+rollup from coverage JSONL and renders the static HTML site.
 """
 
 import argparse
 import fnmatch
+import json
+import os
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -51,24 +55,71 @@ def cmd_new(args):
     return 0
 
 
-def _run_python(locations):
-    node_ids = [loc.name for loc in locations]
-    print(f"running pytest: {' '.join(node_ids)}")
-    return subprocess.run([sys.executable, "-m", "pytest", *node_ids], cwd=ROOT).returncode == 0
+def _resolve(item, discovered):
+    """({binding: Location}, {binding: why it cannot run}) -- a binding runs only when exactly one routine carries its tag pair."""
+    resolved, unrun = {}, {}
+    for name in item.tests:
+        locations = discovered.get((item.uid, name), [])
+        if len(locations) == 1:
+            resolved[name] = locations[0]
+        else:
+            found = ", ".join(l.name for l in locations) or "none"
+            unrun[name] = f"binding {syngatelib.binding_tag(item.uid, name)} must match exactly one routine, found: {found}"
+            print(f"{item.uid}: {unrun[name]}", file=sys.stderr)
+    return resolved, unrun
 
 
-def _run_cpp(locations, uid, name, build_dir):
-    """None if a binary is missing (the binding can't be run at all); else the pass/fail bool."""
-    ok = True
-    for loc in locations:
-        binary = ROOT / build_dir / Path(loc.path).stem
-        if not binary.is_file():
-            print(f"test binary not built: {binary} (build target {Path(loc.path).stem} first)", file=sys.stderr)
-            return None
-        tag = syngatelib.binding_tag(uid, name)
-        print(f"running {binary.name} \"{tag}\"")
-        ok &= subprocess.run([str(binary), tag], cwd=ROOT).returncode == 0
-    return ok
+def _run_bound(resolved, build_dir):
+    """Run the routines of {uid: {binding: Location}}: pytest routines are
+    selected by node id in one process, Catch2 cases by an OR of their tag pairs
+    in one process per binary. -> (all passed, {(uid, binding): why it did not run})."""
+    node_ids, tags_by_binary, unrun = [], {}, {}
+    for uid, bindings in resolved.items():
+        for name, loc in bindings.items():
+            if loc.path.endswith(".py"):
+                node_ids.append(loc.name)
+                continue
+            binary = ROOT / build_dir / Path(loc.path).stem
+            if binary.is_file():
+                tags_by_binary.setdefault(binary, []).append(syngatelib.binding_tag(uid, name))
+            else:
+                unrun[(uid, name)] = f"test binary not built: {binary} (build target {binary.name} first)"
+                print(f"{uid}: {unrun[(uid, name)]}", file=sys.stderr)
+    passed = True
+    if node_ids:
+        print(f"running pytest: {' '.join(node_ids)}", flush=True)
+        passed &= subprocess.run([sys.executable, "-m", "pytest", *node_ids], cwd=ROOT).returncode == 0
+    for binary, tags in tags_by_binary.items():
+        print(f"running {binary.name} \"{','.join(tags)}\"", flush=True)
+        passed &= subprocess.run([str(binary), ",".join(tags)], cwd=ROOT).returncode == 0
+    return passed, unrun
+
+
+class _Recording:
+    """The coverage emitters of the tests run inside write to a scratch file
+    that is folded into `coverage_out` on exit. A binding the run could not
+    execute is recorded as failed: a test that cannot be found is a red test."""
+
+    def __init__(self, coverage_out):
+        self.coverage_out = coverage_out
+
+    def __enter__(self):
+        if self.coverage_out:
+            self.scratch = tempfile.TemporaryDirectory()
+            self.fresh = Path(self.scratch.name) / "coverage.jsonl"
+            os.environ["SYNGATE_COVERAGE_FILE"] = str(self.fresh)
+        return self
+
+    def unrun(self, uid, name, why):
+        if self.coverage_out:
+            with open(self.fresh, "a", encoding="utf-8") as f:
+                f.write(json.dumps({"tags": [uid] + ([name] if name else []), "passed": False, "name": "", "log": why}) + "\n")
+
+    def __exit__(self, *exc):
+        if self.coverage_out:
+            del os.environ["SYNGATE_COVERAGE_FILE"]
+            syngatelib.merge_coverage(self.coverage_out, self.fresh)
+            self.scratch.cleanup()
 
 
 def _expand_uids(items, uid_args, selectable, kind):
@@ -91,7 +142,7 @@ def _expand_uids(items, uid_args, selectable, kind):
     return [uid for uid in selected if not (uid in seen or seen.add(uid))], errors
 
 
-def _review_one(items, structural, discovered, uid, build_dir):
+def _review_one(items, structural, discovered, uid, build_dir, recording):
     own = [e for e in structural if e.startswith(f"{uid}:") and "reviewed stamp" not in e and "no stamped routine sha" not in e]
     if own:
         for line in own:
@@ -104,26 +155,13 @@ def _review_one(items, structural, discovered, uid, build_dir):
     if not item.is_leaf:
         print(f"{uid}: branch items are reviewed through their children; nothing to stamp", file=sys.stderr)
         return False
-    resolved = {}
-    for name in item.tests:
-        tag = syngatelib.binding_tag(uid, name)
-        locations = discovered.get((uid, name), [])
-        if len(locations) != 1:
-            found = ", ".join(l.name for l in locations) or "none"
-            print(f"{uid}: binding {tag} must match exactly one routine, found: {found}", file=sys.stderr)
-            return False
-        resolved[name] = locations[0]
-    python_locations = [loc for loc in resolved.values() if loc.path.endswith(".py")]
-    cpp_locations = {name: loc for name, loc in resolved.items() if not loc.path.endswith(".py")}
-    passed = True
-    if python_locations:
-        passed &= _run_python(python_locations)
-    for name, loc in cpp_locations.items():
-        result = _run_cpp([loc], uid, name, build_dir)
-        if result is None:
-            print(f"{uid}: bound test could not be run; not stamping", file=sys.stderr)
-            return False
-        passed &= result
+    resolved, unresolved = _resolve(item, discovered)
+    passed, unrun = _run_bound({uid: resolved}, build_dir) if not unresolved else (False, {})
+    for name, why in [*unresolved.items(), *((name, why) for (_, name), why in unrun.items())]:
+        recording.unrun(uid, name, why)
+    if unresolved or unrun:
+        print(f"{uid}: bound test could not be run; not stamping", file=sys.stderr)
+        return False
     # Test-first TDD: the routine is frozen by hash as soon as it runs and resolves
     # unambiguously, whether it currently passes or fails. A stamped-but-failing leaf
     # rolls up as test_failed until the covering implementation lands and turns it green.
@@ -144,13 +182,38 @@ def cmd_review(args):
         return 1
     structural = syngatelib.validate_structure(items)
     discovered = syngatelib.discover_bindings()
-    failed = [uid for uid in uids if not _review_one(items, structural, discovered, uid, args.build_dir)]
+    with _Recording(args.coverage_out) as recording:
+        failed = [uid for uid in uids if not _review_one(items, structural, discovered, uid, args.build_dir, recording)]
     if failed:
         print(f"review: {len(failed)}/{len(uids)} item(s) not stamped: {' '.join(failed)}", file=sys.stderr)
         return 1
     if len(uids) > 1:
         print(f"review: stamped {len(uids)} item(s)")
     return 0
+
+
+def cmd_test(args):
+    items = _load_or_die()
+    uids, errors = _expand_uids(items, args.uid, lambda item: item.is_leaf, "leaf")
+    discovered = syngatelib.discover_bindings()
+    resolved, unresolved = {}, {}
+    for uid in uids:
+        item = items.get(uid)
+        if item is None or not item.is_leaf:
+            errors.append(f"unknown UID '{uid}'" if item is None else f"{uid}: a branch binds no tests of its own")
+            continue
+        resolved[uid], missing = _resolve(item, discovered)
+        unresolved.update({(uid, name): why for name, why in missing.items()})
+    with _Recording(args.coverage_out) as recording:
+        passed, unrun = _run_bound(resolved, args.build_dir)
+        unrun.update(unresolved)
+        for (uid, name), why in unrun.items():
+            recording.unrun(uid, name, why)
+    for line in errors:
+        print(line, file=sys.stderr)
+    broken = {uid for uid, _ in unrun}
+    print(f"test: {len(resolved) - len(broken)}/{len(uids)} item(s) run -- {'passed' if passed and not unrun else 'FAILED'}")
+    return 0 if passed and not errors and not unrun else 1
 
 
 def cmd_clear(args):
@@ -243,7 +306,14 @@ def main():
     p = sub.add_parser("review", help="user-only: run bound tests, stamp routine shas + reviewed (stamps even on a failing test -- TDD red state)")
     p.add_argument("uid", nargs="+", help="UID(s) or glob pattern(s) like 'BUOY-00?' / 'BUOY-*' (quote patterns for the shell); patterns select leaves only")
     p.add_argument("--build-dir", default="cmake-build-debug-clang")
+    p.add_argument("--coverage-out", help="coverage JSONL to fold the run's records into; a re-run binding supersedes its previous records")
     p.set_defaults(func=cmd_review)
+
+    p = sub.add_parser("test", help="run the routines bound to leaf items, without stamping")
+    p.add_argument("uid", nargs="+", help="UID(s) or glob pattern(s); patterns select leaves only")
+    p.add_argument("--build-dir", default="cmake-build-debug-clang")
+    p.add_argument("--coverage-out", help="coverage JSONL to fold the run's records into; a re-run binding supersedes its previous records")
+    p.set_defaults(func=cmd_test)
 
     p = sub.add_parser("clear", help="user-only: drop the reviewed stamp")
     p.add_argument("uid", nargs="+", help="UID(s) or glob pattern(s); patterns select reviewed items only")

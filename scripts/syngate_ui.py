@@ -43,6 +43,10 @@ RUN_UID_RE = re.compile(r"^[A-Za-z0-9_\-?*\[\]!]+$")
 LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1"}
 # Coverage files picked up automatically when none are given explicitly.
 DEFAULT_COVERAGE = ("pytest-coverage.jsonl", "syngate_coverage.jsonl", "build-ci/syngate_coverage.jsonl")
+# Test / review runs started from the page fold their records in here, so a run recolors the statuses.
+RUN_COVERAGE = "syngate_coverage.jsonl"
+# Project files opened from a link: git-tracked files are readable, only markdown is written.
+FILE_LIMIT = 1 << 20
 
 
 class ApiError(Exception):
@@ -138,7 +142,8 @@ class SyngateUIApp:
     def __init__(self, root=syngatelib.ROOT, syngate_dir=None, coverage=(), cli_prefix=None, build_dir=DEFAULT_BUILD_DIR):
         self.root = Path(root)
         self.syngate_dir = Path(syngate_dir) if syngate_dir else self.root / "syngate"
-        self.coverage = [str(p) for p in coverage]
+        self.run_coverage = str(self.root / RUN_COVERAGE)
+        self.coverage = list(dict.fromkeys([*(str(p) for p in coverage), self.run_coverage]))
         self.cli_prefix = cli_prefix or [sys.executable, str(self.root / "scripts" / "syngate.py")]
         self.build_dir = build_dir
         self.token = secrets.token_urlsafe(24)
@@ -166,6 +171,7 @@ class SyngateUIApp:
         records, coverage_errors = syngatelib.load_coverage(self._coverage_files())
         problems = syngatelib.item_problems(items, discovered)
         report = syngatelib.compute_status(items, records, problems)
+        axes = syngatelib.compute_axes(items, records, problems)
         tree_errors = [message for uid, message in syngatelib.layout_problems(items) if uid is None]
 
         payload = {}
@@ -180,7 +186,7 @@ class SyngateUIApp:
                                   for loc in discovered.get((uid, name), [])],
                     "records": len(records.get((uid, name), [])),
                 } for name, sha in item.tests.items()]
-            payload[uid] = dict(entry,
+            payload[uid] = dict(entry, **axes[uid],
                                 is_leaf=item.is_leaf,
                                 description_raw=item.description,
                                 path=str(item.path.relative_to(self.root)) if item.path.is_relative_to(self.root) else str(item.path),
@@ -197,7 +203,7 @@ class SyngateUIApp:
             queue.extend(payload[uid]["children"])
         counts = {}
         for entry in payload.values():
-            counts[entry["status"]] = counts.get(entry["status"], 0) + 1
+            counts[entry["test"]] = counts.get(entry["test"], 0) + 1
         job = self.jobs.current
         return {
             "fingerprint": self.fingerprint(),
@@ -403,22 +409,109 @@ class SyngateUIApp:
         item.path.unlink()
         return {"ok": True}
 
+    @staticmethod
+    def _leaves_under(items, uid):
+        """A branch stands for every leaf below it; anything else (leaf, pattern, typo) is the CLI's to judge."""
+        if uid not in items or items[uid].is_leaf:
+            return [uid]
+        children, leaves, seen, stack = syngatelib.children_map(items), [], set(), [uid]
+        while stack:
+            node = stack.pop()
+            if node in seen:
+                continue
+            seen.add(node)
+            if items[node].is_leaf:
+                leaves.append(node)
+            stack.extend(reversed(syngatelib.sorted_children(items, children, node)))
+        return leaves
+
+    # -- linked project files ---------------------------------------------
+
+    def _file_at(self, rel):
+        """(absolute path, writable) for a normalised project-relative path;
+        secrets sit untracked next to the tree (keys, databases), so anything
+        outside git is served only when it is markdown."""
+        if not rel or Path(rel).is_absolute() or ".." in Path(rel).parts or rel != Path(rel).as_posix() or rel.startswith("-"):
+            raise ApiError(400, f"'{rel}' is not a normalised project-relative path")
+        path = (self.root / rel).resolve()
+        if not path.is_relative_to(self.root.resolve()) or not path.is_file():
+            raise ApiError(404, f"no file {rel}")
+        writable = path.suffix == ".md"
+        if not writable and not self._tracked(rel):
+            raise ApiError(403, f"{rel} is neither tracked by git nor markdown")
+        return path, writable
+
+    def _tracked(self, rel):
+        try:
+            return subprocess.run(["git", "ls-files", "--error-unmatch", "--", rel], cwd=self.root, capture_output=True).returncode == 0
+        except OSError:
+            return False
+
+    @staticmethod
+    def _text(path, rel):
+        if path.stat().st_size > FILE_LIMIT:
+            raise ApiError(413, f"{rel} exceeds {FILE_LIMIT >> 10} KiB")
+        try:
+            return path.read_text(encoding="utf-8")
+        except UnicodeDecodeError:
+            raise ApiError(415, f"{rel} is not UTF-8 text")
+
+    def read_file(self, rel):
+        path, writable = self._file_at(rel)
+        text = self._text(path, rel)
+        return {"path": rel, "text": text, "sha": hashlib.sha256(text.encode()).hexdigest(), "writable": writable}
+
+    def file_shas(self, rels):
+        shas = {}
+        for rel in rels:
+            try:
+                shas[rel] = self.read_file(rel)["sha"]
+            except ApiError:
+                shas[rel] = None
+        return shas
+
+    def save_file(self, data):
+        """Whole-file compare-and-swap against the text the page loaded, the
+        file twin of `save_item`."""
+        rel = str(data.get("path") or "")
+        path, writable = self._file_at(rel)
+        if not writable:
+            raise ApiError(403, f"{rel}: only markdown is written from the page")
+        text, base, before = str(data.get("text") or ""), data.get("base"), self._text(path, rel)
+        if isinstance(base, str) and before != base and before != text:
+            raise ApiError(409, f"{rel} changed on disk since the page loaded it", current={"file": before})
+        if text != before:
+            path.write_text(text, encoding="utf-8")
+        return {"ok": True, "stored": {"file": text}, "sha": hashlib.sha256(text.encode()).hexdigest()}
+
     def start_run(self, data):
         action = data.get("action")
-        if action not in ("review", "clear"):
-            raise ApiError(400, "'action' must be 'review' or 'clear'")
+        if action not in ("test", "review", "clear"):
+            raise ApiError(400, "'action' must be 'test', 'review' or 'clear'")
         uids = data.get("uids")
         if not isinstance(uids, list) or not uids or not all(isinstance(u, str) and RUN_UID_RE.match(u) for u in uids):
             raise ApiError(400, "'uids' must be a non-empty list of UIDs or glob patterns")
-        argv = [*self.cli_prefix, action, *uids]
-        if action == "review":
-            argv += ["--build-dir", str(data.get("build_dir") or self.build_dir)]
+        argv = [*self.cli_prefix, action]
+        if action == "clear":
+            argv += uids
+        else:
+            items = self._load()
+            leaves = list(dict.fromkeys(leaf for uid in uids for leaf in self._leaves_under(items, uid)))
+            if not leaves:
+                raise ApiError(400, f"no test-bearing leaf under {', '.join(uids)}")
+            argv += [*leaves, "--build-dir", str(data.get("build_dir") or self.build_dir), "--coverage-out", self.run_coverage]
         job = self.jobs.start(argv, cwd=self.root)
         return {"job": job.id}
 
 
-def _page_bytes():
-    return (Path(__file__).resolve().parent / "syngate_ui.html").read_bytes()
+def _page_bytes(nonce):
+    page = (Path(__file__).resolve().parent / "syngate_ui.html").read_bytes()
+    return page.replace(b"<script>", b'<script nonce="' + nonce + b'">').replace(b"<style>", b'<style nonce="' + nonce + b'">')
+
+
+def _csp(nonce):
+    return (f"default-src 'none'; script-src 'nonce-{nonce}'; style-src-elem 'nonce-{nonce}'; style-src-attr 'unsafe-inline'; "
+            "connect-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'none'")
 
 
 # Served without the token: browsers request it on their own, and it reveals nothing.
@@ -484,13 +577,17 @@ class _Handler(http.server.BaseHTTPRequestHandler):
             return
         try:
             if path == "/":
-                self._send(200, "text/html; charset=utf-8", _page_bytes())
+                nonce = secrets.token_urlsafe(16)
+                self._send(200, "text/html; charset=utf-8", _page_bytes(nonce.encode()), extra=[("Content-Security-Policy", _csp(nonce))])
             elif path == "/api/tree":
                 self._json(200, self.app.build_model())
             elif path == "/api/fingerprint":
                 job = self.app.jobs.current
                 self._json(200, {"fingerprint": self.app.fingerprint(),
-                                 "job": job.id if job and job.returncode is None else None})
+                                 "job": job.id if job and job.returncode is None else None,
+                                 "files": self.app.file_shas(parse_qs(urlsplit(self.path).query).get("file", []))})
+            elif path == "/api/file":
+                self._json(200, self.app.read_file((parse_qs(urlsplit(self.path).query).get("path") or [""])[0]))
             elif (match := re.fullmatch(r"/api/job/(\d+)", path)):
                 self._job_snapshot(int(match.group(1)))
             elif (match := re.fullmatch(r"/api/job/(\d+)/events", path)):
@@ -514,6 +611,8 @@ class _Handler(http.server.BaseHTTPRequestHandler):
                 self._json(200, self.app.move_item(match.group(1), payload))
             elif path == "/api/new":
                 self._json(200, self.app.create_item(payload))
+            elif path == "/api/file":
+                self._json(200, self.app.save_file(payload))
             elif (match := re.fullmatch(r"/api/delete/([A-Za-z0-9_\-]+)", path)):
                 self._json(200, self.app.delete_item(match.group(1)))
             elif path == "/api/run":
@@ -572,7 +671,7 @@ def serve(port=DEFAULT_PORT, coverage=(), build_dir=DEFAULT_BUILD_DIR, open_brow
     if coverage:
         print(f"syngate ui: coloring statuses from {', '.join(coverage)}")
     else:
-        print("syngate ui: no coverage files found; leaf statuses show as not implemented (pass --coverage FILE)")
+        print("syngate ui: no coverage files found; leaf statuses show as not implemented until tests are run from the page (or pass --coverage FILE)")
     print("syngate ui: loopback only; the URL token is this session's key. Ctrl+C stops the server.")
     if open_browser:
         webbrowser.open(url)

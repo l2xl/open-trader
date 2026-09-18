@@ -6,6 +6,7 @@
 (`BUOY-00?`, `BUOY-*`), expanding patterns against the loaded tree."""
 
 import argparse
+import sys
 from pathlib import Path
 
 import pytest
@@ -89,3 +90,37 @@ def test_clear_with_unknown_literal_fails_after_processing_the_rest(monkeypatch)
     monkeypatch.setattr(syngatelib, "write_item", written.append)
     assert syngate.cmd_clear(argparse.Namespace(uid=["NOPE-001", "PAT-002"])) == 1
     assert [item.uid for item in written] == ["PAT-002"]
+
+
+@pytest.mark.syngate("INFRA-052", "selection")
+def test_bound_routines_are_selected_by_node_id_and_by_tag_pairs(monkeypatch, tmp_path):
+    items = _tree()
+    items["PAT-003"].tests = {"a": None, "b": None}
+    located = {
+        ("PAT-001", None): [syngatelib.Location("scripts/tests/test_pat.py", 1, "scripts/tests/test_pat.py::test_one", "")],
+        ("PAT-002", None): [syngatelib.Location("test/pat/test_pat.cpp", 1, "test/pat/test_pat.cpp:1", "")],
+        ("PAT-003", "a"): [syngatelib.Location("test/pat/test_pat.cpp", 9, "test/pat/test_pat.cpp:9", "")],
+        ("PAT-003", "b"): [syngatelib.Location("test/pat/test_pat.cpp", 17, "test/pat/test_pat.cpp:17", "")],
+    }
+    (tmp_path / "test_pat").touch()
+    runs, written = [], []
+    monkeypatch.setattr(syngatelib, "load_tree", lambda: (items, []))
+    monkeypatch.setattr(syngatelib, "discover_bindings", lambda: located)
+    monkeypatch.setattr(syngatelib, "write_item", written.append)
+    monkeypatch.setattr(syngate.subprocess, "run", lambda argv, **kwargs: runs.append(argv) or argparse.Namespace(returncode=0))
+    assert syngate.cmd_test(argparse.Namespace(uid=["PAT-00?"], build_dir=str(tmp_path), coverage_out=None)) == 0
+    assert runs == [[sys.executable, "-m", "pytest", "scripts/tests/test_pat.py::test_one"], [str(tmp_path / "test_pat"), "[PAT-002],[PAT-003][a],[PAT-003][b]"]]
+    assert written == []
+
+
+@pytest.mark.syngate("INFRA-052", "unrun_record")
+def test_a_binding_without_a_routine_is_recorded_as_failed(monkeypatch, tmp_path):
+    items = _tree()
+    coverage = tmp_path / "coverage.jsonl"
+    monkeypatch.setattr(syngatelib, "load_tree", lambda: (items, []))
+    monkeypatch.setattr(syngatelib, "discover_bindings", lambda: {})
+    assert syngate.cmd_test(argparse.Namespace(uid=["PAT-001"], build_dir=str(tmp_path), coverage_out=str(coverage))) == 1
+    records, errors = syngatelib.load_coverage([coverage])
+    assert errors == [] and list(records) == [("PAT-001", None)]
+    assert records[("PAT-001", None)][0]["passed"] is False
+    assert "must match exactly one routine" in records[("PAT-001", None)][0]["log"]

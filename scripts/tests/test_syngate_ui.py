@@ -59,7 +59,7 @@ def call(base, app, path, payload=None, token=True, raw=False):
         return response.status, body if raw else json.loads(body)
 
 
-@pytest.mark.syngate("INFRA-071", "tree")
+@pytest.mark.syngate("SynGate UI", "tree")
 def test_tree_endpoint_serves_statuses_and_stamp_freshness(server, syngate_tree):
     base, app = server
     syngate_dir, make_item = syngate_tree
@@ -76,7 +76,7 @@ def test_tree_endpoint_serves_statuses_and_stamp_freshness(server, syngate_tree)
     assert any("re-review" in p for p in tree["items"]["STALE-001"]["problems"])
 
 
-@pytest.mark.syngate("INFRA-071", "auth")
+@pytest.mark.syngate("SynGate UI", "auth")
 def test_requests_without_token_or_loopback_host_are_refused(server):
     base, app = server
     with pytest.raises(urllib.error.HTTPError) as missing:
@@ -94,7 +94,7 @@ def test_requests_without_token_or_loopback_host_are_refused(server):
     assert status == 200  # EventSource cannot set headers; the query token is equivalent
 
 
-@pytest.mark.syngate("INFRA-071", "edit")
+@pytest.mark.syngate("SynGate UI", "edit")
 def test_save_writes_canonical_yaml_and_keeps_stamp_stale(server, syngate_tree):
     base, app = server
     syngate_dir, _ = syngate_tree
@@ -113,7 +113,7 @@ def test_save_writes_canonical_yaml_and_keeps_stamp_stale(server, syngate_tree):
     assert tree["items"]["LEAF-002"]["stamp_fresh"] is False
 
 
-@pytest.mark.syngate("INFRA-071", "edit_guard")
+@pytest.mark.syngate("SynGate UI", "edit_guard")
 def test_save_rejects_unknown_parent_and_cycle(server, syngate_tree):
     base, app = server
     syngate_dir, _ = syngate_tree
@@ -125,7 +125,7 @@ def test_save_rejects_unknown_parent_and_cycle(server, syngate_tree):
     assert (syngate_dir / "ROOT.yml").read_text() == before
 
 
-@pytest.mark.syngate("INFRA-071", "autosave")
+@pytest.mark.syngate("SynGate UI", "autosave")
 def test_partial_save_touches_only_named_fields_and_refuses_to_clobber_disk_edits(server, syngate_tree):
     base, app = server
     syngate_dir, _ = syngate_tree
@@ -149,7 +149,7 @@ def _orders(syngate_dir, *uids):
     return [yaml.safe_load((syngate_dir / f"{uid}.yml").read_text()).get("order", 0) for uid in uids]
 
 
-@pytest.mark.syngate("INFRA-071", "reorder")
+@pytest.mark.syngate("SynGate UI", "reorder")
 def test_move_takes_a_free_order_key_else_renumbers_the_family(server, syngate_tree):
     base, app = server
     syngate_dir, make_item = syngate_tree
@@ -166,7 +166,7 @@ def test_move_takes_a_free_order_key_else_renumbers_the_family(server, syngate_t
     assert _orders(syngate_dir, "KID-A", "KID-C", "KID-B", "LEAF-001") == [10, 20, 30, 40]
 
 
-@pytest.mark.syngate("INFRA-071", "reparent")
+@pytest.mark.syngate("SynGate UI", "reparent")
 def test_move_repoints_or_adds_the_parent_link_and_guards_the_dag(server, syngate_tree):
     base, app = server
     syngate_dir, make_item = syngate_tree
@@ -187,7 +187,7 @@ def test_move_repoints_or_adds_the_parent_link_and_guards_the_dag(server, syngat
     assert (syngate_dir / "BRANCH-A.yml").read_text() == before
 
 
-@pytest.mark.syngate("INFRA-071", "scaffold")
+@pytest.mark.syngate("SynGate UI", "scaffold")
 def test_new_and_delete_manage_item_files(server, syngate_tree):
     base, app = server
     syngate_dir, _ = syngate_tree
@@ -205,7 +205,7 @@ def test_new_and_delete_manage_item_files(server, syngate_tree):
     assert status == 200 and not (syngate_dir / "sub" / "LEAF-003.yml").exists()
 
 
-@pytest.mark.syngate("INFRA-071", "review_stream")
+@pytest.mark.syngate("SynGate UI", "review_stream")
 def test_review_runs_cli_and_streams_output_until_exit(server):
     base, app = server
     status, job = call(base, app, "/api/run", {"action": "review", "uids": ["rc-3", "LEAF-001"]})
@@ -219,7 +219,7 @@ def test_review_runs_cli_and_streams_output_until_exit(server):
     assert "--build-dir" in snapshot["argv"]  # review forwards the build dir
 
 
-@pytest.mark.syngate("INFRA-071", "single_flight")
+@pytest.mark.syngate("SynGate UI", "single_flight")
 def test_concurrent_runs_are_refused_while_busy(server):
     base, app = server
     app.cli_prefix = [sys.executable, "-c", "import sys, time; print('held'); sys.stdout.flush(); time.sleep(30)"]
@@ -232,3 +232,65 @@ def test_concurrent_runs_are_refused_while_busy(server):
         app.jobs.cancel()
     status, snapshot = call(base, app, f"/api/job/{job['job']}")
     assert snapshot["running"] is False
+
+
+@pytest.mark.syngate("SynGate UI", "run_branch")
+def test_a_branch_run_addresses_every_leaf_below_it(server, syngate_tree):
+    base, app = server
+    syngate_dir, make_item = syngate_tree
+    make_item(syngate_dir, "BRANCH-A", "Groups.\n", parents=("ROOT",))
+    make_item(syngate_dir, "BRANCH-B", "Groups nothing yet.\n", parents=("ROOT",))
+    make_item(syngate_dir, "LEAF-002", "It shall nest.\n", parents=("BRANCH-A",), tests=None)
+    _, job = call(base, app, "/api/run", {"action": "test", "uids": ["ROOT"]})
+    _, body = call(base, app, f"/api/job/{job['job']}/events?token={app.token}", token=False, raw=True)
+    assert f"stub: test LEAF-002 LEAF-001 --build-dir {app.build_dir} --coverage-out {app.run_coverage}" in body.decode()
+    with pytest.raises(urllib.error.HTTPError) as barren:
+        call(base, app, "/api/run", {"action": "review", "uids": ["BRANCH-B"]})
+    assert barren.value.code == 400
+
+
+@pytest.mark.syngate("INFRA-071", "file_read")
+def test_linked_files_are_served_only_from_inside_the_project(server, tmp_path_factory):
+    base, app = server
+    (app.root / "docs").mkdir()
+    (app.root / "docs" / "GUIDE.md").write_text("# Guide\n")
+    (app.root / "key.txt").write_text("secret\n")
+    outside = tmp_path_factory.mktemp("outside") / "LEAK.md"
+    outside.write_text("# Leak\n")
+    (app.root / "docs" / "LINK.md").symlink_to(outside)
+    status, served = call(base, app, "/api/file?path=docs/GUIDE.md")
+    assert status == 200 and served["text"] == "# Guide\n" and served["writable"] is True
+    _, state = call(base, app, "/api/fingerprint?file=docs/GUIDE.md&file=docs/GONE.md")
+    assert state["files"] == {"docs/GUIDE.md": served["sha"], "docs/GONE.md": None}
+    for path, code in (("key.txt", 403), ("../GUIDE.md", 400), ("docs/../key.txt", 400), ("docs/LINK.md", 404), ("docs/GONE.md", 404)):  # untracked non-markdown; traversal; symlink escape; missing
+        with pytest.raises(urllib.error.HTTPError) as denied:
+            call(base, app, f"/api/file?path={path}")
+        assert denied.value.code == code, path
+
+
+@pytest.mark.syngate("INFRA-071", "file_save")
+def test_file_save_is_a_compare_and_swap_limited_to_markdown(server):
+    base, app = server
+    guide = app.root / "GUIDE.md"
+    guide.write_text("# Guide\n")
+    (app.root / "notes.txt").write_text("plain\n")
+    status, saved = call(base, app, "/api/file", {"path": "GUIDE.md", "text": "# Guide\n\nTyped.\n", "base": "# Guide\n"})
+    assert status == 200 and saved["stored"] == {"file": "# Guide\n\nTyped.\n"} and guide.read_text() == "# Guide\n\nTyped.\n"
+    guide.write_text("# Guide\n\nSaid the agent.\n")
+    with pytest.raises(urllib.error.HTTPError) as clash:
+        call(base, app, "/api/file", {"path": "GUIDE.md", "text": "# Guide\n\nTyped more.\n", "base": "# Guide\n\nTyped.\n"})
+    assert clash.value.code == 409 and json.loads(clash.value.read())["current"] == {"file": "# Guide\n\nSaid the agent.\n"}
+    assert guide.read_text() == "# Guide\n\nSaid the agent.\n"
+    with pytest.raises(urllib.error.HTTPError) as foreign:
+        call(base, app, "/api/file", {"path": "notes.txt", "text": "edited\n", "base": "plain\n"})
+    assert foreign.value.code == 403 and (app.root / "notes.txt").read_text() == "plain\n"
+
+
+@pytest.mark.syngate("INFRA-071", "csp")
+def test_the_page_runs_only_its_own_nonced_script(server):
+    base, app = server
+    request = urllib.request.Request(base + "/", headers={"X-Syngate-Token": app.token})
+    with urllib.request.urlopen(request) as response:
+        policy, page = response.headers["Content-Security-Policy"], response.read().decode()
+    nonce = policy.split("script-src 'nonce-")[1].split("'")[0]
+    assert "default-src 'none'" in policy and f'<script nonce="{nonce}">' in page and "<script>" not in page

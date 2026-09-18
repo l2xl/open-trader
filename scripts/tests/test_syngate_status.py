@@ -199,3 +199,45 @@ def test_coverage_gaps_are_not_item_problems(syngate_tree):
     items, errs = syngatelib.load_tree(syngate_dir)
     assert errs == []
     assert syngatelib.item_problems(items) == {}
+
+
+@pytest.mark.syngate("INFRA-052", "supersede")
+def test_rerun_records_replace_the_previous_records_of_their_bindings(tmp_path):
+    target, fresh = tmp_path / "coverage.jsonl", tmp_path / "fresh.jsonl"
+    target.write_text('{"tags": ["LEAF-1"], "passed": false}\n{"tags": ["LEAF-2", "a"], "passed": false}\n{"tags": ["LEAF-2", "b"], "passed": true}\n')
+    fresh.write_text('{"tags": ["LEAF-1"], "passed": true}\n{"tags": ["LEAF-2", "a"], "passed": true}\n')
+    syngatelib.merge_coverage(target, fresh)
+    records, errors = syngatelib.load_coverage([target])
+    assert errors == []
+    assert {binding: [r["passed"] for r in recs] for binding, recs in records.items()} == {("LEAF-1", None): [True], ("LEAF-2", "a"): [True], ("LEAF-2", "b"): [True]}
+
+
+@pytest.mark.syngate("INFRA-053")
+def test_test_and_review_axes_roll_up_independently(syngate_tree):
+    syngate_dir, make = syngate_tree
+    make(syngate_dir, "ROOT-1", "root", tests="absent")
+    for branch in ("A-1", "B-1", "C-1", "D-1"):
+        make(syngate_dir, branch, "groups", parents=["ROOT-1"], tests="absent")
+    make(syngate_dir, "PASS-1", "shall pass", parents=["A-1"], tests=None)
+    make(syngate_dir, "UNK-1", "shall run some day", parents=["A-1"], tests=None)
+    make(syngate_dir, "FAIL-1", "shall fail", parents=["A-1"], tests=None)
+    make(syngate_dir, "PASS-2", "shall pass", parents=["D-1"], tests=None)
+    make(syngate_dir, "UNK-2", "shall run some day", parents=["D-1"], tests=None)
+    for uid, parent in (("STALE-1", "B-1"), ("OK-1", "C-1")):
+        frozen = syngatelib.Item(uid=uid, path=syngate_dir / f"{uid}.yml", header=uid, description="It shall hold.\n", parents=[parent], tests={None: "a" * 64})
+        frozen.reviewed = syngatelib.compute_stamp(frozen)
+        syngatelib.write_item(frozen)
+    (syngate_dir / "STALE-1.yml").write_text((syngate_dir / "STALE-1.yml").read_text().replace("It shall hold.", "It shall have drifted."))
+    items, errs = syngatelib.load_tree(syngate_dir)
+    assert errs == []
+    records = {(uid, None): [_rec(uid != "FAIL-1")] for uid in ("PASS-1", "FAIL-1", "PASS-2", "STALE-1", "OK-1")}
+    axes = syngatelib.compute_axes(items, records, syngatelib.item_problems(items))
+    expected = {
+        "PASS-1": ("test_passed", "not_reviewed"), "UNK-1": ("unknown", "not_reviewed"), "FAIL-1": ("test_failed", "not_reviewed"), "A-1": ("test_failed", "not_reviewed"),
+        "PASS-2": ("test_passed", "not_reviewed"), "UNK-2": ("unknown", "not_reviewed"), "D-1": ("unknown", "not_reviewed"),
+        "STALE-1": ("test_passed", "review_violated"), "B-1": ("test_passed", "review_violated"),
+        "OK-1": ("test_passed", "reviewed"), "C-1": ("test_passed", "reviewed"),
+        "ROOT-1": ("test_failed", "review_violated"),
+    }
+    assert {uid: (axes[uid]["test"], axes[uid]["review"]) for uid in expected} == expected
+
