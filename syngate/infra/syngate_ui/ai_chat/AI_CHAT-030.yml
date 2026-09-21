@@ -1,0 +1,6 @@
+header: Close button
+description: |
+  The AI chat window shall carry a close button drawn as a green check mark that closes the window.
+parents: [AI_CHAT]
+order: 30
+tests: ~

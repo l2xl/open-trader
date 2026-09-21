@@ -1,0 +1,6 @@
+header: Project edit mode
+description: |
+  In edit mode the Claude Code connector shall call `claude` with permission to edit the project's files without prompting.
+parents: [CLAUDE_CODE]
+order: 20
+tests: ~

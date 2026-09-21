@@ -15,9 +15,11 @@ TDD gate every bound test is frozen against. `scripts/syngatelib.py` is the libr
   one item has empty `parents` (the root, `OPEN-TRADER`). No settings files anywhere.
   Use consideration to name items, which represents a whole feature, without a number (like top OPEN_TRADER),
   then its subbranches may be groupped by subfolder and have same name and numbered suffix (unless it again represent large feature)
-- **Leaf vs branch is structural**: a leaf carries a `tests` key; a branch has children. Mutually
-  exclusive. A childless item without `tests` is simply not yet implemented — it rolls up as
-  `not_implemented` like any leaf with no coverage.
+- **Leaf vs branch is structural**: a branch has children; a `tests` key binds tests to the item
+  that carries it — every implemented leaf, and any branch that has tests of its own. A
+  test-bearing branch passes only when its own bindings and all its children pass, and it is
+  reviewed and frozen exactly as a leaf is. A childless item without `tests` is simply not yet
+  implemented — it rolls up as `not_implemented` like any leaf with no coverage.
 
 # Item Schema
 
@@ -142,12 +144,13 @@ file named by `SYNGATE_COVERAGE_FILE` (no emission when unset).
 Two independent axes per item (`compute_axes`; what the UI shows):
 
 - **Test**: `unknown` | `test_passed` | `test_failed`. Leaf: any failed record → failed; any binding
-  without a record → unknown; else passed. Branch: a failed leaf fails every ancestor, else one
-  unknown leaf leaves them unknown. A run that cannot execute a binding (no or several tagged
+  without a record → unknown; else passed. Branch: the worst of its children and its own bindings,
+  if it carries any — a failed item fails every ancestor, else one unknown item leaves them
+  unknown. The axis reflects the run records alone — a violated review never reddens it. A run that cannot execute a binding (no or several tagged
   routines, test binary not built) records it as failed — a test that cannot be found is red.
 - **Review**: `not_reviewed` | `reviewed` | `review_violated`. An item's own validation problem
-  (stale stamp, drifted frozen routine, malformed item) is a violated review; a branch is reviewed
-  only through its children; violated outranks not reviewed, which outranks reviewed.
+  (stale stamp, drifted frozen routine, malformed item) is a violated review; a branch without
+  own tests is reviewed only through its children; violated outranks not reviewed, which outranks reviewed.
 
 The single-status rollup below (`compute_status`) is what `syngate report`, the CI summary and the
 check run still publish; its frozen tests (INFRA-043/044/070) define it, so retiring it in favour of

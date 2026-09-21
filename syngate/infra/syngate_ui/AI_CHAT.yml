@@ -1,0 +1,6 @@
+header: AI chat window
+description: |
+  The tree UI shall open an AI chat window under the selected tree item. The window should have selectors for AI-connector, model selection and effort. Also send button.
+parents: [SYNGATE_UI-030]
+order: 70
+tests: ~

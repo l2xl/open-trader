@@ -167,6 +167,34 @@ def sorted_children(items, children, uid):
     return sorted(children.get(uid, ()), key=lambda c: (items[c].order, c))
 
 
+def walk(items, anchor=None, descendants=False):
+    """UIDs selected for `anchor`, each once at its first occurrence: its ancestors
+    root first, the anchor, then on request its descendants in sibling order; the
+    whole tree when no anchor is given."""
+    children, selected, seen = children_map(items), [], set()
+
+    def up(uid):
+        if uid in seen or uid not in items:
+            return
+        seen.add(uid)
+        for parent in items[uid].parents:
+            up(parent)
+        selected.append(uid)
+
+    def down(uid):
+        for child in sorted_children(items, children, uid):
+            if child not in seen:
+                seen.add(child)
+                selected.append(child)
+                down(child)
+
+    for uid in [anchor] if anchor else sorted(uid for uid, item in items.items() if not item.parents):
+        up(uid)
+        if descendants or not anchor:
+            down(uid)
+    return selected
+
+
 def stamp_payload(item):
     tests = None
     if item.tests is not None:
@@ -181,7 +209,7 @@ def compute_stamp(item):
 
 def layout_problems(items):
     """[(uid|None, message)] -- how the tree is shaped: UID form, parent links,
-    leaf/branch exclusivity, non-empty description, exactly one root, no cycles.
+    non-empty description, exactly one root, no cycles.
 
     Deliberately free of review state. A stale stamp is the tree's *data*, not a
     defect of its layout, so it reddens the item that carries it (see
@@ -202,9 +230,6 @@ def layout_problems(items):
             problems.append((uid, f"{uid}: duplicate parents"))
         if not item.parents:
             roots.append(uid)
-        kids = children[uid]
-        if item.is_leaf and kids:
-            problems.append((uid, f"{uid}: has both 'tests' and children {sorted(kids)}; leaf and branch are mutually exclusive"))
         if not item.description.strip():
             problems.append((uid, f"{uid}: empty description"))
     if len(roots) != 1:
@@ -499,7 +524,8 @@ def compute_status(items, records, problems=None):
             memo[uid] = TEST_FAILED
             return memo[uid]
         kids = children[uid]
-        memo[uid] = aggregate([status_of(k) for k in kids]) if kids else leaf_status(items[uid], records)
+        own = [leaf_status(items[uid], records)] if items[uid].is_leaf or not kids else []
+        memo[uid] = aggregate([status_of(k) for k in kids] + own) if kids else own[0]
         return memo[uid]
 
     report = {}
@@ -539,11 +565,13 @@ def _worst(states, rank):
 
 
 def compute_axes(items, records, problems=None):
-    """{uid: {"test": …, "review": …}} -- two independent rollups. Tests: a
-    failed leaf fails every ancestor, else one unknown leaf leaves them unknown.
-    Review: an item's own validation problem is a violated review, which
-    outranks not reviewed, which outranks reviewed; a branch is reviewed only
-    through its children."""
+    """{uid: {"test": …, "review": …}} -- two independent rollups over an item's
+    own tests, if it carries any, and its children. Tests, from the run records
+    alone: a failed item fails every ancestor, else one unknown item leaves them
+    unknown. Review: an item's own validation problem -- a stale stamp, a
+    stamped routine changed or gone -- is a violated review and never touches
+    the test axis; violated outranks not reviewed, which outranks reviewed; a
+    branch without tests is reviewed only through its children."""
     problems = problems or {}
     children = children_map(items)
     memo = {}
@@ -552,11 +580,11 @@ def compute_axes(items, records, problems=None):
         if uid in memo:
             return memo[uid]
         memo[uid] = (UNKNOWN, NOT_REVIEWED)  # cycle guard
-        item, kids = items[uid], [axes(k) for k in children[uid]]
-        if kids:
-            test, review = _worst([t for t, _ in kids], TEST_RANK), _worst([r for _, r in kids], REVIEW_RANK)
-        else:
-            test, review = (leaf_test_status(item, records) if item.is_leaf else UNKNOWN), (REVIEWED if item.reviewed else NOT_REVIEWED)
+        item, states = items[uid], [axes(k) for k in children[uid]]
+        if item.is_leaf or not states:
+            own = leaf_test_status(item, records) if item.is_leaf else UNKNOWN
+            states.append((own, REVIEWED if item.reviewed else NOT_REVIEWED))
+        test, review = _worst([t for t, _ in states], TEST_RANK), _worst([r for _, r in states], REVIEW_RANK)
         memo[uid] = (test, REVIEW_VIOLATED if problems.get(uid) else review)
         return memo[uid]
 
@@ -587,6 +615,12 @@ def dump_item(item):
     if item.reviewed:
         data["reviewed"] = item.reviewed
     return yaml.dump(data, Dumper=_ItemDumper, sort_keys=False, default_flow_style=None, allow_unicode=True, width=120)
+
+
+def clear_review(item):
+    item.reviewed = None
+    if item.tests is not None:
+        item.tests = {name: None for name in item.tests}
 
 
 def write_item(item):

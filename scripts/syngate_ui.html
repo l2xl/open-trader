@@ -55,7 +55,9 @@ header .counts { display: flex; gap: 0.4rem; }
 .spacer { flex: 1; }
 
 main { flex: 1; display: flex; min-height: 0; }
-#tree-pane { width: 40rem; min-width: 18rem; max-width: 75vw; resize: horizontal; overflow: auto; border-right: 1px solid var(--line); padding: 0.6rem 0.4rem 2rem; }
+#tree-pane { width: 40rem; min-width: 18rem; max-width: 75vw; flex: none; overflow: auto; padding: 0.6rem 0.4rem 2rem; }
+#splitter { flex: none; width: 5px; cursor: col-resize; background: var(--line); touch-action: none; }
+#splitter:hover, #splitter.dragging { background: var(--accent, #4a90d9); }
 #doc-pane { flex: 1; overflow: auto; background: var(--panel); padding: 1.1rem 1.6rem 0; }
 #doc { max-width: 64rem; padding-bottom: 70vh; }
 
@@ -86,7 +88,7 @@ main { flex: 1; display: flex; min-height: 0; }
 .handle { display: inline-flex; align-items: center; gap: 0.35rem; }
 .handle[draggable=true] { cursor: grab; }
 .dot { width: 0.6em; height: 0.6em; border-radius: 50%; flex: none; }
-.dot.unknown { background: var(--gray); } .dot.test_passed { background: var(--green); } .dot.test_failed { background: var(--red); }
+.dot.gray { background: var(--gray); } .dot.green { background: var(--green); } .dot.red { background: var(--red); }
 .node-uid { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 0.82rem; }
 .title { flex: 1; min-width: 0; font-size: 0.82rem; color: var(--dim); background: transparent; border-color: transparent; padding: 0.05em 0.35em; text-overflow: ellipsis; }
 .title:hover:not([readonly]) { border-color: var(--line); }
@@ -104,8 +106,7 @@ main { flex: 1; display: flex; min-height: 0; }
 .tools button.danger:hover { color: var(--red); }
 .row.adding { cursor: default; }
 .new-uid { width: 14rem; font-size: 0.82rem; padding: 0.05em 0.35em; }
-.row-problems, .block-problems { padding: 0.3rem 0.6rem; background: #a8482e14; border: 1px solid #a8482e55; border-radius: 4px; font-size: 0.78rem; color: var(--red); white-space: normal; }
-.row-problems { margin: 0.1rem 0 0.3rem calc(1.6rem + var(--depth) * var(--indent)); }
+.block-problems { padding: 0.3rem 0.6rem; background: #a8482e14; border: 1px solid #a8482e55; border-radius: 4px; font-size: 0.78rem; color: var(--red); white-space: normal; }
 .block-problems { margin-top: 0.5rem; }
 
 /* A fieldset's legend knocks its gap out of the border natively, so the UID label stays on the line over any (translucent) fill without a masking background. */
@@ -137,17 +138,37 @@ main { flex: 1; display: flex; min-height: 0; }
 .block.file > legend { font-family: ui-monospace, Menlo, Consolas, monospace; letter-spacing: 0.02em; }
 .block.file .block-body { max-height: 70vh; overflow: auto; }
 .block.file .closer { position: absolute; top: 0; right: 0.8rem; transform: translateY(-50%); width: 1.3rem; height: 1.3rem; padding: 0; border-radius: 50%; font-size: 0.7rem; line-height: 1; color: var(--dim); }
+.block .tag .caption { font-weight: 400; letter-spacing: 0; max-width: 28rem; overflow: hidden; text-overflow: ellipsis; }
+.chat-log { display: flex; flex-direction: column; gap: 0.45rem; margin-bottom: 0.5rem; }
+.chat-log:empty { display: none; }
+.chat-msg { padding: 0.35rem 0.6rem; border-radius: 6px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.chat-msg.user { align-self: flex-end; max-width: 85%; background: var(--accent-soft); }
+.chat-msg.ai { white-space: normal; border: 1px solid var(--line); background: var(--panel); }
+.chat-msg.error { color: var(--red); border: 1px solid #a8482e55; background: #a8482e14; }
+textarea.chat-input { min-height: 3.1em; }
+.chat-pill { cursor: default; }
+.chat-pill .chat-send, .chat-pill .chat-setup { cursor: pointer; }
+.chat-pill .chat-send:hover, .chat-pill .chat-setup:hover { color: var(--accent); }
+.chat-pill.busy .chat-send { opacity: 0.45; pointer-events: none; }
+#status-menu .menu-label { padding: 0.3em 0.9em 0.1em; font-size: 0.68rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--dim); }
 textarea.block-text { display: block; width: 100%; min-height: 1.55em; padding: 0; border: none; border-radius: 0; background: transparent; field-sizing: content; resize: none; font-family: inherit; }
 textarea.block-text:focus { outline: none; }
 /* In flow, pulled down by the bottom padding plus half a pill: the last pill line straddles the bottom border, earlier lines wrap inside. */
-.block-status { position: relative; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 0.3rem 0.4rem; margin: 0.4rem 0 -1.4rem; }
-.block-status:empty { display: none; }
-.block-status:hover { z-index: 20; }
+.block-foot { position: relative; display: flex; justify-content: space-between; align-items: flex-end; gap: 0.6rem; margin: 0.4rem 0 -1.4rem; }
+.block-foot:hover { z-index: 20; }
+.block-status, .block-ai { display: flex; flex-wrap: wrap; gap: 0.3rem 0.4rem; }
+.block-status { justify-content: flex-end; margin-left: auto; }
+.block-ai .pill:not(.chat-mode) { background: var(--panel); color: var(--dim); }
+.pill.chat-mode.on { border-color: currentColor; }
+.block-ai .pill.chat-close { color: var(--green); font-weight: 700; }
+.block-chat:not(:empty) { margin-top: 0.6rem; padding-top: 0.5rem; border-top: 1px dashed var(--line); }
 .pill { position: relative; font: 0.66rem/1.55 ui-monospace, Menlo, Consolas, monospace; padding: 0 0.65em 0 0.5em; border-radius: 999px; border: 1px solid color-mix(in oklab, currentColor 40%, transparent); background: linear-gradient(var(--tint), var(--tint)), var(--panel); white-space: nowrap; cursor: pointer; }
 .pill .ball { display: inline-block; width: 0.62em; height: 0.62em; border-radius: 50%; margin-right: 0.4em; }
 .pill .rev { margin-left: 0.6em; padding-left: 0.6em; border-left: 1px solid color-mix(in oklab, var(--dim) 45%, transparent); color: var(--dim); }
 .pill .rev.reviewed { color: var(--green); } .pill .rev.review_violated { color: var(--red); }
-body:not(:has(#status-menu:popover-open)) .pill:hover::after { content: attr(data-tip); position: absolute; right: 0; top: calc(100% + 7px); z-index: 20; width: max-content; max-width: min(44rem, 55vw); padding: 0.4rem 0.65rem; border: 1px solid #ffffff22; border-radius: 6px; background: var(--console-bg); color: var(--console-text); font-size: 0.72rem; line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; box-shadow: 0 6px 20px #0005; pointer-events: none; }
+.pill .tip { display: none; }
+.tip-test_passed { color: #7fc990; } .tip-test_failed, .tip-review_violated { color: #e58a70; } .tip-unknown { color: #9aa4b1; }
+body:not(:has(#status-menu:popover-open)) .pill:hover .tip { display: block; position: absolute; right: 0; top: calc(100% + 7px); z-index: 20; width: max-content; max-width: min(44rem, 55vw); padding: 0.4rem 0.65rem; border: 1px solid #ffffff22; border-radius: 6px; background: var(--console-bg); color: var(--console-text); font-size: 0.72rem; line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; box-shadow: 0 6px 20px #0005; pointer-events: none; }
 .note { color: var(--dim); font-size: 0.78rem; }
 #tests-pop, #status-menu { position: fixed; inset: auto; margin: 0; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); color: var(--text); box-shadow: 0 8px 28px #0004; }
 #tests-pop { width: min(40rem, 90vw); max-height: 70vh; overflow: auto; padding: 0.1rem 1rem 0.8rem; }
@@ -196,6 +217,7 @@ body:not(:has(#status-menu:popover-open)) .pill:hover::after { content: attr(dat
 <div id="conflicts"></div>
 <main>
   <nav id="tree-pane"><div id="tree" role="treegrid" aria-label="Syngate tree"></div></nav>
+  <div id="splitter" role="separator" aria-orientation="vertical" aria-controls="tree-pane" title="drag to resize, double-click to reset"></div>
   <section id="doc-pane"><div id="doc" aria-label="Syngate document"></div></section>
 </main>
 <footer id="console">
@@ -225,8 +247,8 @@ const state = {
   path: null,           // row / block path of the selected instance (a multi-parent item has one per parent)
   editing: null,        // path of the document block in editing mode
   files: new Map(),     // project files opened from links: path -> {path, anchor, text, sha, writable, error}
+  chat: null,           // the AI chat window: {anchor, uid, connector, model, effort, log, session, busy}
   expanded: new Set(JSON.parse(sessionStorage.getItem("syngate-ui-expanded") || "[]")),
-  unlocked: new Set(),  // reviewed items the user opened for editing
   filter: "",
   statusFilter: new Set(),
   rows: [],             // flattened visible tree, in DOM order
@@ -274,7 +296,6 @@ function toast(message, cls = "") {
 
 const item = (uid) => state.model.items[uid];
 const filtersActive = () => Boolean(state.filter || state.statusFilter.size);
-const locked = (uid) => Boolean(item(uid).reviewed && item(uid).stamp_fresh && !state.unlocked.has(uid));
 function persistExpanded() { sessionStorage.setItem("syngate-ui-expanded", JSON.stringify([...state.expanded])); }
 
 // ---- autosave ------------------------------------------------------------
@@ -414,24 +435,29 @@ function rowHtml(row) {
     + `<span class="cell-node" role="gridcell"><span class="twist"></span>`
     + `<span class="handle"><span class="dot"></span><span class="node-uid">${uid}</span></span><span class="badges"></span></span>`
     + `<span class="cell-title" role="gridcell"><input class="title" type="text" spellcheck="false" data-uid="${uid}" data-field="header" data-focus-key="title:${path}"></span>`
-    + `<span class="tools" role="gridcell"><button data-act="add" title="add a child">+</button>`
-    + `<button data-act="tests" title="tests &amp; review">T</button><button data-act="unlink" title="unlink from this parent">⊖</button><button data-act="delete" class="danger" title="delete">✕</button></span>`
+    + `<span class="tools" role="gridcell"><button data-act="tests" title="tests &amp; review">T</button><button data-act="menu" title="add child · remove" aria-haspopup="menu">⋯</button></span>`
     + (row.cycle ? '<span class="dupmark">(cycle)</span>' : "") + "</div>";
 }
 
-function badgesHtml(uid, it, leafBadge = true) {
-  const badges = [];
-  if (it.problems.length) badges.push('<span class="badge problem" title="' + esc(it.problems.join("\n")) + '">✗</span>');
-  if (it.reviewed && !it.stamp_fresh) badges.push('<span class="badge stale" title="reviewed, stamp STALE — re-review required">⚠</span>');
-  else if (it.reviewed) badges.push(state.unlocked.has(uid)
-    ? '<span class="badge stale" data-act="lock" title="unlocked: edits make the review stamp stale — click to lock">✓✎</span>'
-    : '<span class="badge fresh" data-act="lock" title="reviewed, stamp fresh — click to unlock for editing">✓</span>');
-  if (it.is_leaf && leafBadge) {
-    const bound = it.bindings.filter((b) => b.locations.length === 1).length;
-    badges.push(`<span class="badge leaf${bound === it.bindings.length ? "" : " unbound"}" data-act="tests" title="leaf: ${bound} of ${it.bindings.length} binding(s) resolve to one tagged routine — click for tests &amp; review">T${it.bindings.length > 1 ? it.bindings.length : ""}</span>`);
-  }
-  if (it.parents.length > 1) badges.push('<span class="dupmark" title="multiple parents: ' + esc(it.parents.join(", ")) + '">⇈</span>');
-  return badges.join("");
+// The summarized status of an item label: red when tests failed or the review is violated, green only when tests passed and the item is reviewed.
+function statusColor(it) {
+  if (it.test === "test_failed" || it.review === "review_violated") return "red";
+  return it.test === "test_passed" && it.review === "reviewed" ? "green" : "gray";
+}
+
+// The common status label of a tree row and of a content panel: status dot and review mark.
+function decorateLabel(el, it) {
+  const dot = el.querySelector(".dot");
+  dot.className = "dot " + statusColor(it);
+  dot.title = `${it.test.replace(/_/g, " ")} · ${it.review.replace(/_/g, " ")}`;
+  setHtml(el.querySelector(".badges"), reviewMarkHtml(it));
+}
+
+// The review mark of an item label: green check, red cross, or nothing while not reviewed.
+function reviewMarkHtml(it) {
+  if (it.review === "reviewed") return '<span class="badge fresh" title="reviewed">✓</span>';
+  if (it.review === "review_violated") return '<span class="badge problem" title="review violated">✗</span>';
+  return "";
 }
 
 function decorateRow(el, row) {
@@ -441,21 +467,13 @@ function decorateRow(el, row) {
   el.setAttribute("aria-selected", selected);
   if (row.kids) el.setAttribute("aria-expanded", row.open); else el.removeAttribute("aria-expanded");
   el.querySelector(".twist").textContent = row.kids ? (row.open ? "▾" : "▸") : "·";
-  const dot = el.querySelector(".dot");
-  dot.className = "dot " + it.test;
-  dot.title = it.test.replace(/_/g, " ");
+  decorateLabel(el, it);
   const handle = el.querySelector(".handle");
   handle.draggable = it.parents.length > 0;
   handle.title = it.path + (handle.draggable ? " — drag to move, Ctrl+drag to add one more parent" : "");
-  setHtml(el.querySelector(".badges"), badgesHtml(row.uid, it));
   const title = el.querySelector(".title");
-  title.readOnly = locked(row.uid);
   title.placeholder = it.description.slice(0, 60);
-  title.title = title.readOnly ? "reviewed — click ✓ to unlock for editing" : "";
   syncText(title);
-  el.querySelector('[data-act="unlink"]').hidden = !(row.parent && it.parents.length > 1);
-  el.querySelector('[data-act="delete"]').hidden = it.children.length > 0;
-  el.querySelector('.tools [data-act="tests"]').hidden = it.children.length > 0;
   if (state.flash === row.uid) el.classList.add("flash");
 }
 
@@ -488,13 +506,6 @@ function renderTree() {
       if (el.setSelectionRange && focus.start != null) el.setSelectionRange(focus.start, focus.end);
     }
   }
-  tree.querySelectorAll(".row-problems").forEach((el) => el.remove());
-  const selected = selectedRowEl(), problems = state.selected && item(state.selected) ? item(state.selected).problems : [];
-  if (selected && problems.length) {
-    selected.insertAdjacentHTML("afterend", `<div class="row-problems" style="--depth:${selected.style.getPropertyValue("--depth")}">`
-      + problems.map((p) => "<div>" + esc(p) + "</div>").join("") + "</div>");
-  }
-
   setHtml($("counts"), ["test_failed", "unknown", "test_passed"]
     .filter((s) => m.counts[s])
     .map((s) => '<button class="chip st-' + s + (state.statusFilter.has(s) ? " on" : "") + '" data-status="' + s + '">'
@@ -538,21 +549,7 @@ function select(uid, path = null, { focus = null, origin = "tree", smooth = fals
   if (focus === "block" && block) block.focus({ preventScroll: true });
 }
 
-function toggleLock(uid) {
-  state.unlocked.has(uid) ? state.unlocked.delete(uid) : state.unlocked.add(uid);
-  render();
-}
-
 // ---- structure edits: add child / delete / unlink / move -----------------
-
-async function ensureBranch(uid) {
-  const it = item(uid);
-  if (!it.is_leaf) return true;
-  if (it.reviewed || it.bindings.some((b) => b.sha)) { toast(`${uid} is a reviewed leaf — clear its review and drop its tests key before giving it children`); return false; }
-  if (!confirm(`${uid} carries a tests key (leaf). Drop it so ${uid} becomes a branch?`)) return false;
-  await api(`/api/item/${uid}`, { tests: null });
-  return true;
-}
 
 function suggestUid(parent) {
   const numbered = item(parent).children.map((c) => c.match(/^(.*-)\d+$/)).filter(Boolean);
@@ -566,11 +563,7 @@ function suggestUid(parent) {
   return prefix + String(max + 1).padStart(width, "0");
 }
 
-async function startAdding(row) {
-  try {
-    if (!(await ensureBranch(row.uid))) return;
-    await refresh();
-  } catch (err) { toast(err.message); return; }
+function startAdding(row) {
   state.adding = { parent: row.uid, path: row.path };
   renderTree();
   const input = $("tree").querySelector(".new-uid");
@@ -616,7 +609,7 @@ async function deleteItem(uid) {
 
 async function unlink(row) {
   const it = item(row.uid);
-  if (it.reviewed && !confirm(`${row.uid} is reviewed: changing its parents makes the stamp stale (re-review needed). Unlink from ${row.parent} anyway?`)) return;
+  if (it.reviewed && !confirm(`${row.uid} is reviewed: changing its parents clears its review. Unlink from ${row.parent} anyway?`)) return;
   try {
     await api(`/api/item/${row.uid}`, { parents: it.parents.filter((p) => p !== row.parent), base: { parents: it.parents } });
     state.path = null;
@@ -640,8 +633,7 @@ async function move(uid, from, to, before, link = false) {
   const it = item(uid), refocus = $("tree").contains(document.activeElement);
   try {
     if (!it.parents.includes(to)) {
-      if (!(await ensureBranch(to))) return;
-      if (it.reviewed && !confirm(`${uid} is reviewed: a new parent makes its stamp stale (re-review needed). ${link ? "Link" : "Move"} under ${to} anyway?`)) return;
+      if (it.reviewed && !confirm(`${uid} is reviewed: a new parent clears its review. ${link ? "Link" : "Move"} under ${to} anyway?`)) return;
     }
     await api(`/api/move/${uid}`, { from, to, before, link });
     state.expanded.add(to);
@@ -794,56 +786,53 @@ function blockHtml(row) {
   }
   const uid = esc(row.uid);
   return `<fieldset class="block" style="--depth:${row.depth}" tabindex="-1" data-depth="${row.depth}" data-uid="${uid}" data-path="${esc(row.path)}">`
-    + `<legend><span class="tag"><span class="dot"></span><span>${uid}</span><span class="badges"></span></span></legend>`
-    + `<div class="block-body"></div><div class="block-status"></div></fieldset>`;
+    + `<legend><span class="tag"><span class="dot"></span><span>${uid}</span><span class="badges"></span><span class="caption"></span></span></legend>`
+    + `<div class="block-body"></div><div class="block-chat"></div>`
+    + `<div class="block-foot"><div class="block-ai"></div><div class="block-status"></div></div></fieldset>`;
 }
 
-function leavesUnder(uid) { return item(uid).is_leaf ? [uid] : [...descendants(uid)].filter((u) => item(u).is_leaf); }
+function leavesUnder(uid) { return [uid, ...descendants(uid)].filter((u) => item(u).is_leaf); }
 const REVIEW_MARK = { reviewed: "✓", not_reviewed: "○", review_violated: "⚠" };
 const where = (l) => `${l.path}:${l.line}` + (l.name.startsWith(l.path + "::") ? " · " + l.name.slice(l.path.length + 2) : "");
 
 // One label per block, both rollup axes; the tooltip explains a leaf by its bindings, a branch by its leaves.
 function statusHtml(uid, it) {
-  let tip;
+  const line = (state, text) => `<div class="tip-${state}">${esc(text)}</div>`;
+  let tip = line(it.test, it.test.replace(/_/g, " "));
   if (it.is_leaf) {
-    tip = it.bindings.map((b) => {
-      const runs = it.tests.filter((t) => t.binding === b.name), result = !runs.length ? "unknown" : runs.some((t) => !t.passed) ? "failed" : "passed";
+    tip += it.bindings.map((b) => {
+      const runs = it.tests.filter((t) => t.binding === b.name), result = !runs.length ? "unknown" : runs.some((t) => !t.passed) ? "test_failed" : "test_passed";
       const site = b.locations.length ? b.locations.map(where).join(", ") : `no tagged routine yet — tag it [${uid}]${b.name ? "[" + b.name + "]" : ""}`;
-      return `${b.name || "(default)"} · ${result} · ${site}`;
-    }).join("\n");
-  } else {
-    const leaves = leavesUnder(uid), tally = new Map();
-    for (const leaf of leaves) for (const axis of ["test", "review"]) tally.set(item(leaf)[axis], (tally.get(item(leaf)[axis]) || 0) + 1);
-    tip = `${leaves.length} leaf item(s)` + [...tally].map(([state, n]) => `\n${n} ${state.replace(/_/g, " ")}`).join("");
+      return line(result, `${b.name || "(default)"} · ${result.replace("test_", "")} · ${site}`);
+    }).join("");
   }
-  if (it.problems.length) tip += "\n" + it.problems.join("\n");
-  return `<span class="pill st-${it.test}" data-tip="${esc(tip)}"><span class="ball"></span>${it.test.replace(/_/g, " ")}`
-    + `<span class="rev ${it.review}">${REVIEW_MARK[it.review]} ${it.review.replace(/_/g, " ")}</span></span>`;
+  if (it.children.length) {
+    const below = leavesUnder(uid).filter((u) => u !== uid), tally = new Map();
+    for (const u of below) tally.set(item(u).test, (tally.get(item(u).test) || 0) + 1);
+    tip += [...tally].map(([state, n]) => line(state, `${n} item(s) below ${state.replace(/_/g, " ")}`)).join("");
+  }
+  tip += it.problems.map((p) => line("review_violated", p)).join("");
+  return `<span class="pill st-${it.test}"><span class="ball"></span>${it.test.replace(/_/g, " ")}`
+    + `<span class="rev ${it.review}">${REVIEW_MARK[it.review]} ${it.review.replace(/_/g, " ")}</span><span class="tip">${tip}</span></span>`;
 }
 
 function viewHtml(uid, it) {
-  return `<div class="block-text md">${md(currentText(uid, "description"), "")}</div>`
-    + (it.problems.length ? '<div class="block-problems">' + it.problems.map((p) => "<div>" + esc(p) + "</div>").join("") + "</div>" : "");
+  return `<div class="block-text md">${md(currentText(uid, "description"), "")}</div>`;
 }
 
 function testsHtml(uid, it) {
-  const off = locked(uid) ? "disabled" : "";
-  let body;
-  if (it.children.length) body = '<div class="note">branch — reviewed through its children</div>';
-  else {
-    body = `<label class="leaf-toggle"><input type="checkbox" id="f-isleaf" ${it.is_leaf ? "checked" : ""} ${off}> carries a <code>tests</code> key (leaf)</label>`;
-    if (it.is_leaf) {
-      body += it.bindings.map((b, i) => {
-        const locHtml = b.locations.length
-          ? b.locations.map((l) => '<span class="loc mono" title="' + esc(l.name) + '">' + esc(l.path) + ":" + l.line + "</span>").join(" ")
-          : '<span class="miss">no tagged routine yet — tag it [' + esc(uid) + "]" + (b.name ? "[" + esc(b.name) + "]" : "") + "</span>";
-        const sha = b.sha ? '<span class="sha" title="' + esc(b.sha) + '">frozen ' + esc(b.sha.slice(0, 12)) + "…</span>" : '<span class="sha">unstamped</span>';
-        const records = b.records ? '<span class="note">' + b.records + " run(s)</span>" : "";
-        return '<div class="binding-row"><span class="name">' + (b.name ? esc(b.name) : "(default)") + "</span>" + sha + locHtml + records
-          + `<button class="unbind" data-unbind="${i}" title="remove binding" ${off}>✕</button></div>`;
-      }).join("");
-      body += `<div class="binding-row"><input type="text" id="f-add-binding" placeholder="binding name (empty = default)" class="mono" style="width:14rem" ${off}><button id="add-binding-btn" ${off}>add binding</button></div>`;
-    }
+  let body = `<label class="leaf-toggle"><input type="checkbox" id="f-isleaf" ${it.is_leaf ? "checked" : ""}> carries its own <code>tests</code> key</label>`;
+  if (it.is_leaf) {
+    body += it.bindings.map((b, i) => {
+      const locHtml = b.locations.length
+        ? b.locations.map((l) => '<span class="loc mono" title="' + esc(l.name) + '">' + esc(l.path) + ":" + l.line + "</span>").join(" ")
+        : '<span class="miss">no tagged routine yet — tag it [' + esc(uid) + "]" + (b.name ? "[" + esc(b.name) + "]" : "") + "</span>";
+      const sha = b.sha ? '<span class="sha" title="' + esc(b.sha) + '">frozen ' + esc(b.sha.slice(0, 12)) + "…</span>" : '<span class="sha">unstamped</span>';
+      const records = b.records ? '<span class="note">' + b.records + " run(s)</span>" : "";
+      return '<div class="binding-row"><span class="name">' + (b.name ? esc(b.name) : "(default)") + "</span>" + sha + locHtml + records
+        + `<button class="unbind" data-unbind="${i}" title="remove binding">✕</button></div>`;
+    }).join("");
+    body += `<div class="binding-row"><input type="text" id="f-add-binding" placeholder="binding name (empty = default)" class="mono" style="width:14rem"><button id="add-binding-btn">add binding</button></div>`;
   }
   const runs = it.tests.length ? '<div class="section-label">Coverage runs</div>' + it.tests.map((t) =>
     '<details class="testrec"><summary><span class="chip st-' + (t.passed ? "test_passed" : "test_failed") + '"><span class="ball"></span>' + (t.passed ? "passed" : "failed")
@@ -876,6 +865,87 @@ function decorateFileBlock(el, row) {
   }
 }
 
+// The AI chat lives inside its item's block: log and input under the description, controls on the bottom-left border.
+function decorateChat(el, row) {
+  const chat = state.chat && state.chat.anchor === row.path ? state.chat : null, box = el.querySelector(".block-chat"), tools = el.querySelector(".block-ai");
+  el.classList.toggle("chatting", Boolean(chat));
+  if (!chat) {
+    box.replaceChildren();
+    setHtml(tools, '<span class="pill chat-open" role="button" title="AI chat seeded from this item">✦ AI chat</span>');
+    return;
+  }
+  if (!box.firstChild) {
+    box.innerHTML = `<div class="chat-log"></div><textarea class="block-text chat-input" spellcheck="false" placeholder="Ask about ${esc(row.uid)} … (Ctrl+Enter sends)"></textarea>`;
+  }
+  const connector = state.model.connectors[chat.connector];
+  setHtml(box.querySelector(".chat-log"), chat.log.map((m) => `<div class="chat-msg ${m.role}">${m.role === "ai" ? md(m.text, "") : esc(m.text)}</div>`).join("")
+    + (chat.busy ? '<div class="chat-msg note"><span class="spinner"></span> waiting for the reply…</div>' : ""));
+  setHtml(tools, `<span class="pill chat-pill${chat.busy ? " busy" : ""}">`
+    + `<span class="chat-send" role="button" title="send (Ctrl+Enter)">➤ send</span>`
+    + `<span class="rev chat-setup" role="button" title="connector · model · effort · modes">`
+    + [connector.label, connector.models.find((m) => m.id === chat.model).name, chat.effort].map(esc).join(" · ") + " ▾</span></span>"
+    + connector.modes.map((m) => { const on = chat.modes.includes(m.id);
+      return `<span class="pill chat-mode ${on ? "st-test_passed on" : "st-unknown"}" role="switch" aria-checked="${on}" data-chat-mode="${esc(m.id)}" `
+        + `title="${esc(m.label)} (${esc(m.hint)}) — ${on ? "allowed" : "not allowed"}, click to toggle"><span class="ball"></span>${esc(m.label)}</span>`; }).join("")
+    + '<span class="pill chat-close" role="button" title="close the chat">✓</span>');
+}
+
+function chatSetup(connector) {
+  const setup = state.model.connectors[connector];
+  return { connector, model: setup.models[0].id, effort: setup.efforts.includes("medium") ? "medium" : setup.efforts[0],
+    modes: setup.modes.filter((m) => m.default).map((m) => m.id), session: null };
+}
+
+function openChat(row) {
+  if (!state.chat || state.chat.anchor !== row.path) {
+    state.chat = { anchor: row.path, uid: row.uid, log: [], busy: false, ...chatSetup(Object.keys(state.model.connectors)[0]) };
+  }
+  select(row.uid, row.path);
+  renderDoc();
+  const input = $("doc").querySelector(".chat-input");
+  if (input) { input.focus({ preventScroll: true }); input.scrollIntoView({ block: "nearest" }); }
+}
+
+function closeChat() { state.chat = null; renderDoc(); }
+
+function toggleChatMode(mode) {
+  const chat = state.chat;
+  chat.modes = chat.modes.includes(mode) ? chat.modes.filter((m) => m !== mode) : [...chat.modes, mode];
+  renderDoc();
+}
+
+async function sendChat() {
+  const chat = state.chat, input = $("doc").querySelector(".chat-input"), text = input ? input.value.trim() : "";
+  if (!chat || chat.busy || !text) return;
+  chat.log.push({ role: "user", text });
+  chat.busy = true;
+  input.value = "";
+  renderDoc();
+  try {
+    const result = await api("/api/chat", { uid: chat.uid, connector: chat.connector, model: chat.model, effort: chat.effort, modes: chat.modes, session: chat.session, text });
+    chat.session = result.session;
+    chat.log.push({ role: "ai", text: result.reply });
+  } catch (err) {
+    chat.log.push({ role: "error", text: err.message });
+  }
+  chat.busy = false;
+  if (state.chat === chat) renderDoc();
+}
+
+function openChatMenu(anchor) {
+  const menu = $("status-menu"), chat = state.chat, connector = state.model.connectors[chat.connector];
+  const mark = (on) => (on ? "● " : "○ ");
+  menu.dataset.uid = "";
+  menu.innerHTML = '<div class="menu-label">connector</div>'
+    + Object.entries(state.model.connectors).map(([id, c]) => `<button role="menuitem" data-chat-connector="${esc(id)}">${mark(id === chat.connector)}${esc(c.label)}</button>`).join("")
+    + '<div class="menu-label">model</div>'
+    + connector.models.map((m) => `<button role="menuitem" data-chat-model="${esc(m.id)}">${mark(m.id === chat.model)}${esc(m.name)}</button>`).join("")
+    + '<div class="menu-label">effort</div>'
+    + connector.efforts.map((e) => `<button role="menuitem" data-chat-effort="${esc(e)}">${mark(e === chat.effort)}${esc(e)}</button>`).join("");
+  menu.showPopover();
+  placeBy(menu, anchor);
+}
+
 function decorateBlock(el, row) {
   if (row.file) { decorateFileBlock(el, row); return; }
   const it = item(row.uid), selected = row.path === state.path, editing = selected && state.editing === row.path;
@@ -883,17 +953,16 @@ function decorateBlock(el, row) {
   el.classList.toggle("in-sel", selected || Boolean(state.path && row.path.startsWith(state.path + "/")));
   el.classList.toggle("editing", editing);
   el.classList.toggle("branch", it.children.length > 0);
-  const dot = el.querySelector(".dot");
-  dot.className = "dot " + it.test;
-  dot.title = it.test.replace(/_/g, " ");
-  setHtml(el.querySelector(".badges"), badgesHtml(row.uid, it, false));
+  decorateLabel(el, it);
+  el.querySelector(".caption").textContent = currentText(row.uid, "header");
   const body = el.querySelector(".block-body");
-  if (editing) renderEditor(body, row.uid, "description", locked(row.uid), "reviewed — click ✓ to unlock for editing");
+  if (editing) renderEditor(body, row.uid, "description", false, "");
   else {
     body.dataset.mode = "view";
     setHtml(body, viewHtml(row.uid, it));
   }
   setHtml(el.querySelector(".block-status"), statusHtml(row.uid, it));
+  decorateChat(el, row);
 }
 
 const selectedBlockEl = () => (state.path ? $("doc").querySelector(`.block[data-path="${CSS.escape(state.path)}"]`) : null);
@@ -946,6 +1015,18 @@ function openTests(row, anchor) {
   pop.showPopover();
   renderTests();
   placeBy(pop, anchor);
+}
+
+// Structure edits sit behind an explicit menu, apart from the row's one-click buttons.
+function openRowMenu(row, anchor) {
+  const menu = $("status-menu"), it = item(row.uid);
+  menu.row = row;
+  menu.innerHTML = '<button role="menuitem" data-row-act="add">+ Add child</button>'
+    + (row.parent && it.parents.length > 1 ? `<button role="menuitem" data-row-act="unlink" class="danger">⊖ Unlink from ${esc(row.parent)}</button>` : "")
+    + (it.children.length ? "" : '<button role="menuitem" data-row-act="delete" class="danger">✕ Delete</button>');
+  if (menu.matches(":popover-open")) menu.hidePopover();
+  menu.showPopover();
+  placeBy(menu, anchor);
 }
 
 function openStatusMenu(uid, anchor) {
@@ -1101,10 +1182,7 @@ tree.addEventListener("click", (event) => {
   const row = rowOf(el), act = event.target.closest("[data-act]");
   if (event.target.closest(".twist")) { if (row.kids) toggle(row.uid); return; }
   if (act) {
-    if (act.dataset.act === "add") startAdding(row);
-    if (act.dataset.act === "unlink") unlink(row);
-    if (act.dataset.act === "delete") deleteItem(row.uid);
-    if (act.dataset.act === "lock") toggleLock(row.uid);
+    if (act.dataset.act === "menu") openRowMenu(row, act);
     if (act.dataset.act === "tests") openTests(row, act);
     return;
   }
@@ -1176,6 +1254,11 @@ $("conflicts").addEventListener("click", (event) => {
 });
 
 const doc = $("doc");
+doc.addEventListener("keydown", (event) => {
+  if (!event.target.classList.contains("chat-input")) return;
+  if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) { event.preventDefault(); sendChat(); }
+  event.stopPropagation();
+});
 doc.addEventListener("click", (event) => {
   const el = event.target.closest(".block"), target = event.target;
   if (!el) return;
@@ -1189,12 +1272,35 @@ doc.addEventListener("click", (event) => {
   if (target.closest('[data-act="close"]')) { closeFile(el.dataset.file); return; }
   if (el.dataset.file) return;
   const uid = el.dataset.uid;
-  if (target.closest('[data-act="lock"]')) { toggleLock(uid); return; }
+  if (target.closest(".block-ai, .block-chat")) {
+    if (target.closest(".chat-open")) openChat({ uid, path: el.dataset.path });
+    else if (target.closest(".chat-close")) closeChat();
+    else if (target.closest(".chat-send")) sendChat();
+    else if (target.closest(".chat-setup")) openChatMenu(target.closest(".chat-setup"));
+    else if (target.closest(".chat-mode")) toggleChatMode(target.closest(".chat-mode").dataset.chatMode);
+    return;
+  }
   if (state.editing !== el.dataset.path) select(uid, el.dataset.path, { origin: "doc", focus: "block" });
-  if (target.closest(".pill")) openStatusMenu(uid, el.querySelector(".pill"));
+  if (target.closest(".block-status .pill")) openStatusMenu(uid, el.querySelector(".block-status .pill"));
 });
 const statusMenu = $("status-menu");
 statusMenu.addEventListener("click", (event) => {
+  const { chatModel, chatEffort, chatMode, chatConnector, rowAct } = event.target.dataset, chat = state.chat;
+  if (rowAct) {
+    statusMenu.hidePopover();
+    if (rowAct === "add") startAdding(statusMenu.row);
+    if (rowAct === "unlink") unlink(statusMenu.row);
+    if (rowAct === "delete") deleteItem(statusMenu.row.uid);
+    return;
+  }
+  if (chat && (chatModel || chatEffort || chatMode || chatConnector)) {
+    if (chatModel) chat.model = chatModel;
+    if (chatEffort) chat.effort = chatEffort;
+    if (chatConnector && chatConnector !== chat.connector) Object.assign(chat, chatSetup(chatConnector));
+    statusMenu.hidePopover();
+    renderDoc();
+    return;
+  }
   const action = event.target.dataset.run, uid = statusMenu.dataset.uid;
   if (!action) return;
   statusMenu.hidePopover();
@@ -1282,6 +1388,26 @@ document.addEventListener("keydown", (event) => {
   event.preventDefault();
   if (target) select(target.uid, target.path, { origin: inDoc ? "doc" : "tree", focus: onTitle ? "title" : inDoc ? "block" : "row" });
 });
+
+function setTreeWidth(px) {
+  $("tree-pane").style.width = px ? px + "px" : "";
+  px ? sessionStorage.setItem("syngate-ui-tree-width", px) : sessionStorage.removeItem("syngate-ui-tree-width");
+}
+
+$("splitter").addEventListener("pointerdown", (event) => {
+  const splitter = event.currentTarget, left = $("tree-pane").getBoundingClientRect().left;
+  const drag = (move) => setTreeWidth(Math.round(move.clientX - left));
+  splitter.setPointerCapture(event.pointerId);
+  splitter.classList.add("dragging");
+  splitter.addEventListener("pointermove", drag);
+  splitter.addEventListener("pointerup", () => {
+    splitter.removeEventListener("pointermove", drag);
+    splitter.classList.remove("dragging");
+  }, { once: true });
+  event.preventDefault();
+});
+$("splitter").addEventListener("dblclick", () => setTreeWidth(0));
+setTreeWidth(Number(sessionStorage.getItem("syngate-ui-tree-width")) || 0);
 
 if (!TOKEN) {
   document.body.innerHTML = '<div class="empty"><h2>Missing session token</h2><p>Open the exact URL printed by <code>syngate ui</code> (it carries <code>?token=…</code>).</p></div>';

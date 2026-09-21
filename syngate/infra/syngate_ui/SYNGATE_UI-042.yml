@@ -1,0 +1,6 @@
+header: Tree row
+description: |
+  A tree row shall show the branch collapse mark, the common status label and the title, with the one-click T test-details button and an explicit drop-down menu holding the add child and remove actions at its right, and nothing else.
+parents: [SYNGATE_UI-040]
+order: 20
+tests: ~

@@ -101,12 +101,30 @@ def test_cycle_is_rejected(syngate_tree):
     assert _matching(errors, "cycle")
 
 
-def test_leaf_and_branch_are_mutually_exclusive(syngate_tree):
+@pytest.mark.syngate("SYNGATE-020")
+def test_a_branch_passes_only_with_its_own_tests_and_its_children(syngate_tree):
     syngate_dir, make_item = syngate_tree
     make_item(syngate_dir, "ROOT-1", "root shall pass", header="root", tests=None)
     make_item(syngate_dir, "LEAF-1", "the leaf shall pass", parents=["ROOT-1"], tests=None)
-    _items, _load_errors, errors = _errors(syngate_dir)
-    assert _matching(errors, "mutually exclusive")
+    items, load_errors, errors = _errors(syngate_dir)
+    assert not load_errors and not errors
+    passed = [{"passed": True, "name": "", "log": ""}]
+
+    def test_axis(records):
+        return syngatelib.compute_axes(items, records)["ROOT-1"]["test"]
+
+    assert test_axis({("LEAF-1", None): passed}) == "unknown"  # the branch's own binding never ran
+    assert test_axis({("ROOT-1", None): passed}) == "unknown"
+    assert test_axis({("ROOT-1", None): passed, ("LEAF-1", None): passed}) == "test_passed"
+    assert test_axis({("ROOT-1", None): [{"passed": False, "name": "", "log": ""}], ("LEAF-1", None): passed}) == "test_failed"
+    assert syngatelib.compute_status(items, {("LEAF-1", None): passed})["ROOT-1"]["status"] == "partially_implemented"
+    items["ROOT-1"].tests = {None: "a" * 64}
+    items["ROOT-1"].reviewed = syngatelib.compute_stamp(items["ROOT-1"])
+    assert syngatelib.compute_axes(items, {})["ROOT-1"]["review"] == "not_reviewed"  # LEAF-1 still is not
+    problems = syngatelib.item_problems(items, {})  # the stamped routine is gone
+    assert list(problems) == ["ROOT-1"]
+    axes = syngatelib.compute_axes(items, {("ROOT-1", None): passed, ("LEAF-1", None): passed}, problems)["ROOT-1"]
+    assert axes == {"test": "test_passed", "review": "review_violated"}  # a violated review never touches the test axis
 
 
 def test_childless_item_without_tests_is_structurally_valid(syngate_tree):
@@ -179,3 +197,19 @@ def test_live_syngate_tree_has_a_valid_layout():
     items, load_errors = syngatelib.load_tree()
     assert load_errors == []
     assert syngatelib.validate_layout(items) == []
+
+
+@pytest.mark.syngate("SYNGATE-010")
+def test_walk_selects_ancestors_root_first_then_descendants_each_uid_once(syngate_tree):
+    syngate_dir, make_item = syngate_tree
+    make_item(syngate_dir, "ROOT-1", "root", header="root")
+    make_item(syngate_dir, "SIDE-B", "side b", parents=["ROOT-1"], order=20)
+    make_item(syngate_dir, "SIDE-A", "side a", parents=["ROOT-1"], order=10)
+    make_item(syngate_dir, "MID-1", "mid", parents=["SIDE-B", "SIDE-A"])
+    make_item(syngate_dir, "LEAF-2", "the leaf shall two", parents=["MID-1"], order=20, tests=None)
+    make_item(syngate_dir, "LEAF-1", "the leaf shall one", parents=["MID-1"], order=10, tests=None)
+    items, _ = syngatelib.load_tree(syngate_dir)
+    assert syngatelib.walk(items, "MID-1") == ["ROOT-1", "SIDE-B", "SIDE-A", "MID-1"]
+    assert syngatelib.walk(items, "MID-1", descendants=True) == ["ROOT-1", "SIDE-B", "SIDE-A", "MID-1", "LEAF-1", "LEAF-2"]
+    assert syngatelib.walk(items, "LEAF-2") == ["ROOT-1", "SIDE-B", "SIDE-A", "MID-1", "LEAF-2"]
+    assert syngatelib.walk(items) == ["ROOT-1", "SIDE-A", "MID-1", "LEAF-1", "LEAF-2", "SIDE-B"]

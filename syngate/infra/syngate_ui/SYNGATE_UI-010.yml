@@ -1,0 +1,6 @@
+header: Local UI server
+description: |
+  The ui command shall serve the UI page and its API on a loopback port, refusing every request without the session token or with a non-loopback host.
+parents: [SYNGATE_UI]
+order: 10
+tests: ~

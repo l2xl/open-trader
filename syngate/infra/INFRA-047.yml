@@ -1,5 +1,0 @@
-header: Test coverage gate
-description: |
-  Test coverage gate
-parents: [INFRA-041]
-order: 30

@@ -1,0 +1,6 @@
+header: Item field autosave
+description: |
+  An edited item field shall be saved on its own as canonical YAML, leaving the other fields untouched and refusing an unknown parent, a parent cycle or a value changed on disk since it was loaded.
+parents: [SYNGATE_UI-030]
+order: 20
+tests: {guard: ~, cas: ~}

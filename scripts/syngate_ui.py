@@ -35,12 +35,15 @@ from urllib.parse import parse_qs, urlsplit
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import syngatelib
+import synthetic
 
 DEFAULT_PORT = 8712
 DEFAULT_BUILD_DIR = "cmake-build-debug-clang"
 # UIDs and the glob patterns syngate.py accepts for batch review/clear.
 RUN_UID_RE = re.compile(r"^[A-Za-z0-9_\-?*\[\]!]+$")
 LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1"}
+# Fields under the review stamp: an edit of any of them clears the item's review.
+STAMPED_FIELDS = ("header", "description", "parents", "tests")
 # Coverage files picked up automatically when none are given explicitly.
 DEFAULT_COVERAGE = ("pytest-coverage.jsonl", "syngate_coverage.jsonl", "build-ci/syngate_coverage.jsonl")
 # Test / review runs started from the page fold their records in here, so a run recolors the statuses.
@@ -148,6 +151,7 @@ class SyngateUIApp:
         self.build_dir = build_dir
         self.token = secrets.token_urlsafe(24)
         self.jobs = JobRunner()
+        self.connectors = {name: connector(cwd=self.root) for name, connector in synthetic.CONNECTORS.items()}
 
     # -- model ------------------------------------------------------------
 
@@ -214,6 +218,7 @@ class SyngateUIApp:
             "load_errors": load_errors + tree_errors,
             "coverage": {"files": self._coverage_files(), "errors": coverage_errors},
             "build_dir": self.build_dir,
+            "connectors": {name: connector.settings() for name, connector in self.connectors.items()},
             "job": job.id if job and job.returncode is None else None,
         }
 
@@ -229,14 +234,11 @@ class SyngateUIApp:
             raise ApiError(400, "'parents' must be a list of UIDs")
         if len(set(parents)) != len(parents):
             raise ApiError(400, "duplicate parents")
-        linked = items[uid].parents if uid in items else ()
         for parent in parents:
             if parent == uid:
                 raise ApiError(400, "an item cannot be its own parent")
             if parent not in items:
                 raise ApiError(400, f"unknown parent '{parent}'")
-            if parent not in linked and items[parent].is_leaf:
-                raise ApiError(400, f"{parent} carries tests; leaf and branch are mutually exclusive")
         # Climbing the (edited) parent links from each new parent must never
         # reach uid, or the DAG gains a cycle.
         edges = {u: (parents if u == uid else item.parents) for u, item in items.items()}
@@ -260,7 +262,7 @@ class SyngateUIApp:
         return value
 
     @staticmethod
-    def _parse_bindings(item, children, names):
+    def _parse_bindings(item, names):
         if names is None:
             return None
         if not isinstance(names, list) or not all(isinstance(n, str) for n in names):
@@ -272,8 +274,6 @@ class SyngateUIApp:
         for name in names:
             if name and not syngatelib.BINDING_NAME_RE.match(name):
                 raise ApiError(400, f"invalid binding name '{name}' (want [a-z0-9_]+)")
-        if children:
-            raise ApiError(400, f"item has children {sorted(children)}; leaf and branch are mutually exclusive")
         old = item.tests or {}
         return {(name or None): old.get(name or None) for name in names}
 
@@ -305,7 +305,7 @@ class SyngateUIApp:
         if "order" in data:
             item.order = self._parse_order(data["order"])
         if "tests" in data:
-            item.tests = self._parse_bindings(item, syngatelib.children_map(items)[uid], data["tests"])
+            item.tests = self._parse_bindings(item, data["tests"])
         base = data.get("base")
         if not isinstance(base, dict):
             base = {}
@@ -314,6 +314,8 @@ class SyngateUIApp:
         if clashed:
             raise ApiError(409, f"{uid}: {', '.join(clashed)} changed on disk since the page loaded it", current={f: before[f] for f in clashed})
         if after != before:
+            if item.reviewed and any(after[f] != before[f] for f in STAMPED_FIELDS):
+                syngatelib.clear_review(item)
             syngatelib.write_item(item)
         return {"ok": True, "stamp_fresh": (syngatelib.compute_stamp(item) == item.reviewed) if item.reviewed else None, "stored": after}
 
@@ -359,6 +361,8 @@ class SyngateUIApp:
         self._check_parents(items, uid, parents)
         relinked = parents != item.parents
         item.parents = parents
+        if relinked and item.reviewed:
+            syngatelib.clear_review(item)
         family = syngatelib.sorted_children(items, syngatelib.children_map(items), target)
         siblings = [c for c in family if c != uid]
         if before is None:
@@ -411,8 +415,8 @@ class SyngateUIApp:
 
     @staticmethod
     def _leaves_under(items, uid):
-        """A branch stands for every leaf below it; anything else (leaf, pattern, typo) is the CLI's to judge."""
-        if uid not in items or items[uid].is_leaf:
+        """An item stands for itself, if it carries tests, and every test-bearing item below it; anything else (pattern, typo) is the CLI's to judge."""
+        if uid not in items:
             return [uid]
         children, leaves, seen, stack = syngatelib.children_map(items), [], set(), [uid]
         while stack:
@@ -483,6 +487,17 @@ class SyngateUIApp:
         if text != before:
             path.write_text(text, encoding="utf-8")
         return {"ok": True, "stored": {"file": text}, "sha": hashlib.sha256(text.encode()).hexdigest()}
+
+    def chat(self, data):
+        """One exchange anchored at `uid`: the item's seed context plus the user's text go to the chosen connector."""
+        try:
+            reply, session = synthetic.query(self.connectors, self._load(), data.get("uid"), str(data.get("text") or ""), data.get("connector"),
+                                             data.get("model"), data.get("effort"), modes=data.get("modes") or (), session=data.get("session"))
+        except synthetic.query_error as err:
+            raise ApiError(400, str(err)) from None
+        except synthetic.connection_error as err:
+            raise ApiError(502, str(err)) from None
+        return {"ok": True, "reply": reply, "session": session}
 
     def start_run(self, data):
         action = data.get("action")
@@ -617,6 +632,8 @@ class _Handler(http.server.BaseHTTPRequestHandler):
                 self._json(200, self.app.delete_item(match.group(1)))
             elif path == "/api/run":
                 self._json(200, self.app.start_run(payload))
+            elif path == "/api/chat":
+                self._json(200, self.app.chat(payload))
             else:
                 self._json(404, {"error": f"no route for POST {path}"})
         except ApiError as exc:

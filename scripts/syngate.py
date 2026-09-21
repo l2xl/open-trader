@@ -107,6 +107,7 @@ class _Recording:
         if self.coverage_out:
             self.scratch = tempfile.TemporaryDirectory()
             self.fresh = Path(self.scratch.name) / "coverage.jsonl"
+            self.outer = os.environ.get("SYNGATE_COVERAGE_FILE")
             os.environ["SYNGATE_COVERAGE_FILE"] = str(self.fresh)
         return self
 
@@ -117,7 +118,10 @@ class _Recording:
 
     def __exit__(self, *exc):
         if self.coverage_out:
-            del os.environ["SYNGATE_COVERAGE_FILE"]
+            if self.outer is None:
+                del os.environ["SYNGATE_COVERAGE_FILE"]
+            else:
+                os.environ["SYNGATE_COVERAGE_FILE"] = self.outer
             syngatelib.merge_coverage(self.coverage_out, self.fresh)
             self.scratch.cleanup()
 
@@ -233,9 +237,7 @@ def cmd_clear(args):
         if not item.reviewed:
             print(f"{uid}: not reviewed")
             continue
-        item.reviewed = None
-        if item.tests is not None:
-            item.tests = {name: None for name in item.tests}
+        syngatelib.clear_review(item)
         syngatelib.write_item(item)
         print(f"{uid}: review stamp cleared")
     return ret

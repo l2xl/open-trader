@@ -1,6 +1,8 @@
 header: Test and review status axes
-description: |
-  The status rollup shall report two independent axes per item -- test: unknown, test passed or test failed, where a failed leaf fails every ancestor and otherwise one unknown leaf leaves them unknown; review: not reviewed, reviewed or review violated, where an item's own validation problem is a violated review, violated outranks not reviewed, not reviewed outranks reviewed, and a branch is reviewed only through its children.
+description: "The status rollup shall report two independent axes per item -- test: unknown, test passed or test failed, where\
+  \ a failed test-bearing item fails every ancestor and otherwise one unknown item leaves them unknown; review: not reviewed,\
+  \ reviewed or review violated, where an item's own validation problem is a violated review, violated outranks not reviewed,\
+  \ not reviewed outranks reviewed, and a branch without own tests is reviewed only through its children. \n"
 parents: [INFRA-042]
 order: 50
 tests: ~

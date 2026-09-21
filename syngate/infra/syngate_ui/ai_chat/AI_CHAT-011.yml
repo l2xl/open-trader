@@ -1,0 +1,10 @@
+header: AI-session permission selectors
+description: |
+  The AI-chat window shall offer permission selectors of the AI-connector:
+  - Edit (project files) - enabled by default
+  - Internet (acceess) - enabled by default
+  - Workflows (run subagents) - disabled by default
+  The buttons must be styled using common styles through project, bright highlighting green for switched on selectors and grayed-out for off
+parents: [AI_CHAT]
+order: 15
+tests: ~

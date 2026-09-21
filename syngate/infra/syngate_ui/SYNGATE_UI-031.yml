@@ -1,0 +1,6 @@
+header: Outline tree rows
+description: |
+  The outline shall show every item as one row carrying its structured fields, test and review status and stamp freshness.
+parents: [SYNGATE_UI-030]
+order: 10
+tests: {model: ~, rows: ~}

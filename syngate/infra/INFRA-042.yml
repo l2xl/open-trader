@@ -1,5 +1,5 @@
 header: Recursive requirements status
 description: |
   Recursive requirements status
-parents: [INFRA-041]
+parents: [SYNGATE]
 order: 10

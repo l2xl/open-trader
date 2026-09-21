@@ -1,0 +1,6 @@
+header: Linked file panels
+description: |
+  A file linked from an item description shall open as an inline panel served only from inside the project, with saving limited to markdown files unchanged on disk since they were loaded.
+parents: [SYNGATE_UI-030]
+order: 60
+tests: {read: ~, save: ~}

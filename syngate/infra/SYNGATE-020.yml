@@ -1,0 +1,6 @@
+header: Test-bearing branch
+description: |
+  An item with children shall be free to carry its own tests: its test status is the worst of its own bindings and its children's, it is reviewed and frozen exactly as a leaf is, and a stamped routine that changed or is gone violates its review without touching its test status.
+parents: [INFRA-046]
+order: 30
+tests: ~

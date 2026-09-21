@@ -1,0 +1,6 @@
+header: AI query
+description: |
+  Query AI-connection selecting the connection itself, exact LLM model and effort
+parents: [SYNTHETIC]
+order: 15
+tests: ~

@@ -1,0 +1,6 @@
+header: Splitter between tree outline and content
+description: |
+  A vertical splitter between the tree outline and the content pane shall resize the outline by dragging within its width limits, keep the chosen width for the browser session and restore the default width on double-click.
+parents: [SYNGATE_UI-030]
+order: 65
+tests: ~

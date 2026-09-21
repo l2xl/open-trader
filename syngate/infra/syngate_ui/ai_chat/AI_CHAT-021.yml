@@ -1,0 +1,6 @@
+header: Chat history
+description: |
+  The AI-chat history should be displayed (hidden while no history) above the User input field
+parents: [AI_CHAT]
+order: 25
+tests: ~

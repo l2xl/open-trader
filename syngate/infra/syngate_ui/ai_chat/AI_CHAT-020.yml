@@ -1,0 +1,6 @@
+header: User input field
+description: |
+  The AI chat window shall show a text field taking the user's input for the exchange.
+parents: [AI_CHAT]
+order: 20
+tests: ~

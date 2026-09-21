@@ -1,0 +1,6 @@
+header: Browser rendering
+description: |
+  The UI page shall render the whole item tree in the browser from the served tree model, running only its own nonced script.
+parents: [SYNGATE_UI]
+order: 20
+tests: {csp: ~, render: ~}
