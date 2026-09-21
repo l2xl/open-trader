@@ -3,4 +3,5 @@ description: |
   The AI chat window shall carry a close button drawn as a green check mark that closes the window.
 parents: [AI_CHAT]
 order: 30
-tests: ~
+tests: 6a6e1d512d9b3980485a26100652b8f0a9553c08f5fe4d9f1b5a245487a284f9
+reviewed: 67a455d32c52de21745e1529950ff5d7b1872d27c502684d458494d6754f568d

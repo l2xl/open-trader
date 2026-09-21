@@ -3,4 +3,5 @@ description: |
   The CI pipeline shall publish the requirements status report on the run's report page and on the commit's checks even when requirements validation fails, folding the gate's diagnostics into the report itself.
 parents: [INFRA-065]
 order: 40
-tests: ~
+tests: cfd297306df8fc85427deb38ed236e56a848622542a78c1eb170d247ba0e04f5
+reviewed: 3dc4e08f81f63961c5fefcd62ee7889ef37e0ff226003d3ad9e30db4639b197a

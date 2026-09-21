@@ -3,4 +3,5 @@ description: |
   The library shall select, for an addressed item, its ancestors root first with every UID kept once at its first occurrence, the item itself, and on request its descendants in sibling order, and the whole tree when no item is addressed.
 parents: [SYNGATE]
 order: 80
-tests: ~
+tests: 401def4921015a118325c3638f47b660a5318c8f285ebfaaa2d92d659824b44f
+reviewed: a8851d100757d9d400bb3e7be18965d445307dc9b788c3ec929123215807701b

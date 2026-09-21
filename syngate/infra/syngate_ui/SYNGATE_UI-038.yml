@@ -3,4 +3,5 @@ description: |
   A vertical splitter between the tree outline and the content pane shall resize the outline by dragging within its width limits, keep the chosen width for the browser session and restore the default width on double-click.
 parents: [SYNGATE_UI-030]
 order: 65
-tests: ~
+tests: 46436fdfc4f0a31ed05e7ceb3b022671ee8686f16b698482af0b5a13e8fa669d
+reviewed: f7fd37ee3a710aef06f18032fed83a2e6b7a7d4ebba877f50fdad76f9cf411bc

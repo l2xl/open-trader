@@ -5,4 +5,5 @@ description: "Recursive process of building seed AI-context per tree item, based
   \ result \n"
 parents: [SYNTHETIC]
 order: 10
-tests: ~
+tests: fe7a37b91fb51e5987a0ca141321a9f7ff8fe6f65752ef69fe2d16739a55d7f4
+reviewed: edcc711b5212f9df2577edb50028d60ad753e11c0b5262f22b127407cd9871a8

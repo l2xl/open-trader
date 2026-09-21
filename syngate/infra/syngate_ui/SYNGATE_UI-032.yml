@@ -3,4 +3,5 @@ description: |
   An edited item field shall be saved on its own as canonical YAML, leaving the other fields untouched and refusing an unknown parent, a parent cycle or a value changed on disk since it was loaded.
 parents: [SYNGATE_UI-030]
 order: 20
-tests: {guard: ~, cas: ~}
+tests: {guard: 6cfc2ad8f0fccba27cd640b148e16ceaf49f1c886593331a546096f3bd33b510, cas: aa8bfdf6746a6720806a3260e17886ef6876242b69fe571702b65b2b0d1df71e}
+reviewed: cef18f56292b90eee2459077ac5fc4cc0c7325aa28f4894eed06687c5561b6a4

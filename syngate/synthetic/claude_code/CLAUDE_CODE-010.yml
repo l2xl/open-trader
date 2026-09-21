@@ -3,4 +3,5 @@ description: |
   The Claude Code connector shall answer a query for its available models and settings — every model with its id and a display name that strips the `claude-` prefix, the effort levels and the call modes it supports, each with its label, hint and default switch state.
 parents: [CLAUDE_CODE]
 order: 10
-tests: ~
+tests: 138bb4b2fbc5ee0096c058976835145977083530e65f51f481b96c031e7cb38d
+reviewed: 0f88dcfed4ca409de6c09b245db0f0cbc77df92cec857766873af77ff832d04d

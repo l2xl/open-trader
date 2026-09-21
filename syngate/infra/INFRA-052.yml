@@ -3,4 +3,6 @@ description: |
   The test command shall run the routines bound to the addressed leaf items without stamping them -- pytest routines selected by node id, Catch2 cases by an OR of their tag pairs in one run per test binary -- and, given a coverage output file, replace the previous records of every re-run binding with the fresh ones, recording a binding it cannot run -- no or several tagged routines, test binary not built -- as failed.
 parents: [SYNGATE]
 order: 70
-tests: {selection: ~, supersede: ~, unrun_record: ~}
+tests: {selection: 911dcc2b0df6c8ca9d26c972fa0637f252442dfbb245412ef4873d71c4b08033, supersede: f2e70609c164f6ca41ef7aa60562b140a01ecfb2c9f3b933682b850ca53ef532,
+  unrun_record: c32cb14929df41310d296f72050de0bc0f7b4986fba9638cfc7df1c304c970d4}
+reviewed: 564b3010ecdf9660325c6e36a845e417a8c68662e1a2e6f11293a4e1fe9fd4e4

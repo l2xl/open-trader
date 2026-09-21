@@ -3,4 +3,5 @@ description: |
   The CI pipeline shall build the project on every push to the repository. Pull request events are deliberately not a trigger: a pull request  head branch is itself pushed, so triggering on them would only re-run the same commit twice.
 parents: [INFRA-065]
 order: 10
-tests: ~
+tests: e365c5cdd31faa00aa5fb8560a7b4cf1599e36723f4db69db63641f949800212
+reviewed: 3c631a8f19fc5f7fae6e2ee0b9b6911443f22b4ca34618533ef5cd67852675cc

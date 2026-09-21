@@ -7,4 +7,5 @@ description: |
   - Red - tests failed or review violated
 parents: [SYNGATE_UI-040]
 order: 10
-tests: ~
+tests: bf1831af81757307757d2ce17d673ffaa1ac6d0e8bd6ff7a0be2f7c9a02b7a78
+reviewed: fd8962b0e18fb99a72f0b7e1f9ebe150a400e6f6ef3bbaec95f370f802604ce7

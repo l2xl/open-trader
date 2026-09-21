@@ -3,4 +3,5 @@ description: |
   The ui command shall serve the UI page and its API on a loopback port, refusing every request without the session token or with a non-loopback host.
 parents: [SYNGATE_UI]
 order: 10
-tests: ~
+tests: f943e902042aec12eb948ae9c1b699110204d5e2c806c57da8db5528d1c48088
+reviewed: 933ce3a0891a79a949d6dfc8dd718d94c79b6c786281ddb504f0d5561143f6d8
