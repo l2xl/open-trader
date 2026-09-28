@@ -3,4 +3,5 @@ description: |
   The gate script shall resolve AI-Scratcher's `syngate` CLI from the CMake-provisioned installation -- an already-built application build tree's venv when one exists, else one provisioned standalone through the same CMake module -- and never install the package by any other means.
 parents: [AI-SCRATCHER-GATE]
 order: 10
-tests: ~
+tests: 6abda516adee2660dbc321f36f0ee84c2c8d8548f7faeb8d695ab22a4c007fac
+reviewed: 8cbcd9112602f81e75321fc5459df0c4c442c5d8bf1c9fbe697dbbdac94e8754
