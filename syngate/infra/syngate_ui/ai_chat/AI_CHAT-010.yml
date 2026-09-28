@@ -1,7 +1,0 @@
-header: Connector and mode selector
-description: |
-  The AI chat window shall offer a selector of the AI connector (claude code label for now) and of the call modes (hardcode current claude models, stripping the claude_prefix), effort.
-parents: [AI_CHAT]
-order: 10
-tests: e8cce41979012fd0fad887c58df4c4b0694c2139c131cc03eb8c00ec6c88cb7b
-reviewed: accaf821a87ab7a9ff401ce5ff65e2fb1c1b0723bdb54bf567904eef09bdcb4d

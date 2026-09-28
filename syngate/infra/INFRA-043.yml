@@ -1,7 +1,0 @@
-header: Computed leaf status
-description: |
-  A leaf requirement's fulfillment status shall be computed, not manually set: derived from whether the automated tests bound to it currently pass in the offline test run.
-parents: [INFRA-042]
-order: 10
-tests: 536b0b50e2806aa322f159cf742341ab49e1877c4deae59ba496e535b3e08085
-reviewed: 5f574887e81b9c4b59ca051db6b7e904a121960508266895555a08e54de9bcef

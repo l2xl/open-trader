@@ -1,7 +1,0 @@
-header: Validation problems attributed to their own item
-description: |
-  A validation problem shall redden the requirement item it names -- a stale review stamp, a drifted frozen routine or a malformed item -- and roll up only through that item's own parents, so the requirement whose tooling detected the violation is not reddened by it.
-parents: [INFRA-042]
-order: 40
-tests: 0cfd13fae0ebe80a116196219296ec1601931c395c004e36a240816a946bc0df
-reviewed: dec077a1718ddb0f9f87ef150786c4ba034ab810e2967aff455790698f5997f6

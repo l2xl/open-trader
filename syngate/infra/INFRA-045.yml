@@ -1,7 +1,0 @@
-header: Status tree rendering
-description: |
-  The requirements tree shall be rendered with each node's computed recursive status visible, so a reviewer can see feature completion top-down without inspecting individual leaves.
-parents: [INFRA-042]
-order: 30
-tests: e27e3da62dec67541a2767a8f8f2b8c6dd342a10c2f9ab54ea6127408cd15289
-reviewed: 61864f73223ea2e9edd2d613acaf626fbe2bb112931ed074e82893bad3fc1150

@@ -1,7 +1,0 @@
-header: Drag-and-drop placement
-description: |
-  Dropping a row shall place the item at the drop position — taking a free order key between its new neighbours, else renumbering the family — and repoint or add its parent link without breaking the DAG.
-parents: [SYNGATE_UI-030]
-order: 30
-tests: {reorder: 8d3037a7dd74a6c95a3640b6a5c9f4c381344f49a4a1294e294897cb623463b9, reparent: ae28ac373c68c2e6bed213157d0cba7381622c4b221642db5a6479ae19fba2df}
-reviewed: 9d632e931548c8f1f55161cb5f109bd6d47dce1bf20300c43d18476ea519b5c0

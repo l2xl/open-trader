@@ -76,6 +76,7 @@ build/**
 cmake-build-*/**
 .idea/**
 .venv-syngate/**
+.ai-scratcher-provision/**
 syngate_status.json
 syngate_status_junit.xml
 syngate_validate.log

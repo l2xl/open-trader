@@ -1,0 +1,6 @@
+header: License and re-approval enforced as required status checks
+description: |
+  License-header and two-commit re-approval violations shall be blocked from entering `main` server-side: the Validate workflow runs both checks (the `license` job and the re-approval step of `syngate`), and every Validate job is a required status check in the active, bypass-free `main` ruleset kept at `.github/rulesets/main.json`, so GitHub rejects a push to `main` whose commit lacks a passing run, instead of a CI job only reporting the violation afterward.
+parents: [INFRA-065]
+order: 15
+tests: ~

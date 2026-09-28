@@ -1,9 +1,0 @@
-header: Item seed context
-description: "Recursive process of building seed AI-context per tree item, based on the item UID:\n0. The context seed text\
-  \ is empty\n1. Get selected item by UID.\n2. For item's every parent run whole algo and get its output and append to the\
-  \ context seed text\n3. Append the item description to the context seed text\n4. Return the item's context seed text as\
-  \ result \n"
-parents: [SYNTHETIC]
-order: 10
-tests: fe7a37b91fb51e5987a0ca141321a9f7ff8fe6f65752ef69fe2d16739a55d7f4
-reviewed: edcc711b5212f9df2577edb50028d60ad753e11c0b5262f22b127407cd9871a8

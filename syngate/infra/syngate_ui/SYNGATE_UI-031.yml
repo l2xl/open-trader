@@ -1,7 +1,0 @@
-header: Outline tree rows
-description: |
-  The outline shall show every item as one row carrying its structured fields, test and review status and stamp freshness.
-parents: [SYNGATE_UI-030]
-order: 10
-tests: {model: 96783b4ef0d92b3adebb089f0b5b0d2ee2b06f2e17a29e0db6d398f5d3c80fd7, rows: bc9abd6ffddcd0e2759e0a601906784255b599395a0c942e4ab1b81018c08564}
-reviewed: 4863c9216f5a7bc95de3057d0e63d4fb94ae06f2bc04d7685c5ece7f4c1e7c00

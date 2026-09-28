@@ -4,21 +4,25 @@
 
 """Structural lint for the Validate GitHub Actions workflow."""
 
+import json
 import shutil
 import subprocess
+from pathlib import Path
 
 import pytest
 
-from workflow_doc import WORKFLOW, load
+from workflow_doc import WORKFLOW, load, steps
+
+REPO_ROOT = Path(__file__).resolve().parent.parent.parent
+RULESET = REPO_ROOT / ".github" / "rulesets" / "main.json"
 
 
-def test_workflow_entry_checks_gate_the_sequential_pipeline_jobs():
+def test_license_build_test_syngate_is_the_whole_pipeline():
     doc = load()
-    assert list(doc["jobs"]) == ["license", "approval", "build", "test", "syngate"]
+    assert list(doc["jobs"]) == ["license", "build", "test", "syngate"]
     assert "needs" not in doc["jobs"]["license"]
-    assert "needs" not in doc["jobs"]["approval"]
-    assert doc["jobs"]["build"]["needs"] == ["license", "approval"]
-    assert "needs.license.result == 'success'" in doc["jobs"]["build"]["if"]
+    assert "needs" not in doc["jobs"]["build"]
+    assert "if" not in doc["jobs"]["build"]
     assert doc["jobs"]["test"]["needs"] == "build"
     assert doc["jobs"]["syngate"]["needs"] == ["build", "test"]
     # Downstream jobs condition on their needs' actual results: the implicit
@@ -45,3 +49,18 @@ def test_ctest_runs_in_the_same_pinned_toolchain_container_as_the_build():
 def test_actionlint_passes():
     result = subprocess.run(["actionlint", str(WORKFLOW)], capture_output=True, text=True)
     assert result.returncode == 0, result.stdout + result.stderr
+
+
+@pytest.mark.syngate("INFRA-071")
+def test_license_and_reapproval_are_required_status_checks_on_main():
+    doc = load()
+    assert "check_license.py --check" in " | ".join(steps("license"))
+    assert "check_self_approval.py" in " | ".join(steps("syngate"))
+
+    ruleset = json.loads(RULESET.read_text())
+    assert ruleset["enforcement"] == "active"
+    assert ruleset["bypass_actors"] == []
+    assert ruleset["conditions"]["ref_name"]["include"] == ["~DEFAULT_BRANCH"]
+    checks = next(r for r in ruleset["rules"] if r["type"] == "required_status_checks")
+    required = {c["context"] for c in checks["parameters"]["required_status_checks"]}
+    assert required == set(doc["jobs"])

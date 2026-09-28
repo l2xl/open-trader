@@ -1,0 +1,4 @@
+header: Embedded server
+description: |
+  The backend that supplies AI-Scratcher to the running application: the build-time Python dependency, and, once built, the managed server process the application spawns to serve the AI-Scratcher panel.
+parents: [AI-SCRATCHER]

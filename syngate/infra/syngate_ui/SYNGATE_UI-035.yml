@@ -1,8 +1,0 @@
-header: Test and review runs
-description: |
-  The run menu of an item shall start the test, review or clear command for it — for a branch addressing every leaf below — streaming the command output until exit and refusing a second run while one is active.
-parents: [SYNGATE_UI-030]
-order: 50
-tests: {stream: 6012329e8b930175cd6b11a3d7a63e2536bbe9e05b895b596c5caa3ff8e12a57, single_flight: efb399b59bf5b8f31b9480acb6df3a89a0c814fc20fa3ddfbc03eeadae395d26,
-  branch: f4766c8cee46b6fdc222a12bc43c19559ccef2a26b9ecfeb49d95ef8224bc686}
-reviewed: dc972df6c33fb497b8c39b5075ed141d75127c504507e2b27132d6c377dbb413

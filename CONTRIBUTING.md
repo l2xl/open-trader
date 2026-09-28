@@ -79,10 +79,20 @@ The upper tier is **application-layer code** (e.g. `src/cockpit/`, `src/app/`) �
 ## Version control
 
 - Every commit must be GPG-signed. The repo sets `commit.gpgsign=true` locally against the maintainer's key; do not commit with `--no-gpg-sign` or otherwise bypass signing.
+- `main` is guarded by a GitHub ruleset ([.github/rulesets/main.json](.github/rulesets/main.json)): force pushes and unsigned commits are rejected, and a commit enters `main` only once every Validate job — including the IPRL v2 license-header check and the two-commit re-approval discipline (below) — has passed on it. Push a topic branch, let CI go green, then fast-forward `main` to the same commit. `python3 scripts/check_license.py --check` gives the header verdict locally with no setup.
 
 # Synergy Context Gate & the TDD gate
 
 The product's features, architecture and contracts are tracked formally in the Synergy Context Gate (syngate) tree under `syngate/`; the item files are the single source of truth, decomposed branch by branch as each is scheduled. See [syngate/README.md](syngate/README.md) for the toolkit design and operating guide.
+
+Running the toolkit on the tree:
+- The toolkit (AI-Scratcher, Python package `ai_scratcher`) is installed by the build system and nothing else: building `trader` provisions `<build dir>/ai-scratcher-venv` (see [BUILD.md](BUILD.md)). `bash ci/venv.sh` prints that interpreter, and `scripts/syngate.py` binds the `syngate` CLI to this repository, so every command below is `"$(bash ci/venv.sh)" scripts/syngate.py <command>`.
+- `validate [--coverage FILE …] [--strict]` — structural, frozen-routine and coverage checks; what CI runs through `ci/gate.sh`.
+- `test <UID|glob> …` — run the routines bound to leaf items without stamping.
+- `review <UID> …` / `clear <UID> …` — user-only approval stamping (rules below).
+- `ui` — the local tree editor at `http://127.0.0.1:8712`.
+- `report --coverage FILE … [--out FILE] [--html DIR]` — recursive status rollup.
+- `test`, `review` and `ui` run the Catch2 binaries found in `--build-dir` (default `cmake-build-debug-clang`), so build the `unit_tests` target first.
 
 Binding process rules:
 - **Test-first, then freeze.** For a leaf item, the covering Catch2 `TEST_CASE` is tagged with the leaf UID (`[DATAHUB-023]`) before implementation. The user approves by running `syngate review <UID>`, which freezes the bound routine by hash and stamps the item.

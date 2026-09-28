@@ -1,5 +1,0 @@
-header: Item status visualization
-description: |
-  Where and how the UI shows the status of an item.
-parents: [SYNGATE_UI-030]
-order: 15

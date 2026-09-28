@@ -1,0 +1,4 @@
+header: Development gate
+description: |
+  Open Trader's own use of AI-Scratcher as a development tool: the CI/dev tooling venv that runs the Synergy Context Gate CLI against this repository's own syngate tree.
+parents: [INFRA, AI-SCRATCHER]

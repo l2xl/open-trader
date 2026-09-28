@@ -1,5 +1,0 @@
-header: Synergy Context Gate
-description: |
-  Common design tools library: item tree model, test binding, review freeze and status rollup. [DESIGN](syngate/README.md)
-parents: [OPEN-TRADER]
-order: 50

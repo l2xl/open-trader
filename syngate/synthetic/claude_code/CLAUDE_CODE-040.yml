@@ -1,7 +1,0 @@
-header: Workflows mode
-description: |
-  In workflows mode the Claude Code connector shall call `claude` with the workflow tool allowed without prompting; subagents are allowed in every mode.
-parents: [CLAUDE_CODE]
-order: 40
-tests: 7673d9d81040de66646bf2d05f37dd25c6626efb14f55f07b7a409872e5c8052
-reviewed: 545fcbdb5d624cd59df35f29fc8a0fe7bab5348d3511188973f12121092c4520

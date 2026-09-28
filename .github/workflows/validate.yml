@@ -15,42 +15,8 @@ jobs:
       - name: Check IPRL v2 license headers
         run: python3 scripts/check_license.py --check
 
-  # Two-step re-approval discipline. Runs on every event: merge commits are
-  # exempt by construction (a merge carries the change and the review stamp
-  # together), and check_self_approval.py enumerates the range with
-  # `git rev-list --no-merges`, so merges to main — or to any branch — pass
-  # without a job-level skip. Skipping the job here would poison the chain:
-  # GitHub propagates a skipped job through `needs` transitively.
-  approval:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          fetch-depth: 0
-
-      - name: Check two-step item re-approval
-        env:
-          EVENT: ${{ github.event_name }}
-          BASE: ${{ github.event.pull_request.base.sha }}
-          BEFORE: ${{ github.event.before }}
-        run: |
-          if [ "$EVENT" = pull_request ]; then
-            RANGE="$BASE..HEAD"
-          elif [ -n "$BEFORE" ] && ! echo "$BEFORE" | grep -q '^0*$' && git cat-file -e "$BEFORE" 2>/dev/null; then
-            RANGE="$BEFORE..HEAD"
-          else
-            RANGE="$(git merge-base origin/main HEAD)..HEAD"
-          fi
-          python3 scripts/check_self_approval.py "$RANGE"
-
   build:
     runs-on: ubuntu-latest
-    needs: [license, approval]
-    # Every downstream job states its own condition on the actual results of
-    # its needs instead of relying on implicit skip propagation. Tolerating
-    # 'skipped' keeps the chain alive if an entry check ever becomes
-    # conditional again; any failure still stops build-test-syngate.
-    if: ${{ !cancelled() && needs.license.result == 'success' && contains(fromJSON('["success", "skipped"]'), needs.approval.result) }}
     permissions:
       contents: read
       checks: write
@@ -83,6 +49,18 @@ jobs:
         run: >
           cmake -B build-ci -G Ninja -DCMAKE_BUILD_TYPE=Debug
           -DCMAKE_C_COMPILER=clang-23 -DCMAKE_CXX_COMPILER=clang++-23
+
+      # CPM already fetched AI-Scratcher's source into build-ci/_deps/ai_scratcher-src during
+      # configure, above, as a side effect of the main CMakeLists.txt's include(cmake/AiScratcher.cmake)
+      # (the sole place it is ever fetched from). Passing that source on as a build artifact lets the
+      # syngate job install it locally, with no second network fetch and no need to configure the
+      # standalone cmake/ai_scratcher/CMakeLists.txt project there.
+      - name: Upload AI-Scratcher source
+        uses: actions/upload-artifact@v6
+        with:
+          name: ai-scratcher-source
+          path: build-ci/_deps/ai_scratcher-src
+          retention-days: 1
 
       - name: Build unit tests
         # Container jobs default run steps to `sh`, not `bash` (unlike jobs
@@ -219,13 +197,44 @@ jobs:
       checks: write
     steps:
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
 
-      # Single source of truth for syngate validation: ci/gate.sh bootstraps
-      # .venv-syngate and runs `syngate validate` (structural + frozen-routine checks).
+      # The build job already fetched AI-Scratcher's source once (cmake/AiScratcher.cmake, the
+      # sole place it is ever installed from); this job installs from that same source rather than
+      # fetching it again or configuring the standalone cmake/ai_scratcher project.
+      - name: Download AI-Scratcher source
+        uses: actions/download-artifact@v7
+        with:
+          name: ai-scratcher-source
+          path: ai-scratcher-source
+
+      - name: Resolve AI-Scratcher interpreter
+        run: |
+          echo "AI_SCRATCHER_SOURCE_DIR=$PWD/ai-scratcher-source" >> "$GITHUB_ENV"
+          export AI_SCRATCHER_SOURCE_DIR="$PWD/ai-scratcher-source"
+          echo "AI_SCRATCHER_PY=$(bash ci/venv.sh)" >> "$GITHUB_ENV"
+
+      # Two-commit re-approval discipline over the commits this push brought in. Merge commits
+      # are exempt by construction (check_self_approval enumerates the range with
+      # `git rev-list --no-merges`), so pushes of merges pass without a job-level skip.
+      - name: Check two-step item re-approval
+        env:
+          BEFORE: ${{ github.event.before }}
+        run: |
+          if [ -n "$BEFORE" ] && ! echo "$BEFORE" | grep -q '^0*$' && git cat-file -e "$BEFORE" 2>/dev/null; then
+            RANGE="$BEFORE..HEAD"
+          else
+            RANGE="$(git merge-base origin/main HEAD)..HEAD"
+          fi
+          "$AI_SCRATCHER_PY" scripts/check_self_approval.py "$RANGE"
+
+      # Single source of truth for syngate validation: ci/gate.sh resolves the interpreter above
+      # and runs `syngate validate` (structural + frozen-routine checks) through it.
       #
       # The gate's verdict decides whether this job is red -- it must not decide
       # whether the run gets a syngate report at all. A red gate is exactly
@@ -244,11 +253,17 @@ jobs:
         run: |
           bash <(curl -s https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash)
           sudo mv ./actionlint /usr/local/bin/
+
+      # Open Trader's own scripts/tests (workflow-config structure checks) need only pytest and
+      # PyYAML, never AI-Scratcher, so this runs on the plain system interpreter setup-python gave
+      # us above, not the AI-Scratcher venv.
       - name: Run syngate tooling tests (pytest)
         if: ${{ !cancelled() }}
         env:
           SYNGATE_COVERAGE_FILE: ${{ github.workspace }}/pytest-coverage.jsonl
-        run: .venv-syngate/bin/python -m pytest scripts/tests
+        run: |
+          pip install --quiet pytest pyyaml
+          python -m pytest scripts/tests
 
       # continue-on-error, not a hard dependency: when the test job died before
       # uploading, the report is still rendered from whatever coverage exists.
@@ -270,7 +285,7 @@ jobs:
       - name: Compute recursive syngate status
         if: ${{ !cancelled() }}
         run: >
-          .venv-syngate/bin/python scripts/syngate.py report
+          "$AI_SCRATCHER_PY" scripts/syngate.py report
           --coverage pytest-coverage.jsonl
           --coverage build-ci/syngate_coverage.jsonl
           --out syngate_status.json
@@ -278,7 +293,7 @@ jobs:
       - name: Write syngate report to the job summary
         if: ${{ !cancelled() }}
         run: >
-          .venv-syngate/bin/python ci/write_status_summary.py
+          "$AI_SCRATCHER_PY" ci/write_status_summary.py
           --validation syngate_validate.log
 
       - name: Publish syngate tree as a Check Run
@@ -286,5 +301,5 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: >
-          .venv-syngate/bin/python scripts/publish_check_run.py --status syngate_status.json
+          "$AI_SCRATCHER_PY" scripts/publish_check_run.py --status syngate_status.json
           --validation syngate_validate.log

@@ -1,7 +1,0 @@
-header: Content panel
-description: |
-  An item's content panel shall carry the common status label with the title, without any menu, on its top border, the test and review status button at its bottom-right corner — whose hover popup lists the test details and validation problems colored by status — and the AI chat tool button at its bottom-left corner.
-parents: [SYNGATE_UI-040]
-order: 30
-tests: 71dbd0a7edd80a061efec085657bac75f26142a47168b9d8c9a70034638bd89d
-reviewed: 748134c8d7615e923c033aa49eb75808acd3126cdb5fd0020e0347ff1915adfa

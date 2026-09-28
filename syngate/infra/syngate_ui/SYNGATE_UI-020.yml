@@ -1,7 +1,0 @@
-header: Browser rendering
-description: |
-  The UI page shall render the whole item tree in the browser from the served tree model, running only its own nonced script.
-parents: [SYNGATE_UI]
-order: 20
-tests: {csp: 698205a8dce4dd7b2abb59b65648d64bd21dc441f44f4b908dff0ca493997dc3, render: 33df2736bbf021d24dbd04e42bc5aa689c6f53d988ffebf39de41537c1a01205}
-reviewed: 9f3e0b13ce3668d03f23a3e0734b3aa0b6ae7f6ce3dc63945c336b1c1689f48f

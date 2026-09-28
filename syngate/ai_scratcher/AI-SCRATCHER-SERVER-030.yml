@@ -1,0 +1,5 @@
+header: Self-contained Python runtime
+description: |
+  For a packaged build, the build system shall provision AI-Scratcher's venv from a fetched standalone CPython distribution rather than the build machine's own Python, and install that venv alongside the packaged application, so a shipped build needs no Python installed on the host system.
+parents: [AI-SCRATCHER-SERVER]
+order: 30

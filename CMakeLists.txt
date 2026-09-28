@@ -88,6 +88,10 @@ endif()
 # Add ThorVG vector graphics library (downloaded via CPM, built with Meson+Ninja)
 include(cmake/ThorvgBuild.cmake)
 
+# Add the AI-Scratcher toolkit (Syngate tree gate + AI agent), fetched via CPM and
+# provisioned into a build-local Python venv
+include(cmake/AiScratcher.cmake)
+
 set(core_SOURCES
         src/cex/generic_handler.hpp
         src/cex/log.hpp
@@ -178,6 +182,13 @@ add_executable(trader
     )
 target_link_libraries(trader PRIVATE elements core glaze::glaze Thorvg::thorvg ${CAIRO_LIBRARIES})
 target_include_directories(trader PRIVATE ${CAIRO_INCLUDE_DIRS})
+
+# Building trader (the project's own documented build command) provisions AI-Scratcher's venv too,
+# so a normal contributor build is the one and only setup step ci/venv.sh's "reuse a build tree"
+# path relies on -- see cmake/AiScratcher.cmake.
+if(AI_SCRATCHER_AVAILABLE)
+    add_dependencies(trader ai_scratcher_venv)
+endif()
 
 # Copy Elements font resources for trader
 set(ELEMENTS_FONT_DIR "${elements_SOURCE_DIR}/resources/fonts")

@@ -1,7 +1,0 @@
-header: Coverage check
-description: |
-  An automated coverage check shall verify the executed-test reports against the requirements tree in both directions: every reviewed leaf binding has at least one executed coverage record, and every coverage record's UID tag matches a known requirement
-parents: [SYNGATE]
-order: 35
-tests: d33ec682cfe05a28b747d6bd816d82af1f91821b00cccb15e7a16835d92a641b
-reviewed: 64e9d771d1298901cd3b91953c3fb2455437317c6a26c35ca84395de725d157f

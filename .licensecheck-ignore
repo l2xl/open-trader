@@ -9,5 +9,6 @@ cmake/CPM.cmake
 # Vendored single-header libraries
 contrib/
 
-# Local tooling virtualenv (third-party packages)
+# Local tooling virtualenvs (third-party packages)
 .venv-syngate/
+.ai-scratcher-provision/

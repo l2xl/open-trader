@@ -1,7 +1,0 @@
-header: Claude Code connector
-description: |
-  The Claude Code connector shall dispatch a seed context, following local  history and user input through the local `claude` CLI in non-interactive mode — the context as appended system prompt, the input as the prompt text — and return the reply text and the session id read from the CLI's JSON output.
-parents: [AI_CONNECTION]
-order: 10
-tests: dcc99f1308781ad36d9a1894a7a6e603685acd6a7397f598688a54bb6fca1e7e
-reviewed: c0d3365a926ec773a5b24984065f621fbf08cf182076ba259a77fbd8966e7740

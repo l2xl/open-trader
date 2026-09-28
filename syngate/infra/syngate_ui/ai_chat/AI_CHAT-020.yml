@@ -1,7 +1,0 @@
-header: User input field
-description: |
-  The AI chat window shall show a text field taking the user's input for the exchange.
-parents: [AI_CHAT]
-order: 20
-tests: 996ba257e2e5366ee90f7240fe9c2eaa700b90f30c8d82da8bb29e6cde9cf43a
-reviewed: 11026eb2efa74ab14ef978648403909cf50db78f59a6d9f54cf712c64a19bfbb

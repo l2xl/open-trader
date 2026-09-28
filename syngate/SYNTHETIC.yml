@@ -1,5 +1,0 @@
-header: Synthetic agent
-description: |
-  AI-agent library: short exchanges anchored at syngate items, seeded from the tree and condensed back into syngate artifacts.
-parents: [OPEN-TRADER]
-order: 60

@@ -1,0 +1,5 @@
+header: AI-Scratcher panel
+description: |
+  Chrome panel embedding the AI-Scratcher tree editor and its AI agent chat, docked alongside native trading panels.
+parents: [CHROME_PANEL, AI-SCRATCHER]
+order: 10

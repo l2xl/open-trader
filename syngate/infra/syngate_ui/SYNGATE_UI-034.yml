@@ -1,7 +1,0 @@
-header: Item scaffold and delete
-description: |
-  The UI shall create a new item file under a chosen parent and delete the file of a childless item.
-parents: [SYNGATE_UI-030]
-order: 40
-tests: 09df0223192625319205f9d26537ce804280c748a9003ff45941dd12422cf1fb
-reviewed: 75f5d772233f0a9f93b221044af23c11fe9229163904b1c0e461ec5b4011fb4b

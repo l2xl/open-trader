@@ -1,0 +1,6 @@
+header: Gate resolves the CMake installation
+description: |
+  The gate script shall resolve AI-Scratcher's `syngate` CLI from the CMake-provisioned installation -- an already-built application build tree's venv when one exists, else one provisioned standalone through the same CMake module -- and never install the package by any other means.
+parents: [AI-SCRATCHER-GATE]
+order: 10
+tests: ~

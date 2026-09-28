@@ -1,7 +1,0 @@
-header: Internet mode
-description: |
-  In internet mode the Claude Code connector shall call `claude` with its web search and web fetch tools allowed without prompting.
-parents: [CLAUDE_CODE]
-order: 30
-tests: 8e1af32e5e71d6d340df43982827f8a797a24d7f3346c3c07f3125c1aa1bbc59
-reviewed: 9b3062d1c3bc84c373c7a871850efe86cc9b99f72495ca37959c45ebdf7b61f4

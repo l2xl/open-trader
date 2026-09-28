@@ -1,0 +1,6 @@
+header: Build-time toolkit dependency
+description: |
+  The build system shall fetch AI-Scratcher via CPM and provision it into an isolated build-local Python virtual environment, so the `ai_scratcher` package and its `syngate` CLI are available to the application without touching the system or developer Python.
+parents: [AI-SCRATCHER-SERVER]
+order: 10
+tests: ~

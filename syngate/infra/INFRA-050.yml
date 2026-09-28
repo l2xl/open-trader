@@ -1,7 +1,0 @@
-header: Unapproved changes block the gate
-description: |
-  The gate shall fail when a reviewed item's content or frozen test routine changed without a user-approved re-review, and in strict mode while any item in the tree is unreviewed
-parents: [SYNGATE]
-order: 50
-tests: 7e682948802a247d891e84be245c369dd79f6547261bcedeb7f859228386f722
-reviewed: 9f2c01778c7e063f491171afad3d123df6fd4a2e3733971ce7efdb881220af59

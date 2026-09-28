@@ -1,0 +1,5 @@
+header: Application-managed server
+description: |
+  The application shall spawn AI-Scratcher's own embedded server, from the CMake-provisioned installation, as a managed child process, and open its page in the AI-Scratcher panel.
+parents: [AI-SCRATCHER-SERVER]
+order: 20

@@ -1,7 +1,0 @@
-header: AI query
-description: |
-  Query AI-connection selecting the connection itself, exact LLM model and effort
-parents: [SYNTHETIC]
-order: 15
-tests: b4b84f918c4ce3cae3a864d113771648793bea8952d7cf06ecfe9fb827b35894
-reviewed: bc106fd447e874e8ac599730e753e245b841fda7d94b5fb7619b528829d86b8d

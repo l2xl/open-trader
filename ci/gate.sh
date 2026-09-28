@@ -10,11 +10,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
-PY="$ROOT/.venv-syngate/bin/python"
-if [[ ! -x "$PY" ]]; then
-    python3 -m venv "$ROOT/.venv-syngate"
-    "$ROOT/.venv-syngate/bin/pip" install --quiet pyyaml pytest jinja2
-fi
+PY="$(bash "$ROOT/ci/venv.sh")"
 
 # GATE_STRICT=1 requires every item in the tree reviewed.
 STRICT=()

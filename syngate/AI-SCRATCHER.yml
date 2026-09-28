@@ -1,0 +1,5 @@
+header: AI-Scratcher
+description: |
+  Integration of the separate AI-Scratcher toolkit (the Synergy Context Gate tree gate and its AI agent) with Open Trader, in its two roles: as the tool used to track and gate this product's own architecture, and as an AI agent panel embedded in the running application.
+parents: [OPEN-TRADER]
+order: 50

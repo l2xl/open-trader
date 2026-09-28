@@ -1,5 +1,0 @@
-header: AI connection
-description: |
-  Provider-neutral connectors carrying a prompt to an AI provider and its reply back.
-parents: [SYNTHETIC]
-order: 20

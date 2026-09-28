@@ -1,0 +1,5 @@
+header: Chrome panel
+description: |
+  Content panel specialization whose content is an embedded Chromium web view rendered off-screen into the panel's surface, for tools built as HTML/JS pages docked alongside native panels.
+parents: [CONTENT_PANEL]
+order: 50

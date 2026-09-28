@@ -1,5 +1,5 @@
 header: Python binding
 description: |
-  Python binding for Trading API
+  A Python client package over the same out-of-process protocol MCP already uses for trading bots, giving bot code a Pythonic call surface without a compiled C++/Python binding -- no embedded interpreter, no SWIG-generated extension. The C++ engine and the Python process stay separate, matching the bot execution model already decided.
 parents: [TRADE-API]
 order: 80
